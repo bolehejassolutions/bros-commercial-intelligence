@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { createCase, logout } from "@/app/actions";
+import { createCase } from "@/app/actions";
+import { logout } from "@/app/login/actions";
 
 const stages = ["Evidence","Signal","Case","Diagnosis","Decision","Action","Outcome","Learning"];
 
