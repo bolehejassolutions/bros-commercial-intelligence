@@ -3,7 +3,7 @@
 create table public.bci_campaign_plans (
   id uuid primary key default gen_random_uuid(),
   created_by uuid not null references auth.users(id),
-  name text not null check(length(name) between 5 and 140 and name ~* '^BROS\\s*SELL'),
+  name text not null check(length(name) between 5 and 140 and name ~* '^BROS[[:space:]]*SELL'),
   market text not null default 'MY' check(market='MY'),
   account_id text not null default 'act_1997776120879476' check(account_id='act_1997776120879476'),
   objective text not null default 'TRAFFIC' check(objective in ('TRAFFIC','SALES')),
@@ -30,6 +30,10 @@ create table public.bci_campaign_plans (
   updated_at timestamptz not null default now(),
   constraint sales_requires_pixel check (objective != 'SALES' or pixel_id is not null)
 );
+-- One spending authorization in flight per ad account; additional campaigns require
+-- previous campaign pause/closure, to avoid accidental aggregate overspend.
+create unique index bci_single_live_campaign_per_account on public.bci_campaign_plans(account_id)
+ where status in ('APPROVED','STAGING','STAGED','ACTIVATING','ACTIVE','PAUSING');
 create index bci_campaign_plans_recent_idx on public.bci_campaign_plans(created_at desc);
 alter table public.bci_campaign_plans enable row level security;
 revoke all on public.bci_campaign_plans from anon,authenticated;
