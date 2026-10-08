@@ -77,7 +77,7 @@ test("live status actions only accept ACTIVE or PAUSED and reject missing provid
  const fake=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify({success:true}),{status:200});};
  await metaSetStatus("1234567890","PAUSED","valid-token",fake);
  assert.equal(calls[0].url,"https://graph.facebook.com/v24.0/1234567890");
- assert.equal(JSON.parse(calls[0].init.body).status,"PAUSED");
+ assert.equal(new URLSearchParams(calls[0].init.body).get("status"),"PAUSED");
  await assert.rejects(()=>metaSetStatus("evil","ACTIVE","valid-token",fake),/Invalid/);
 });
 test("provider failures are fail-closed and cannot be treated as created ads",async()=>{
