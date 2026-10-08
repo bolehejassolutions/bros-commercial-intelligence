@@ -51,9 +51,15 @@ export async function metaCreatePaused(
 ):Promise<string> {
  if(accountId!==FIXED_META_ACCOUNT||!allow.includes(operation))throw new Error("Unapproved Meta destination");
  if(!token)throw new Error("No server credential");
+ const form=new URLSearchParams();
+ for(const [key,value] of Object.entries(body)){
+  if(value===undefined||value===null)continue;
+  form.set(key,typeof value==="string"?value:JSON.stringify(value));
+ }
  const response=await transport(GRAPH+"/"+accountId+"/"+operation,{
-  method:"POST",headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
-  body:JSON.stringify(body),cache:"no-store",signal:AbortSignal.timeout(16000),
+  method:"POST",headers:{"Authorization":"Bearer "+token,
+   "Content-Type":"application/x-www-form-urlencoded"},
+  body:form.toString(),cache:"no-store",signal:AbortSignal.timeout(16000),
  });
  const result=await response.json() as {id?:string;error?:{message?:string;code?:number}};
  if(!response.ok||result.error)throw new Error("Meta "+operation+" failed (code "+(result.error?.code??response.status)+"). Review account status and permissions.");
@@ -65,8 +71,9 @@ export async function metaSetStatus(
 ) {
  if(!/^[0-9]{6,}$/.test(objectId)||!token)throw new Error("Invalid Meta object or credential.");
  const response=await transport(GRAPH+"/"+objectId,{
-  method:"POST",headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
-  body:JSON.stringify({status}),cache:"no-store",signal:AbortSignal.timeout(16000),
+  method:"POST",headers:{"Authorization":"Bearer "+token,
+   "Content-Type":"application/x-www-form-urlencoded"},
+  body:new URLSearchParams({status}).toString(),cache:"no-store",signal:AbortSignal.timeout(16000),
  });
  const result=await response.json() as {success?:boolean,error?:{code?:number}};
  if(!response.ok||result.success!==true)throw new Error("Meta status update failed (code "+(result.error?.code??response.status)+"). Confirm provider state before any retry.");
