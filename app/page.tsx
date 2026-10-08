@@ -1,14 +1,12 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { requireBciOperator } from "@/lib/bci/operator-access";
 import { createCase } from "@/app/actions";
 import { logout } from "@/app/login/actions";
 
 const stages = ["Evidence","Signal","Case","Diagnosis","Decision","Action","Outcome","Learning"];
 
 export default async function Home() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const { supabase } = await requireBciOperator();
   const { data: cases } = await supabase.from("cases").select("id,title,question,status,updated_at").order("updated_at", { ascending: false });
 
   return (
