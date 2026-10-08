@@ -45,3 +45,6 @@
 .operator-meta-row{background:#0d1014;color:#e5e7eb;text-align:left;border:1px solid #323844;display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .operator-meta-row:hover{border-color:#d9ff3f}
 .operator-meta-row span{font-size:12px;color:#b6bac3}
+
+.operator-studio-link{display:inline-block;margin-top:14px;padding:11px 16px;background:#d9ff3f;color:#0a0c0e;border-radius:8px;font-size:13px;font-weight:800;text-decoration:none}
+.operator-studio-link:hover{background:#eaff93}
