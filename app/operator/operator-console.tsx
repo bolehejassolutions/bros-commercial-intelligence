@@ -121,7 +121,7 @@ export function OperatorConsole() {
           <dl className="operator-policy">
             <div><dt>Run mode</dt><dd>{MARKETING_OPERATOR_POLICY.mode}</dd></div>
             <div><dt>Live spending limit</dt><dd>RM{MARKETING_OPERATOR_POLICY.maxAuthorizedSpendMYR}</dd></div>
-            <div><dt>Meta write adapter</dt><dd>NOT INSTALLED</dd></div>
+            <div><dt>Meta write adapter</dt><dd>NOT AVAILABLE IN THIS ANALYSIS LANE</dd></div>
             <div><dt>Publishing</dt><dd>DISABLED</dd></div>
             <div><dt>Autonomous budget changes</dt><dd>DISABLED</dd></div>
           </dl>
@@ -139,7 +139,7 @@ export function OperatorConsole() {
             <li>Export report for human review</li>
             <li>Keep campaign execution blocked</li>
           </ol>
-          <p className="muted">Automatic read-only ingestion, AI creative generation, durable scheduling and Meta write permissions are separate later milestones, not features of this dry-run release.</p>
+          <p className="muted">The separate Campaign Studio contains an approval-gated workflow and optional AI drafting. This simulation console never writes to Meta and remains DRY_RUN, regardless of whether Campaign Studio is activated.</p>
         </section>
       </section>
 
