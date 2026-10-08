@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {BROS_SELL_PRODUCT,safeDefaultDraft,validateCreative,generateOptionalGeminiDraft} from "../lib/marketing-operator/campaign-plan.ts";
-import {FIXED_META_ACCOUNT,FIXED_DESTINATION,readWriteGate,validateApprovedPlan,makePausedObjects,metaCreatePaused,metaSetStatus} from "../lib/marketing-operator/meta-write.ts";
+import {FIXED_META_ACCOUNT,FIXED_DESTINATION,readWriteGate,validateApprovedPlan,makePausedObjects,metaCreatePaused,metaSetStatus,requireExclusiveCampaignDelivery} from "../lib/marketing-operator/meta-write.ts";
 
 const now=Date.parse("2026-10-09T00:00:00Z");
 const plan={
@@ -85,4 +85,18 @@ test("provider failures are fail-closed and cannot be treated as created ads",as
  await assert.rejects(()=>metaCreatePaused(FIXED_META_ACCOUNT,"ads",{},"token",bad),/failed/);
  const ambiguous=async()=>new Response(JSON.stringify({}),{status:200});
  await assert.rejects(()=>metaCreatePaused(FIXED_META_ACCOUNT,"ads",{},"token",ambiguous),/do not retry/);
+});
+
+test("activation preflight refuses other ACTIVE campaigns and unbounded pagination",async()=>{
+ const fake=async()=>new Response(JSON.stringify({data:[
+   {id:"1234567890",status:"PAUSED",effective_status:"PAUSED"},
+   {id:"9999999999",status:"ACTIVE",effective_status:"ACTIVE"},
+ ]}),{status:200});
+ await assert.rejects(()=>requireExclusiveCampaignDelivery("1234567890","valid-token",fake),/Other Meta campaigns are active/);
+ const noOther=async()=>new Response(JSON.stringify({data:[
+   {id:"1234567890",status:"PAUSED",effective_status:"PAUSED"},
+   {id:"9999999999",status:"PAUSED",effective_status:"PAUSED"}]}),{status:200});
+ await requireExclusiveCampaignDelivery("1234567890","valid-token",noOther);
+ const untrusted=async()=>new Response(JSON.stringify({data:[],paging:{next:"https://attacker.example/campaigns"}}),{status:200});
+ await assert.rejects(()=>requireExclusiveCampaignDelivery("1234567890","valid-token",untrusted),/pagination changed/);
 });
