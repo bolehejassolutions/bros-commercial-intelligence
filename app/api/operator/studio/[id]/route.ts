@@ -1,6 +1,6 @@
 import {NextRequest,NextResponse} from "next/server";
 import {adminSession,forbidden,NO_STORE,validOrigin} from "@/lib/marketing-operator/server-auth";
-import {readWriteGate,validateApprovedPlan,makePausedObjects,metaCreatePaused,metaSetStatus,FIXED_META_ACCOUNT,type ApprovedPlan} from "@/lib/marketing-operator/meta-write";
+import {readWriteGate,validateApprovedPlan,makePausedObjects,metaCreatePaused,metaSetStatus,FIXED_META_ACCOUNT,requireExclusiveCampaignDelivery,type ApprovedPlan} from "@/lib/marketing-operator/meta-write";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -49,6 +49,8 @@ export async function POST(req:NextRequest,{params}:Context){
   const expected="ACTIVATE RM"+Number(plan.budget_cap_myr).toFixed(2);
   if(payload.activationConfirmation!==expected)
     return forbidden("Activation requires entering "+expected+" exactly.",403);
+  try{await requireExclusiveCampaignDelivery(plan.meta_campaign_id!,gate.token);}
+  catch(e){return forbidden(e instanceof Error?e.message:"Ad-account preflight failed.",409);}
  }
  if(action==="stage"&&plan.status!=="APPROVED")return forbidden("Plan must be explicitly approved before staging.",409);
  if(action==="activate"&&plan.status!=="STAGED")return forbidden("Staging must finish before activation.",409);
