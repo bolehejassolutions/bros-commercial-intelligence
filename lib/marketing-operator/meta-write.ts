@@ -117,3 +117,39 @@ export function makePausedObjects(plan:ApprovedPlan,at=Date.now()){
   }),
  };
 }
+
+/**
+ * Preflight disallows activation alongside any OTHER enabled campaigns.
+ * It does not replace a Meta account-wide spending limit: external actors may
+ * activate campaigns later, outside this application.
+ */
+export async function requireExclusiveCampaignDelivery(
+ ownCampaignId:string,token:string,transport:typeof fetch=fetch
+):Promise<void>{
+ if(!/^[0-9]{6,}$/.test(ownCampaignId)||!token)throw new Error("Invalid launch preflight.");
+ const base=new URL(GRAPH+"/"+FIXED_META_ACCOUNT+"/campaigns");
+ base.searchParams.set("fields","id,status,effective_status");
+ base.searchParams.set("limit","100");
+ const url=new URL(base.toString());
+ for(let page=0;page<3;page++){
+  const response=await transport(url.toString(),{
+   method:"GET",headers:{Authorization:"Bearer "+token},
+   cache:"no-store",signal:AbortSignal.timeout(14000)
+  });
+  if(!response.ok)throw new Error("Cannot verify other campaigns; launch blocked.");
+  const body=await response.json() as {
+   data?:Array<{id?:string;status?:string;effective_status?:string}>;
+   error?:{code?:number};paging?:{next?:string}
+  };
+  if(body.error||!Array.isArray(body.data))throw new Error("Invalid account campaign inventory.");
+  if(body.data.some(c=>c.id!==ownCampaignId&&(c.status==="ACTIVE"||c.effective_status==="ACTIVE")))
+   throw new Error("Other Meta campaigns are active. Cannot guarantee isolated budget authority; activation blocked.");
+  if(!body.paging?.next)return;
+  const next=new URL(body.paging.next);
+  if(next.origin!==base.origin||next.pathname!==base.pathname)
+   throw new Error("Meta pagination changed destination; activation blocked.");
+  next.searchParams.delete("access_token");
+  url.search=next.search;
+ }
+ throw new Error("Campaign inventory exceeds bounded preflight; activation blocked.");
+}
