@@ -29,6 +29,8 @@ export function CampaignStudio(){
  const [phraseInputs,setPhrases]=useState<Record<string,string>>({});
  const [activateInputs,setActivations]=useState<Record<string,string>>({});
  const [confirmAssets,setConfirmAssets]=useState(false);
+ const [imageHash,setImageHash]=useState("");
+ const [uploadFile,setUploadFile]=useState<File|null>(null);
  const [angle,setAngle]=useState("New and experienced Malaysian business sellers who struggle to handle buying objections.");
  async function loadPlans(){
   try{const d=await request("/api/operator/studio","GET");setPlans(d.plans??[]);}
@@ -44,6 +46,21 @@ export function CampaignStudio(){
   }catch(e){setError(e instanceof Error?e.message:"Draft provider error.");}
   finally{setBusy(false);}
  }
+ async function uploadImage(){
+  if(!confirmAssets||!uploadFile){setError("Verify ownership and select an approved PNG/JPEG file first.");return;}
+  setBusy(true);setError("");
+  try{
+   const data=new FormData();
+   data.set("approved","true");
+   data.set("image",uploadFile);
+   const r=await fetch("/api/operator/assets",{method:"POST",body:data,cache:"no-store"});
+   const body=await r.json().catch(()=>({}));
+   if(!r.ok)throw Error(body.error??"Meta asset upload unavailable.");
+   setImageHash(body.imageHash);
+   setMessage("Approved creative image uploaded to the Meta Ads image library. Hash captured.");
+  }catch(e){setError(e instanceof Error?e.message:"Image upload failed.");}
+  finally{setBusy(false);}
+ }
  async function create(event:FormEvent<HTMLFormElement>){
   event.preventDefault();setBusy(true);setError("");setMessage("");
   try{
@@ -51,7 +68,7 @@ export function CampaignStudio(){
    const read=(n:string)=>String(form.get(n)??"").trim();
    const out=await request("/api/operator/studio","POST",{
     name:read("name"),objective:read("objective"),durationDays:Number(read("durationDays")),
-    pageId:read("pageId"),imageHash:read("imageHash"),pixelId:read("pixelId"),
+    pageId:read("pageId"),imageHash:imageHash.trim(),pixelId:read("pixelId"),
     headline:draft.headline,primaryText:draft.primaryText,description:draft.description,
     assetsConfirmed:confirmAssets,
    });
@@ -104,8 +121,15 @@ export function CampaignStudio(){
      <label>Lifetime duration (days)<input name="durationDays" type="number" min={1} max={30} defaultValue={7} required/></label>
     </div>
     <div className="row">
-     <label>Authorized Meta Page ID<input name="pageId" required pattern="[0-9]{6,}" placeholder="Existing approved business Page ID"/></label>
-     <label>Existing approved image hash<input name="imageHash" required pattern="[A-Fa-f0-9]{32}" placeholder="32-character Meta image hash"/></label>
+     <label>Authorized Meta Page ID<input name="pageId" required pattern="[0-9]{6,}" defaultValue="108099141072511" placeholder="Existing approved business Page ID"/></label>
+     <label>Existing approved image hash<input name="imageHash" required pattern="[A-Fa-f0-9]{32}" value={imageHash} onChange={e=>setImageHash(e.target.value)} placeholder="32-character Meta image hash"/></label>
+    </div>
+    <div className="studio-asset">
+      <label className="studio-field">Or upload your approved Meta campaign artwork
+       <input type="file" accept="image/png,image/jpeg" onChange={e=>setUploadFile(e.target.files?.[0]??null)}/>
+      </label>
+      <button type="button" className="ghost" disabled={busy||!confirmAssets||!uploadFile} onClick={uploadImage}>Upload to Meta image library</button>
+      <p className="muted">Images are uploaded only after operator confirmation and credential activation; official BROS logos are never generated or modified.</p>
     </div>
     <label>Verified Purchase Pixel ID (Sales objective only)<input name="pixelId" pattern="[0-9]{6,}" placeholder="Only if Purchase is verified"/></label>
     <label className="studio-checkbox"><input type="checkbox" checked={confirmAssets} onChange={e=>setConfirmAssets(e.target.checked)}/>
