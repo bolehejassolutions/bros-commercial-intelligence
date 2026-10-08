@@ -4,7 +4,11 @@ on:
     paths:
       - "lib/marketing-operator/**"
       - "app/operator/**"
-      - "tests/marketing-operator.test.mjs"
+      - "tests/**"
+      - "lib/bci/**"
+      - "app/api/operator/**"
+      - "supabase/migrations/**"
+      - "tsconfig.json"
       - ".github/workflows/marketing-operator-checks.yml"
       - "package.json"
   push:
@@ -21,7 +25,7 @@ jobs:
         with:
           node-version: "22"
       - name: Test fail-closed dry-run engine
-        run: node --experimental-strip-types --test tests/marketing-operator.test.mjs
+        run: node --experimental-strip-types --test tests/*.test.mjs
       - name: Type-check and production-build
         run: |
           npm install --no-audit --no-fund
