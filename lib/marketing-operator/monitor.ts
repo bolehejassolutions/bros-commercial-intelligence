@@ -4,7 +4,7 @@
  * - Lifetime Meta budget remains the primary financial ceiling
  * - Auto-pause only when campaign-level spend is unambiguously measurable.
  */
-import {FIXED_META_ACCOUNT,metaSetStatus,readWriteGate} from "./meta-write";
+import {FIXED_META_ACCOUNT,metaSetStatus,readWriteGate} from "./meta-write.ts";
 export const PAUSE_RATIO=0.95;
 export function shouldPauseAtCap(spendMYR:unknown,authorizedMYR:unknown):boolean{
  const spend=Number(spendMYR),limit=Number(authorizedMYR);
