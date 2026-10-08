@@ -6,7 +6,7 @@ import "./operator.css";
 
 export const metadata = {
   title: "AI Marketing Operator | BROS Internal",
-  description: "Internal dry-run campaign analysis and proposal workspace.",
+  description: "Internal campaign analysis and access to gated Campaign Studio.",
 };
 
 export default async function OperatorPage() {
@@ -23,6 +23,7 @@ export default async function OperatorPage() {
         </div>
         <span className="operator-mode" role="status">{MARKETING_OPERATOR_POLICY.mode} · RM0 AUTHORITY</span>
       </header>
+      <section className="panel operator-meta-panel"><p className="label">CAMPAIGN OPERATIONS</p><h2>Automated Campaign Studio</h2><p className="muted">Plan campaigns, generate verified draft copy, upload approved creative assets, authorize finite lifetime budgets and stage Meta ads as PAUSED. Live activation is separately protected by a server-side credential and spending limit.</p><Link className="operator-studio-link" href="/operator/studio">Open Campaign Studio →</Link></section>
       <OperatorConsole />
     </main>
   );
