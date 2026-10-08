@@ -182,5 +182,6 @@ export function OperatorConsole() {
         )}
       </section>
     </div>
+    </>
   );
 }
