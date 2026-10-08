@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { requireBciOperator } from "@/lib/bci/operator-access";
 import {
   createEvidence, createSignal, createDiagnosis, createDecision,
   createAction, createOutcome, createLearning
@@ -10,9 +10,7 @@ type Props = { params: Promise<{ id: string }> };
 
 export default async function CaseWorkspace({ params }: Props) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const { supabase } = await requireBciOperator();
 
   const { data: currentCase } = await supabase.from("cases").select("*").eq("id", id).single();
   if (!currentCase) notFound();

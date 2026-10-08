@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { requireBciOperator } from "@/lib/bci/operator-access";
 import { MARKETING_OPERATOR_POLICY } from "@/lib/marketing-operator/safety";
 import { OperatorConsole } from "./operator-console";
 import "./operator.css";
@@ -11,9 +10,7 @@ export const metadata = {
 };
 
 export default async function OperatorPage() {
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) redirect("/login");
+  await requireBciOperator();
 
   return (
     <main className="shell operator">
