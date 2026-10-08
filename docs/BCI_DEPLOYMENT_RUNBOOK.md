@@ -48,14 +48,14 @@ The Meta token is never exposed by Next.js to the browser. No service-role key o
 ## Read-only ingestion contract
 
 - `GET /api/operator/meta`: authenticated, enrolled operators can inspect up to 20 recent saved snapshots.
-- `POST /api/operator/meta`: same-origin request + authenticated, enrolled operator + present server-side token. Uses a GET request to the fixed Meta account's Insights endpoint for **yesterday** (UTC reporting boundary in current implementation). Inserts or updates verified observations through the operator's own Supabase JWT/RLS. No external Meta mutation is possible from the module.
+- `POST /api/operator/meta`: same-origin request + authenticated, enrolled operator + present server-side token. Uses a GET request to the fixed Meta account's Insights endpoint for **yesterday in Asia/Kuala_Lumpur**. Inserts or updates verified observations through the operator's own Supabase JWT/RLS. No external Meta mutation is possible from the module.
 - Campaigns not starting with BROS SELL / BROSSELL are skipped.
 - Pagination is capped at 3 pages and cannot change host/path; no provider token in pagination URL.
 - Missing conversions and action values remain null/unknown, not zero.
 - Fail-closed on unavailable token, permission failure, rate limit, invalid dates/payload, database error and unverified identity.
 - Reports are **attributed** observations, not verified HitPay settled orders or profitability.
 
-**Known limitation:** Meta reporting dates should be aligned to the account timezone (Asia/Kuala_Lumpur) before activating scheduled ingestion. The current authenticated manual refresh uses the prior UTC day. Do not claim this is a full production data pipeline until the local reporting day, backfill and refund reconciliation are validated.
+**Known limitation:** The current authenticated manual refresh uses the prior Malaysia calendar day, but it is not scheduled and has no recovery/backfill queue. Do not claim a full production pipeline until backfill, refresh consistency and refund reconciliation are validated.
 
 ## Acceptance gate before use
 
