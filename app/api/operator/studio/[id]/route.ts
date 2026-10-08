@@ -37,7 +37,13 @@ export async function POST(req:NextRequest,{params}:Context){
  // Even after a draft is approved, all Meta writes require independently stored
  // server-side credentials and a finite account-wide spending limit.
  let gate:ReturnType<typeof readWriteGate>;
- try{gate=readWriteGate();validateApprovedPlan(plan,gate.portfolioCapMYR);}
+ try{
+   gate=readWriteGate();
+   if(action==="pause"){
+     if(plan.account_id!==FIXED_META_ACCOUNT||!plan.meta_campaign_id)
+       throw new Error("Campaign identity cannot be verified for emergency pause.");
+   } else validateApprovedPlan(plan,gate.portfolioCapMYR);
+ }
  catch(e){return forbidden(e instanceof Error?e.message:"Write gateway blocked.",423);}
  if(action==="activate"){
   const expected="ACTIVATE RM"+Number(plan.budget_cap_myr).toFixed(2);
