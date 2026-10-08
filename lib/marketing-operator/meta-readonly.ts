@@ -3,7 +3,7 @@ import type { CampaignSnapshot } from "./contracts";
 
 /** Meta retrieval is GET-only. Do not add POST/PATCH/DELETE to this module. */
 const GRAPH_ROOT = "https://graph.facebook.com/v24.0";
-const CAMPAIGN_NAME = /^BROS\\s*SELL/i;
+const CAMPAIGN_NAME = /^BROS\s*SELL/i;
 const purchaseTypes = [
   "offsite_conversion.fb_pixel_purchase",
   "omni_purchase",
@@ -59,7 +59,7 @@ export function normalizeMetaInsight(
   accountId: string,
   fetchedAt: string,
 ): { campaignId: string; snapshot: CampaignSnapshot } | null {
-  if (!row.campaign_id || !/^\\d{6,}$/.test(row.campaign_id)) throw new Error("Invalid Meta campaign identifier");
+  if (!row.campaign_id || !/^\d{6,}$/.test(row.campaign_id)) throw new Error("Invalid Meta campaign identifier");
   if (!CAMPAIGN_NAME.test(row.campaign_name ?? "")) return null;
   const { purchases, revenue } = purchaseValue(row);
   const dayStart = row.date_start ?? "";
@@ -97,9 +97,9 @@ export async function fetchMetaReadOnlyInsights(
   periodEnd: string,
   transport: typeof fetch = fetch,
 ): Promise<MetaInsightRow[]> {
-  if (!/^act_\\d{6,}$/.test(accountId)) throw new Error("Meta account allowlist is invalid.");
+  if (!/^act_\d{6,}$/.test(accountId)) throw new Error("Meta account allowlist is invalid.");
   if (!readToken || readToken.length < 16) throw new Error("Meta read-only credential is unavailable.");
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(periodStart) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(periodEnd) || periodEnd < periodStart) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart) || !/^\d{4}-\d{2}-\d{2}$/.test(periodEnd) || periodEnd < periodStart) {
     throw new Error("Invalid date window.");
   }
   // No untrusted URL, account selection, fields or endpoint can reach this function.
