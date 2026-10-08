@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { simulateCampaign } from "@/lib/marketing-operator/engine";
 import { MARKETING_OPERATOR_POLICY } from "@/lib/marketing-operator/safety";
 import type { CampaignSnapshot, DryRunReport } from "@/lib/marketing-operator/contracts";
+import { MetaReadOnlyPanel } from "./meta-panel";
 
 const percent = (value: number | null) => value === null ? "Not available" : (value * 100).toFixed(2) + "%";
 const money = (value: number | null) => value === null ? "Not available" : "RM" + value.toFixed(2);
@@ -13,6 +14,16 @@ export function OperatorConsole() {
   const [report, setReport] = useState<DryRunReport | null>(null);
   const [error, setError] = useState("");
   const [copyResult, setCopyResult] = useState("");
+
+  function useImportedSnapshot(snapshot: CampaignSnapshot) {
+    try {
+      setReport(simulateCampaign(snapshot));
+      setError("");
+      setCopyResult("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Invalid provider data.");
+    }
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -66,6 +77,8 @@ export function OperatorConsole() {
   }
 
   return (
+<>
+    <MetaReadOnlyPanel onUse={useImportedSnapshot} />
     <div className="operator-layout">
       <section className="panel">
         <p className="label">01 · READ-ONLY EVIDENCE</p>
