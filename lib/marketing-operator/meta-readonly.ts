@@ -1,4 +1,4 @@
-import { validateSnapshot } from "./engine";
+import { validateSnapshot } from "./engine.ts";
 import type { CampaignSnapshot } from "./contracts";
 
 /** Meta retrieval is GET-only. Do not add POST/PATCH/DELETE to this module. */
@@ -136,6 +136,7 @@ export async function fetchMetaReadOnlyInsights(
     if (next.origin !== "https://graph.facebook.com" || next.pathname !== url.pathname) {
       throw new Error("Unexpected pagination destination from Meta.");
     }
+    next.searchParams.delete("access_token");
     url.search = next.search;
   }
   throw new Error("Meta result page cap reached. Narrow the query.");
