@@ -19,7 +19,7 @@ export async function POST(req:NextRequest,{params}:Context){
  const {data:current,error:readError}=await auth.supabase.from("bci_campaign_plans").select("*").eq("id",id).single();
  if(readError||!current)return forbidden("Plan not found.",404);
  const plan=current as ApprovedPlan & {status:string};
- const action=payload.action;
+ const action=payload.action as Action;
 
  if(action==="approve"){
   if(plan.status!=="DRAFT")return forbidden("Only unapproved drafts can be authorized.",409);
