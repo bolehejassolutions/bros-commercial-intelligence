@@ -30,7 +30,7 @@ export function validateApprovedPlan(plan:ApprovedPlan,portfolioCapMYR:number,at
  const cap=Number(plan.budget_cap_myr);
  if(plan.account_id!==FIXED_META_ACCOUNT)throw new Error("Unapproved ad account.");
  if(plan.objective!=="TRAFFIC"&&plan.objective!=="SALES")throw new Error("Invalid objective.");
- if(!Number.isFinite(cap)||cap<5||cap>portfolioCapMYR||Math.round(cap*100)!==cap*100)
+ if(!Number.isFinite(cap)||cap<5||cap>portfolioCapMYR||Math.abs(Math.round(cap*100)-cap*100)>1e-7)
    throw new Error("Plan lifetime budget exceeds fixed portfolio authority.");
  if(!Number.isInteger(plan.duration_days)||plan.duration_days<1||plan.duration_days>30)
    throw new Error("Invalid flight duration.");
