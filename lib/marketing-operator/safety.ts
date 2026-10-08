@@ -1,9 +1,9 @@
 /**
  * Deliberately immutable execution policy.
- * The current application has no Meta Marketing API write adapter.
- * A future live implementation requires a separate reviewed change and
- * independent operator approval; environment variables and user input
- * cannot enable writes in this release.
+ * This specific legacy analytics/simulation lane cannot mutate Meta.
+ * Campaign Studio has a SEPARATE write adapter gated by provider credentials,
+ * fixed deployment financial caps and per-plan authorizations.
+ * No UI or environment setting can turn THIS analysis function into a write path.
  */
 export const MARKETING_OPERATOR_POLICY = Object.freeze({
   market: "MY" as const,
