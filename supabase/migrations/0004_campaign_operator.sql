@@ -110,8 +110,10 @@ begin
  if not public.is_bci_admin() then raise exception 'Administrator permission required'; end if;
  select * into p from public.bci_campaign_plans where id=p_id for update;
  if not found then raise exception 'Plan not found'; end if;
- if p.authorization_expires_at is null or p.authorization_expires_at <= now()
-   then raise exception 'Budget approval expired; create a fresh plan'; end if;
+ if p_action != 'PAUSE' and
+   (p.authorization_expires_at is null or p.authorization_expires_at <= now()) then
+   raise exception 'Budget approval expired; create a fresh plan';
+ end if;
  if p_action='STAGE' and p.status='APPROVED' and p.meta_campaign_id is null then
    new_status:='STAGING';
  elsif p_action='ACTIVATE' and p.status='STAGED' and
