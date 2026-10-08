@@ -17,8 +17,15 @@ async function getOperator() {
   return { supabase, user };
 }
 
-function isoDay(date: Date) {
-  return date.toISOString().slice(0, 10);
+function malaysiaYesterday() {
+  // Meta reporting follows the ad account's Asia/Kuala_Lumpur timezone,
+  // not UTC or the requester's device timezone.
+  const date = new Date(Date.now() - 86400000);
+  const pieces = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(date);
+  const part = (kind: string) => pieces.find(item => item.type === kind)?.value ?? "";
+  return [part("year"), part("month"), part("day")].join("-");
 }
 
 export async function GET() {
@@ -42,8 +49,7 @@ export async function POST(request: NextRequest) {
   if (!token) return NextResponse.json({ error: "Meta read-only token is not configured. No provider request was made." }, { status: 503, headers: cacheHeaders });
 
   // Single fixed account; yesterday only, max 3 pages. No ad mutations or spend.
-  const yesterday = new Date(Date.now() - 86400000);
-  const day = isoDay(yesterday);
+  const day = malaysiaYesterday();
   let rows;
   try {
     rows = await fetchMetaReadOnlyInsights(allowedAccountId, token, day, day);
