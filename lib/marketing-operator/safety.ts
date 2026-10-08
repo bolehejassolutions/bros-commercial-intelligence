@@ -23,9 +23,11 @@ export type ExternalMutation =
   | "modify_audience";
 
 export class ExternalMutationBlocked extends Error {
-  constructor(public readonly operation: ExternalMutation) {
+  public readonly operation: ExternalMutation;
+  constructor(operation: ExternalMutation) {
     super("DRY_RUN: external mutation blocked (" + operation + "). Explicit approval and a separate release are required.");
     this.name = "ExternalMutationBlocked";
+    this.operation = operation;
   }
 }
 
