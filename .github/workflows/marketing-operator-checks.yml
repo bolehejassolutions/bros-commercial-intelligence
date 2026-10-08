@@ -1,0 +1,29 @@
+name: Marketing Operator Dry-Run Checks
+on:
+  pull_request:
+    paths:
+      - "lib/marketing-operator/**"
+      - "app/operator/**"
+      - "tests/marketing-operator.test.mjs"
+      - ".github/workflows/marketing-operator-checks.yml"
+      - "package.json"
+  push:
+    branches:
+      - "feat/marketing-operator-dry-run"
+permissions:
+  contents: read
+jobs:
+  dry-run-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test fail-closed dry-run engine
+        run: node --experimental-strip-types --test tests/marketing-operator.test.mjs
+      - name: Type-check and production-build
+        run: |
+          npm install --no-audit --no-fund
+          npx tsc --noEmit
+          npm run build

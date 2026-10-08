@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { createCase, logout } from "@/app/actions";
+import { createCase } from "@/app/actions";
+import { logout } from "@/app/login/actions";
 
 const stages = ["Evidence","Signal","Case","Diagnosis","Decision","Action","Outcome","Learning"];
 
@@ -14,7 +15,7 @@ export default async function Home() {
     <main className="shell">
       <header className="header">
         <div><p className="eyebrow">BROS INTERNAL APPLICATION</p><h1>Commercial Intelligence</h1><p className="sub">Evidence → Signal → Case → Diagnosis → Decision → Action → Outcome → Learning.</p></div>
-        <div className="header-actions"><span className="badge">INTERNAL</span><form action={logout}><button className="ghost">Sign out</button></form></div>
+        <div className="header-actions"><Link href="/operator" className="badge">AI Marketing Operator</Link><span className="badge">INTERNAL</span><form action={logout}><button className="ghost">Sign out</button></form></div>
       </header>
       <section className="loop" aria-label="Intelligence loop">{stages.map((stage, index) => <div className="stage" key={stage}><span>{String(index + 1).padStart(2, "0")}</span><strong>{stage}</strong></div>)}</section>
       <section className="grid">
