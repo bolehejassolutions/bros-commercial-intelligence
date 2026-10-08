@@ -20,7 +20,7 @@ Status: **full campaign workflow implemented; external provider activation PENDI
 3. **Campaign records:** isolated BCI Supabase schema, RLS, admin checks; draft-only insertion, no authenticated direct access to finance/state fields.
 4. **Spending authorization:** one approved campaign at a time; admin must type exact `AUTHORIZE RMxx.xx` to grant that campaign a fixed 1–30 day lifetime budget. Approval expires after 24 hours. No unlimited authority.
 5. **Staging:** atomic SQL state claim, create Meta campaign, adset, creative and ad with `PAUSED` status. IDs recorded step by step. Partial failures mark reconciliation required, never silently repeat writes.
-6. **Launch:** distinct exact `ACTIVATE RMxx.xx` confirmation. Activate ad, then ad set, then parent campaign last, so delivery stays paused during preparation. If final DB commit fails, attempt emergency Meta pause. No scheduled unlimited launch.
+6. **Launch:** distinct exact `ACTIVATE RMxx.xx` confirmation. Before activation, read-only Meta account inventory must confirm no other enabled campaigns. Activate ad, then ad set, then parent campaign last, so delivery stays paused during preparation. If final DB commit fails, attempt emergency Meta pause. No scheduled unlimited launch.
 7. **Emergency stop:** admin may pause active campaign, including after the approval window expires.
 8. **Budget guard:** optional once-per-day Vercel Cron at 08:00 Malaysia reads prior reporting day; where complete credentials are configured, monitor lifetime spend and pause active campaign at >=95% of approved cap; NEVER increase bids, adsets, budgets or audiences.
 9. **Evidence:** operator already accepts actual Meta insights and diagnoses based on traceable rows, with unknown conversions preserved as null.
@@ -44,6 +44,8 @@ Server-only Vercel environment variables:
 | `BCI_SUPABASE_SERVICE_KEY` | Cron-only server-side DB connection; keep private | No |
 
 Setting Meta and backend service keys requires credential access to the actual user-owned accounts. Do not paste credentials into chat or GitHub.
+
+**Account-spend limitation:** `META_OPERATOR_PORTFOLIO_CAP_MYR` bounds the BCI-managed plan's lifetime budget, but is **not** a hard Meta account-wide cap. Existing campaigns or independent changes outside BCI may spend separately. The system now fails closed on activation if any other campaign is ACTIVE during inventory preflight. For a true account-wide financial ceiling, set and verify Meta Ads Manager's own account spending controls. Provider inventory may change after preflight; absolute limits require Meta-side enforcement.
 
 ### Activation checklist
 
