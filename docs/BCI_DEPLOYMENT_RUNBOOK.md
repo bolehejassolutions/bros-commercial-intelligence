@@ -1,6 +1,20 @@
 # BCI isolated deployment & Meta read-only onboarding
 
-Status: **source implementation ready; separate Supabase project not yet provisioned; provider credential not yet configured.** These are explicit activation gates. Never describe unscheduled manual ingestion as an autonomous live monitor.
+Status (2026-10-09 MY): **dedicated Supabase project created; schema deployed; Vercel preview and production builds READY behind SSO.** Operator enrollment and Meta ads_read token are **not** configured. Manual ingestion remains inactive. Never describe unscheduled manual ingestion as an autonomous live monitor.
+
+## Verified infrastructure state (9 October 2026)
+
+- Supabase: **BROS Commercial Intelligence** / `guviwsclpiiqepctedsq` / Singapore (`ap-southeast-1`) / `ACTIVE_HEALTHY`. New project cost confirmation: 0/month on the existing Free organization; this does not imply future usage cannot incur costs on a changed plan.
+- Migrations applied: `bci_core_initial_schema` (source `0001_bci_core.sql`), `bci_operator_members_and_meta_snapshots` (source `0003_bci_operator_members_and_meta_snapshots.sql`). **Legacy `0002` not applied.**
+- All 13 BCI public tables have row-level security enabled and deny anonymous SELECT. `bci_operator_members` has no client policies/grants intentionally; the membership checker is a limited authenticated boolean `SECURITY DEFINER` RPC.
+- Supabase Auth BCI operators: **0 enrolled** at verification. Meta snapshots: **0 stored**.
+- Vercel: `bros-commercial-intelligence` / project ID `prj_kawa3Vo7voUzAFdSfR8DWbHXy8Nw`. Team SSO protection: **all deployments**.
+- Vercel `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: configured across production, preview, development; the key is encrypted in Vercel. No service-role credential provisioned.
+- Protected production build `dpl_9LMLqpbKbKzTXT9iaAehtK9CXfF5`: `READY`, app code commit `09eece43319069fef36d3f13ca70eec9817d334f`. Protected preview `dpl_AA3kxk1Tz4b3eBjyMog5LtvDzfDu`: `READY`.
+- CI on read-only integration: 15 automated tests passed, TypeScript and Next.js production build passed.
+- **Not yet verified:** interactive sign-in with an actual BCI operator, private Meta data refresh, settled-order reconciliation. There is no scheduled ingestion or Meta write integration.
+- Provider token `META_ADS_READ_TOKEN`: **not set**. Do not reuse third-party ChatGPT connector sessions/tokens as standalone server credentials.
+
 
 ## Boundary
 
@@ -19,6 +33,8 @@ Status: **source implementation ready; separate Supabase project not yet provisi
 2. `0003_bci_operator_members_and_meta_snapshots.sql`
 
 The second migration creates a verified-operator ACL, replaces all core RLS policies, and creates the Meta snapshot table with RLS. The public RPC `is_bci_operator()` returns only whether the logged-in user is a verified member.
+
+**Applied to the isolated project.** This list is a reproducible baseline for new installations, not instructions to re-run it in production.
 
 ### Membership enrollment
 
