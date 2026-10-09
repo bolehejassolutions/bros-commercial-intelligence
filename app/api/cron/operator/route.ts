@@ -4,6 +4,7 @@ import {timingSafeEqual} from "node:crypto";
 import {FIXED_META_ACCOUNT} from "@/lib/marketing-operator/meta-write";
 import {malaysiaDate,pauseOnlyWhenAtCap} from "@/lib/marketing-operator/monitor";
 import {fetchMetaReadOnlyInsights,normalizeMetaInsight} from "@/lib/marketing-operator/meta-readonly";
+import {requireVerifiedMetaCredential} from "@/lib/marketing-operator/meta-connection";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -30,7 +31,10 @@ export async function GET(req:NextRequest){
  const now=new Date();
  const day=malaysiaDate(new Date(now.getTime()-86400000));
  let rows;
- try{rows=await fetchMetaReadOnlyInsights(FIXED_META_ACCOUNT,readToken,day,day);}
+ try{
+  await requireVerifiedMetaCredential("read");
+  rows=await fetchMetaReadOnlyInsights(FIXED_META_ACCOUNT,readToken,day,day);
+ }
  catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Meta read failed"},{status:502,headers:NO_CACHE});}
  const mapped=[];
  try{

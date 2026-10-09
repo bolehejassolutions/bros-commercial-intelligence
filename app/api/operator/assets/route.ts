@@ -1,6 +1,7 @@
 import {NextRequest,NextResponse} from "next/server";
 import {adminSession,validOrigin,forbidden,NO_STORE} from "@/lib/marketing-operator/server-auth";
-import {FIXED_META_ACCOUNT,readWriteGate} from "@/lib/marketing-operator/meta-write";
+import {FIXED_META_ACCOUNT,readVerifiedWriteGate} from "@/lib/marketing-operator/meta-write";
+import {metaProviderRequest,metaProviderJson,safeMetaProviderCode} from "@/lib/marketing-operator/meta-provider";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -9,7 +10,7 @@ export async function POST(req:NextRequest){
  const auth=await adminSession();
  if(!auth)return forbidden();
  let token:string;
- try{token=readWriteGate().token;}
+ try{token=(await readVerifiedWriteGate()).token;}
  catch(e){return forbidden(e instanceof Error?e.message:"Media upload locked.",423);}
  let file:FormDataEntryValue|null;
  try{
@@ -27,12 +28,12 @@ export async function POST(req:NextRequest){
  const outbound=new FormData();
  outbound.set("filename",new Blob([bytes],{type:file.type}),file.type==="image/png"?"bros-approved.png":"bros-approved.jpg");
  try{
-  const response=await fetch("https://graph.facebook.com/v24.0/"+FIXED_META_ACCOUNT+"/adimages",{
+  const response=await metaProviderRequest("https://graph.facebook.com/v24.0/"+FIXED_META_ACCOUNT+"/adimages",{
    method:"POST",headers:{Authorization:"Bearer "+token},
    body:outbound,cache:"no-store",signal:AbortSignal.timeout(20000),
   });
-  const result=await response.json() as {images?:Record<string,{hash?:string}>;error?:{code?:number}};
-  if(!response.ok||result.error)return forbidden("Meta rejected the image upload (code "+(result.error?.code??response.status)+").",502);
+  const result=await metaProviderJson(response) as {images?:Record<string,{hash?:string}>;error?:{code?:number}};
+  if(!response.ok||result.error)return forbidden("Meta rejected the image upload (code "+safeMetaProviderCode(result.error?.code,response.status)+").",502);
   const hash=Object.values(result.images??{})[0]?.hash;
   if(!hash||!/^[a-f0-9]{32}$/i.test(hash))return forbidden("Meta did not return a verified image hash.",502);
   return NextResponse.json({imageHash:hash,source:"Meta Ads image library",accountId:FIXED_META_ACCOUNT},{headers:NO_STORE});

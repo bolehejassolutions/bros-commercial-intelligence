@@ -1,6 +1,6 @@
 # BCI isolated deployment & Meta read-only onboarding
 
-Status (2026-10-09 MY): **dedicated Supabase project created; schema deployed; Vercel preview and production builds READY behind SSO.** Operator enrollment and Meta ads_read token are **not** configured. Manual ingestion remains inactive. Never describe unscheduled manual ingestion as an autonomous live monitor.
+Status (2026-10-09 MY): **dedicated Supabase project created; schema deployed; Vercel preview and production builds READY behind SSO.** This runbook records the earlier read-only phase. The later Campaign Studio source is described in [CAMPAIGN_STUDIO_RELEASE.md](CAMPAIGN_STUDIO_RELEASE.md). Current continuation: first-pilot cap RM100 is recorded in Vercel; Meta app selection and server credentials remain pending. Local credential preflight is documented in [META_DEVELOPER_CONNECTION.md](META_DEVELOPER_CONNECTION.md), and has not been deployed by this continuation. Manual ingestion remains inactive until live credentials and the protected operator flow pass verification.
 
 ## Verified infrastructure state (9 October 2026)
 
@@ -58,6 +58,7 @@ Set via the Vercel dashboard / encrypted environment store, never in source:
 - `NEXT_PUBLIC_SUPABASE_URL` — API URL of the dedicated BCI Supabase instance.
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — publishable key of that same instance.
 - `META_ADS_READ_TOKEN` — *server-only* Meta Graph API access token with minimal ads_read access to the approved account. **Do not configure it until the credential source, issuance and revocation path have been verified.**
+- `META_APP_ID` and `META_APP_SECRET` — private configuration for the verified existing Meta app and server-side token introspection. Never guess the app from its name or paste its secret into chat. The local preflight also verifies its business link.
 - `NODE_ENV` — provided automatically.
 
 The Meta token is never exposed by Next.js to the browser. No service-role key or Meta write scope is required for manual read-only ingestion.
