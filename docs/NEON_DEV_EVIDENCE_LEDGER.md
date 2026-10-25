@@ -1,7 +1,8 @@
 # Neon BCI development ledger — internal-only prototype
 
-**Status:** schema deployed to **development Neon only**, not connected to Vercel or customer applications. **No live providers, public APIs, spending permissions or customer records.**  
-**Date:** 2026-10-25 (MYT).  
+**Current status (26 Oct 2026):** Development-only Neon ledger is connected to a **protected Vercel Preview**, not Production. The authenticated private API and operator OTP sign-in page are deployed at commit `2eca48789e688b02acc4b21fc9963c89f36f3169`; Preview is READY, and both restricted direct LOGIN connections were verified. **Real operator email verification / provider-issued JWT / authenticated end-to-end HTTP tests are still pending owner OTP.** Exactly two internal CONTENT/DEMAND memberships exist; neither is proof of login. No customer SaaS access, live provider ingestion, Meta spending/writes or publishing is enabled by this Preview. Older entries below are historical snapshots and must not be used as the latest operational status.  
+**Checkpoint:** `BCI_NEON_PRIVATE_PREVIEW_20261026` — [Issue #11](https://github.com/bolehejassolutions/bros-commercial-intelligence/issues/11) / [Draft PR #10](https://github.com/bolehejassolutions/bros-commercial-intelligence/pull/10) / [protected sign-in](https://bros-commercial-intelligence-fta0x4ma0-bolehejassolutions-8492.vercel.app/internal/neon-preview).  
+**Initial schema date:** 2026-10-25 (MYT).  
 **Authoritative product boundary:** [BROS shared intelligence contract](./PORTFOLIO_SHARED_INTELLIGENCE_CONTRACT.md) and [Primary Google Drive portfolio decision](https://docs.google.com/document/d/1AmnN8agBGkMNCVMzQ6esJ1neWtKVuvqBa-F_j3U7rGM/edit).
 
 ## Deployment inventory (no secrets)
@@ -53,7 +54,7 @@ After `SET LOCAL ROLE bci_dev_runtime`:
 
 **Security boundary limitation — MUST NOT IGNORE:** `bci.tenant_id` is an ordinary session setting and can be modified by a connected SQL client. This test shows that RLS policies honor a requested scope, **not** that the scope was authenticated. The NOLOGIN role is only a test harness. BROS admin credentials bypass RLS and must never be shipped to browser/customer backends. A public SaaS requires independently authenticated identity, verified per-tenant membership enforced by a trusted server, independent least-privileged login, cross-tenant negative integration tests and security review.
 
-## Next safe steps (not executed)
+## Historical next steps from 25 Oct (superseded by the 26 Oct protected Preview)
 
 - Add a private server-side adapter on a **preview-only branch**; ensure the caller never supplies an unchecked tenant id; forbid client SQL access. Keep development metadata separate from production Vercel environment variables.
 - Establish a strict service-account and tenant-auth design, deploy to preview, and repeat isolation tests through the actual API (not only SQL GUC).
