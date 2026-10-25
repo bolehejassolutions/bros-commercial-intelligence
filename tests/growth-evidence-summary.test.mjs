@@ -7,8 +7,11 @@ const otherTenant = "22222222-2222-4222-8222-222222222222";
 const scope = { tenantId, product: "demand", windowStart: "2026-10-01T00:00:00Z", windowEnd: "2026-10-08T00:00:00Z" };
 let i = 0;
 function record(kind, provider, extras = {}) {
-  return { evidenceId: `e-${++i}`, providerRecordId: `p-${i}`, ...scope, kind, provider,
-    environment: "live", verification: "verified", ...extras };
+  const seq = ++i;
+  return { evidenceId: `e-${seq}`, providerRecordId: `p-${seq}`, ...scope, kind, provider,
+    environment: "live", verification: "verified",
+    ...(kind === "settled_order" ? { settlementReference: `payout-${seq}` } : {}),
+    ...extras };
 }
 const error = /invalid or inconsistent BCI growth evidence/i;
 
@@ -87,4 +90,42 @@ test("content and demand share same summarizer but cannot mix product records", 
   const row = record("qualified_lead_count", "manual", { product: "content", count: 2 });
   assert.equal(summarizeGrowthEvidence(contentScope, [row]).qualifiedLeads, 2);
   assert.throws(() => summarizeGrowthEvidence(scope, [row]), error);
+});
+
+test("succeeded paid HitPay charge with unknown payout is not a settled sale", () => {
+  const paid = record("paid_order", "hitpay", { amountMinor: 5000, currency: "MYR" });
+  const summary = summarizeGrowthEvidence(scope, [paid]);
+  assert.equal(summary.paidOrders, 1);
+  assert.equal(summary.grossPaidRevenueMinor, 5000);
+  assert.equal(summary.settledOrders, null);
+  assert.equal(summary.grossSettledRevenueMinor, null);
+  assert.equal(summary.observedOrdersPerQualifiedVisit, null);
+  assert.equal(summary.cpaMinor, null);
+});
+
+test("settled HitPay order requires trusted payout reference and keeps paid/settled separate", () => {
+  const paid = record("paid_order", "hitpay", { amountMinor: 5000, currency: "MYR" });
+  const settled = record("settled_order", "hitpay", {
+    providerRecordId: paid.providerRecordId, amountMinor: 5000, currency: "MYR",
+    settlementReference: "provider-payout-verified-123",
+  });
+  const result = summarizeGrowthEvidence(scope, [paid, settled]);
+  assert.equal(result.paidOrders, 1);
+  assert.equal(result.settledOrders, 1);
+  assert.equal(result.grossPaidRevenueMinor, 5000);
+  assert.equal(result.grossSettledRevenueMinor, 5000);
+  assert.throws(() => summarizeGrowthEvidence(scope, [{ ...settled, settlementReference: undefined }]), error);
+  assert.throws(() => summarizeGrowthEvidence(scope, [{ ...settled, settlementReference: " " }]), error);
+  assert.throws(() => summarizeGrowthEvidence(scope, [{ ...paid, settlementReference: "not-a-payout" }]), error);
+});
+
+test("test-mode and unverified paid orders cannot become live paid revenue", () => {
+  const rows = [
+    record("paid_order", "hitpay", { amountMinor: 5000, currency: "MYR", environment: "test" }),
+    record("paid_order", "hitpay", { amountMinor: 5000, currency: "MYR", verification: "unverified" }),
+  ];
+  const summary = summarizeGrowthEvidence(scope, rows);
+  assert.equal(summary.paidOrders, null);
+  assert.equal(summary.grossPaidRevenueMinor, null);
+  assert.equal(summary.excludedTestOrUnverified, 2);
 });
