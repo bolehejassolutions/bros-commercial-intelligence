@@ -175,3 +175,14 @@ No provider writes, posting, paid spending, production deployment, customer acce
 - **No queue/post mutation** performed. Existing scheduled post is **NOT SENT**, `sentAt=null`; do not count it as success. The approved publisher workflow should revalidate media MIME/bytes before publishing or replacing assets, without changing schedules/approval automatically.
 
 This is actual image decoding and metadata diagnosis for one affected internal post, **not universal CONTENT media QA completion**.
+
+## Growth evidence identity and payment-consistency guard — 25 Oct 2026
+
+**Checkpoint ID:** `BCI_GROWTH_EVIDENCE_IDENTITY_AND_SETTLEMENT_CONSISTENCY_20261025`. **Scope:** Draft PR #10 only; no live ingestion, credentials, provider mutation, public endpoint or production changes.
+
+- The shared `growth-evidence-summary.ts` now rejects reuse of the same `evidenceId` for two different provider facts. Identical provider-fact replay remains idempotent; a conflicting replay still fails closed.
+- If independently verified **live** paid and settled HitPay records identify the **same provider order**, contradictory MYR amounts now fail closed. Settled-only evidence remains possible when a trusted adapter independently attests it. This consistency rule does **not** itself verify a payout, refund, product identity or customer entitlement.
+- Two offline negative/positive regression tests were added. Code commit `d35b4b6c2fdc1b27e8d79dca89f5aa431c20c3a6`; test commit `1bda116213269c9a46325243d74157f5e585a5fa`. CI must be checked independently before claiming PASS.
+- Fresh read-only Neon dev verification: `bci_dev_private_reader` has LOGIN but no password and NOBYPASSRLS; `bci_dev_runtime` is NOLOGIN; `bci_dev.tenant_memberships` contains **0** authoritative memberships. Therefore real restricted direct login and authenticated tenant/product API isolation remain **UNPROVEN**.
+- No BROS CONTENT SENT/measurement or BROS DEMAND verified experiment is established by these code tests. No BROS LABS work started.
+
