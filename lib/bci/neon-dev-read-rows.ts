@@ -10,7 +10,7 @@ import {
   PrivateEvidenceAccessDenied,
   type BciProduct,
   type EvidenceRow,
-} from "./private-evidence-boundary";
+} from "./private-evidence-boundary.ts";
 
 type SqlValue = string | number | boolean | null;
 type SqlResult = Readonly<{ rows: readonly unknown[] }>;
