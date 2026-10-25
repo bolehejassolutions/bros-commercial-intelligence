@@ -145,3 +145,21 @@ Checkpoint: `BCI_GROWTH_EVIDENCE_SUMMARY_20261025`. **Code and offline tests onl
 - The result deliberately marks **environment, product attribution, refund, payout settlement, digital entitlement and acquisition attribution all UNVERIFIED**. HitPay's order fulfilment label is NOT independent proof of BROS SELL entitlement. No actual provider data or personal identifiers are stored in tests or code. This module MUST NOT promote observations into verified live paid/settled BCI GrowthEvidence without further trusted checks.
 - Real read-only provider comparison (1–25 Oct 2026): one order and linked succeeded charge, both **MYR 50.00**, with order completed/paid/fulfilled and charge payout=null; the pair's fields match. **Product identity, sandbox/live status, actual settlement and digital entitlement remain unverified.** Do not label this BROS SELL RM100 revenue.
 - Local Node 22 strip-types tests: **6/6 PASS**; standalone strict TypeScript compile: **PASS**. GitHub CI for latest commit must be checked separately before calling it passed. No changes to Neon roles, migrations, production, payment/entitlement, pricing, ads or publishing.
+
+
+## 25 October — private evidence response replay guard (BCI_PRIVATE_EVIDENCE_REPLAY_GUARD_20261025)
+
+**Status: VERIFIED DEV CODE + CI; NOT LIVE AUTHENTICATED PREVIEW.** In Draft PR #10, the private evidence boundary now rejects duplicate evidence UUIDs and duplicate (provider, provider_record_key) pairs in a single scoped response. This mirrors the Neon dev evidence table's unique constraints, preventing a buggy or replaying adapter from returning duplicate facts that downstream reporting could double-count. The entire response fails closed, rather than silently deduplicating or presenting partial data. Synthetic positive/negative tests were added, including a valid two-record response.
+
+- Code commit: `88064231a77098e157b7c33b133a9be4343ffc20`; test commit: `25b32e913de7976b16fff031ca0cf13eeedbc16a`.
+- GitHub Actions [40193011871](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40193011871): **SUCCESS** on test commit; dry-run-safety, TypeScript check and Next.js build completed successfully.
+- The private boundary still uses injected mocks. There is **no** authenticated principal provider, revocable authoritative tenant membership, restricted direct Neon LOGIN/password, or protected Preview HTTP integration. Issue #11 remains OPEN, PR #10 remains DRAFT.
+
+### BROS CONTENT provider observation (read-only, 25 October)
+
+- Buffer organisation's BROS SELL Facebook, Instagram and TikTok channels are connected. Provider returned **SENT** status and `sentAt` timestamps for 25 October 18:00 MYT example posts: Facebook `6add5154e4be8a4d8684af9a` (18:00:39 MYT), Instagram `6add51563d5b27036bad1734` (18:01:47 MYT), TikTok `6add51586887a2efc1e0d26a` (18:02:29 MYT). All include image asset metadata and descriptions. This is provider status evidence, **not independent byte-level media QA** or external platform URL verification.
+- Buffer aggregate analytics for 20 Oct 00:00 UTC–25 Oct 12:00 UTC: **41 posts, 17 reactions, 0 comments, 0 shares, 0.52% engagement rate**; metrics updated at 2026-10-25T10:01:43Z. These are observed social engagement metrics, **not qualified leads, conversions or sales**.
+- Buffer also returned a future Instagram post `6adca7ad0b5343d0708289d1` scheduled 26 Oct 01:00 UTC, with an existing **media specification error** field and `sentAt=null`. It is **NOT SENT** and must not be counted as successful. Existing queue and Full Publisher were not modified.
+- CONTENT INTERNAL V1 remains partial: independently decode/validate actual media bytes, resolve publisher media errors via its approved workflow, retain provider SENT references, connect channel measurement to learning, and distinguish BROS SELL internal instance from standalone product readiness.
+
+No provider writes, posting, paid spending, production deployment, customer access or credentials were changed.
