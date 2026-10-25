@@ -199,3 +199,13 @@ Actual Neon Free **read-only catalog query**, with privileges explicitly evaluat
 Regression tests were added for wrong database, missing RLS/FORCE, absent SELECT and accidental write/schema/membership privileges. GitHub commits: `bd11c4977dfea04477a00e5d72f337765d2bcf47`, `dc915edf63bec98ae079907854c9775867cd0028`. CI status must be verified separately for the final commit. No credentials, API routes, deployments, migrations, publishing, budgets, customer access, or production systems changed.
 
 **Hard blockers unchanged:** trusted signed principal, authoritative revocable per-product membership, secret provisioning for restricted direct login, Preview-only authenticated HTTP negative tests, and actual provider-to-outcome integration. Issue #11 stays OPEN; PR #10 stays DRAFT.
+
+
+## BCI_INTERNAL_LINEAGE_V1_20261025 — shared structural evidence lineage (25 Oct 2026)
+
+**Status: OFFLINE CODE + LOCAL TESTS; NOT LIVE PROVIDER, AUTHENTICATED API OR VERIFIED GROWTH OUTCOME.** Added `lib/bci/internal-lineage.ts` and `tests/internal-lineage.test.mjs` to Draft PR #10. This is a reusable, product-scoped BCI provenance graph for `evidence → signal → case → diagnosis → decision → action → outcome → learning`. It validates direct predecessor references, timestamp ordering, source-ID idempotency, cross-tenant/product isolation and rejects orphaned/skipped-stage links and conflicting replays. Structural ancestry must **never** be interpreted as actual publication, settled sale, execution evidence or causality.
+
+- Local Node 22 strip-types tests: **6/6 PASS**. Standalone strict TypeScript compile: **PASS**. GitHub source blob SHA verified against the locally tested bytes. GitHub CI on `d328a90601b547cb4826aeeb15a9753e53c09b07` must be checked independently before calling CI successful.
+- This module does not ingest real data, authorize users, read Neon, execute marketing actions or establish a completed DEMAND experiment. Verification labels are **trusted-adapter inputs**, not cryptographic attestation.
+- Security blockers remain: restricted direct Neon LOGIN still has PASSWORD NULL, authoritative tenant memberships count 0, Neon Auth not enabled, no server-only credential or authenticated Preview HTTP negative tests. Issue #11 OPEN, PR #10 DRAFT.
+- No changes to production, Neon role/password, Vercel, provider permissions, Meta spend, Buffer publishing, HitPay, pricing, entitlements or BROS LABS.
