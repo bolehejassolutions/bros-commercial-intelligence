@@ -117,3 +117,14 @@ Existing Supabase Auth/BCI operator RPC is not available as a verified customer-
 **Actual Neon SQL evidence:** In a transaction logged in as `BROS`, after `SET LOCAL ROLE bci_dev_private_reader`, PostgreSQL returned `current_user=bci_dev_private_reader`, `session_user=BROS`, `rolbypassrls=false`, `rolsuper=false`, `rolcanlogin=true`. The new guard would reject that session. No restricted direct password login was attempted or claimed.
 
 **CI:** [GitHub Actions run 40176301427](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40176301427) completed successfully on commit `575412dc9e2fc5fb40aff2b0e428eeb384958d5e` (dry-run safety, TypeScript and Next.js build). The role guard is still **not wired into an HTTP endpoint**; restricted role has `PASSWORD NULL`, and Issue #11 remains OPEN. Real direct login, cryptographic principal, authoritative revocable membership, Preview API negative tests and production approval remain separate gates.
+
+
+## 25 October — shared internal growth evidence summary (partial BCI/DEMAND/CONTENT)
+
+Checkpoint: `BCI_GROWTH_EVIDENCE_SUMMARY_20261025`. **Code and offline tests only; not live provider ingestion or authenticated Preview API.**
+
+- Added [`lib/bci/growth-evidence-summary.ts`](../lib/bci/growth-evidence-summary.ts), one reusable deterministic module for product-scoped CONTENT/DEMAND measurement. It validates exact tenant/product/reporting-window scope, provider-kind contracts, safe integer minor units (MYR), and idempotent provider record keys; rejects conflicting replays and cross-tenant/product evidence rather than silently filtering.
+- It separates **verified live settled HitPay orders** from **Meta platform-attributed Purchase events**, excludes sandbox/unverified records from verified totals, and preserves `null` (no verified denominator) distinct from zero. Gross settled receipts are not profit or refund-adjusted revenue. A visit-to-order ratio is observational only; `cpaMinor` stays `null` until verified cross-provider reconciliation establishes the appropriate numerator/denominator and campaign scope.
+- Added [`tests/growth-evidence-summary.test.mjs`](../tests/growth-evidence-summary.test.mjs) with 7 offline tests: settlement versus attributed events, sandbox exclusion, replay conflicts, missing denominators, tenant/product/window isolation, malformed/unsafe values, and shared code reuse. **Local Node 22 tests 7/7 PASS; strict TypeScript check PASS** before commit. GitHub CI and provider integration must be checked separately.
+- `verification: "verified"` is a **trusted adapter assertion**, not proof created by this module. No actual HitPay, Meta, GA4, Buffer or customer records have been ingested; no conversion lift, CPA or sales are claimed. The restricted Neon LOGIN, authoritative principal/membership, and authenticated Preview HTTP gates in Issue #11 remain open. No production, spend, publishing, credential or entitlement changes.
+
