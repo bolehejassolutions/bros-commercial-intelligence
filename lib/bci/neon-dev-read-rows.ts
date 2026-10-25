@@ -54,21 +54,29 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
       );
       if (response.rows.length > scope.limit) deny();
       return response.rows.map((value) => {
-        if (!isObject(value) || value.tenantId !== scope.tenantId ||
-            value.product !== scope.product || typeof value.id !== "string" ||
-            !UUID.test(value.id) || typeof value.provider !== "string" ||
-            typeof value.providerRecordKey !== "string" || !isObject(value.metrics)) deny();
+        if (!isObject(value)) throw new PrivateEvidenceAccessDenied();
+        if (value.tenantId !== scope.tenantId || value.product !== scope.product ||
+            typeof value.id !== "string" || !UUID.test(value.id) ||
+            typeof value.provider !== "string" ||
+            typeof value.providerRecordKey !== "string" || !isObject(value.metrics)) {
+          throw new PrivateEvidenceAccessDenied();
+        }
+        const id = value.id;
+        const provider = value.provider;
+        const providerRecordKey = value.providerRecordKey;
+        const rawMetrics = value.metrics;
         const metrics: Record<string, number | null> = {};
-        for (const [key, raw] of Object.entries(value.metrics)) {
-          if (raw !== null && (typeof raw !== "number" || !Number.isFinite(raw))) deny();
-          metrics[key] = raw;
+        for (const [key, raw] of Object.entries(rawMetrics)) {
+          if (raw === null) metrics[key] = null;
+          else if (typeof raw === "number" && Number.isFinite(raw)) metrics[key] = raw;
+          else throw new PrivateEvidenceAccessDenied();
         }
         return {
-          id: value.id,
-          tenantId: value.tenantId,
+          id,
+          tenantId: scope.tenantId,
           product: scope.product,
-          provider: value.provider,
-          providerRecordKey: value.providerRecordKey,
+          provider,
+          providerRecordKey,
           metrics,
         };
       });
