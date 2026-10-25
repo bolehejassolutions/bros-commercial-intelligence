@@ -37,7 +37,9 @@ test("bound parameters and same transaction; no interpolated tenant or product",
   assert.deepEqual(data, [fixture]);
   assert.equal(calls[0].sql, "TRANSACTION_BEGIN");
   assert.equal(calls.at(-1).sql, "TRANSACTION_COMMIT");
-  assert.deepEqual(calls[2].params, [A]);
+  assert.deepEqual(calls[2].params, [A, "demand"]);
+  assert.match(calls[2].sql, /set_config\('bci\.tenant_id', \$1::text, true\)/);
+  assert.match(calls[2].sql, /set_config\('bci\.product', \$2::text, true\)/);
   assert.deepEqual(calls[3].params, [A, "demand", 25]);
   assert.equal(calls[3].sql.includes("$1::uuid"), true);
   assert.equal(calls[3].sql.includes("$2::text"), true);
