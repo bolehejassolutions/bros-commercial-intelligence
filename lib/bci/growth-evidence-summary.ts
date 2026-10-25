@@ -3,9 +3,11 @@
  * Not an ingestion adapter, authorization boundary, or attribution engine.
  * Only trusted server-side adapters may mark evidence `verified`; a provider
  * event or test checkout must never be promoted to a settled HitPay sale.
+ * A succeeded HitPay charge is PAID, not SETTLED, until payout is evidenced.
  */
 export type GrowthProduct = "content" | "demand";
 export type GrowthKind =
+  | "paid_order"
   | "settled_order"
   | "platform_purchase_event"
   | "qualified_visit_count"
@@ -26,6 +28,8 @@ export type GrowthEvidence = Readonly<{
   count?: number;
   amountMinor?: number;
   currency?: "MYR";
+  /** Required for settled_order only: verified provider payout/settlement reference. */
+  settlementReference?: string;
 }>;
 export type GrowthScope = Readonly<{
   tenantId: string;
@@ -38,6 +42,8 @@ export type GrowthSummary = Readonly<{
   qualifiedVisits: number | null;
   qualifiedLeads: number | null;
   platformAttributedPurchaseEvents: number | null;
+  paidOrders: number | null;
+  grossPaidRevenueMinor: number | null;
   settledOrders: number | null;
   grossSettledRevenueMinor: number | null;
   verifiedAdSpendMinor: number | null;
@@ -50,6 +56,7 @@ export type GrowthSummary = Readonly<{
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 const allowedProviders: Readonly<Record<GrowthKind, readonly GrowthProvider[]>> = {
+  paid_order: ["hitpay"],
   settled_order: ["hitpay"],
   platform_purchase_event: ["meta_ads"],
   qualified_visit_count: ["ga4", "manual"],
@@ -70,6 +77,8 @@ const safeAdd = (a: number, b: number): number => {
 /**
  * Fail closed on mixed scopes, malformed records and conflicting source IDs.
  * Null means unobserved; a provider-confirmed zero-count record means zero.
+ * For settled_order a trusted adapter must provide a verified payout reference;
+ * the field is a required provenance contract, not independent proof of payout.
  * CPA deliberately remains null: same-window spend and orders alone do not
  * establish a reconciled acquisition denominator or campaign attribution.
  */
@@ -96,17 +105,22 @@ export function summarizeGrowthEvidence(
         !allowedProviders[item.kind]?.includes(item.provider) ||
         !["live", "test", "unknown"].includes(item.environment) ||
         !["verified", "unverified"].includes(item.verification)) fail();
-    const money = item.kind === "settled_order" || item.kind === "ad_spend";
+    const money = item.kind === "paid_order" || item.kind === "settled_order" || item.kind === "ad_spend";
     if (money) {
       if (!isAmount(item.amountMinor) || item.currency !== "MYR" || item.count !== undefined ||
-          (item.kind === "settled_order" && item.amountMinor === 0)) fail();
+          ((item.kind === "paid_order" || item.kind === "settled_order") && item.amountMinor === 0)) fail();
     } else if (!isAmount(item.count) || item.amountMinor !== undefined || item.currency !== undefined) fail();
+    if (item.kind === "settled_order") {
+      if (typeof item.settlementReference !== "string" ||
+          item.settlementReference.length < 1 || item.settlementReference.length > 256 ||
+          !/^[^\s]+$/.test(item.settlementReference)) fail();
+    } else if (item.settlementReference !== undefined) fail();
 
     const key = `${item.provider}:${item.kind}:${item.providerRecordId}`;
     const fingerprint = JSON.stringify([
       item.tenantId, item.product, item.provider, item.kind, item.environment,
       item.verification, item.windowStart, item.windowEnd, item.count ?? null,
-      item.amountMinor ?? null, item.currency ?? null,
+      item.amountMinor ?? null, item.currency ?? null, item.settlementReference ?? null,
     ]);
     if (unique.has(key)) {
       if (unique.get(key) !== fingerprint) fail();
@@ -118,18 +132,26 @@ export function summarizeGrowthEvidence(
       continue;
     }
     totals[item.kind] = safeAdd(totals[item.kind] ?? 0,
-      item.kind === "settled_order" ? 1 : money ? item.amountMinor! : item.count!);
+      item.kind === "paid_order" || item.kind === "settled_order" ? 1 : money ? item.amountMinor! : item.count!);
   }
-  let revenue: number | null = null;
-  const settledKeys = new Set<string>();
-  for (const item of evidence) {
-    if (item.kind !== "settled_order" || item.environment !== "live" ||
-        item.verification !== "verified") continue;
-    const key = `${item.provider}:${item.kind}:${item.providerRecordId}`;
-    if (settledKeys.has(key)) continue;
-    settledKeys.add(key);
-    revenue = safeAdd(revenue ?? 0, item.amountMinor!);
-  }
+  // Sum each verified order once per status. A paid charge is not a settled payout.
+  // The same provider order can appear in both categories only when settlement
+  // is independently attested by a trusted ingestion adapter.
+  const sumRevenue = (kind: "paid_order" | "settled_order"): number | null => {
+    let revenue: number | null = null;
+    const seen = new Set<string>();
+    for (const item of evidence) {
+      if (item.kind !== kind || item.environment !== "live" ||
+          item.verification !== "verified") continue;
+      const key = `${item.provider}:${item.kind}:${item.providerRecordId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      revenue = safeAdd(revenue ?? 0, item.amountMinor!);
+    }
+    return revenue;
+  };
+  const paidRevenue = sumRevenue("paid_order");
+  const settledRevenue = sumRevenue("settled_order");
   const visits = totals.qualified_visit_count ?? null;
   const orders = totals.settled_order ?? null;
   return Object.freeze({
@@ -137,8 +159,10 @@ export function summarizeGrowthEvidence(
     qualifiedVisits: visits,
     qualifiedLeads: totals.qualified_lead_count ?? null,
     platformAttributedPurchaseEvents: totals.platform_purchase_event ?? null,
+    paidOrders: totals.paid_order ?? null,
+    grossPaidRevenueMinor: paidRevenue,
     settledOrders: orders,
-    grossSettledRevenueMinor: revenue,
+    grossSettledRevenueMinor: settledRevenue,
     verifiedAdSpendMinor: totals.ad_spend ?? null,
     observedOrdersPerQualifiedVisit: visits !== null && visits > 0 && orders !== null
       ? orders / visits : null,
