@@ -56,3 +56,55 @@ test("rejects unsafe JWKS source before fetching", () => {
     assert.throws(() => verifier({ jwksUrl: url }), denied);
   }
 });
+
+const approvedOperator = { email: "rasymokh@gmail.com" };
+const operatorClaims = { email: "rasymokh@gmail.com", emailVerified: true, banned: false };
+
+test("approved operator policy accepts only signed verified owner claims and returns no email", async () => {
+  for (const alg of Object.keys(pairs)) {
+    assert.deepEqual(await verifier({ approvedOperator })(jwt(alg, operatorClaims)),
+      { userId: USER, authenticated: true });
+  }
+  assert.deepEqual(await verifier({ approvedOperator })(jwt("EdDSA", {
+    ...operatorClaims, banned: undefined,
+  })), { userId: USER, authenticated: true });
+});
+
+test("approved operator policy denies unverified, other, missing and banned identities", async () => {
+  for (const change of [{ email: "bolehejassolutions@gmail.com" },
+    { email: "rasymokh@gmail.com.attacker.test" }, { email: undefined },
+    { emailVerified: false }, { emailVerified: undefined }, { emailVerified: "true" },
+    { banned: true }, { banned: "false" }]) {
+    await assert.rejects(verifier({ approvedOperator })(jwt("EdDSA", {
+      ...operatorClaims, ...change,
+    })), denied);
+  }
+});
+
+test("approved operator policy rejects forged ownership even when claims look approved", async () => {
+  const parts = jwt("EdDSA", { ...operatorClaims, emailVerified: false }).split(".");
+  parts[1] = enc({ iss: ISSUER, aud: AUD, sub: USER, iat: NOW-20, exp: NOW+300,
+    ...operatorClaims });
+  await assert.rejects(verifier({ approvedOperator })(parts.join(".")), denied);
+});
+
+test("approved operator policy caps total JWT lifetime at 15 minutes and can tighten it", async () => {
+  const exactly15Minutes = { ...operatorClaims, iat: NOW-20, exp: NOW+880 };
+  await verifier({ approvedOperator })(jwt("EdDSA", exactly15Minutes));
+  await assert.rejects(verifier({ approvedOperator })(jwt("EdDSA", {
+    ...exactly15Minutes, exp: NOW+881,
+  })), denied);
+  await assert.rejects(verifier({ approvedOperator: { ...approvedOperator,
+    maxTokenLifetimeSeconds: 300 } })(jwt("EdDSA", operatorClaims)), denied);
+  // The policy is optional for generic verification callers.
+  await verifier()(jwt("EdDSA", { iat: NOW-20, exp: NOW+901 }));
+});
+
+test("approved operator policy rejects widened or malformed server policy", () => {
+  for (const policy of [null, {}, { email: "bolehejassolutions@gmail.com" },
+    { ...approvedOperator, maxTokenLifetimeSeconds: 901 },
+    { ...approvedOperator, maxTokenLifetimeSeconds: 0 },
+    { ...approvedOperator, maxTokenLifetimeSeconds: 1.5 }]) {
+    assert.throws(() => verifier({ approvedOperator: policy }), denied);
+  }
+});

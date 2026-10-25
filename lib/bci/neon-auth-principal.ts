@@ -14,6 +14,12 @@ export type NeonAuthVerifierConfig = Readonly<{
   issuer: string;
   audience: string;
   jwksUrl: string;
+  /** Internal Preview policy, configured by the server; never by a request. */
+  approvedOperator?: Readonly<{
+    email: "rasymokh@gmail.com";
+    /** Defaults to Managed Better Auth's 15-minute token lifetime; may only tighten it. */
+    maxTokenLifetimeSeconds?: number;
+  }>;
   fetchJwks?: (url: string) => Promise<unknown>;
   now?: () => number;
 }>;
@@ -39,6 +45,12 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
   if (!config || typeof config.issuer !== "string" || !config.issuer ||
       typeof config.audience !== "string" || !config.audience ||
       typeof config.jwksUrl !== "string") deny();
+  const operator = config.approvedOperator;
+  const maxOperatorLifetime = operator?.maxTokenLifetimeSeconds ?? 900;
+  if (operator !== undefined &&
+      (!record(operator) || operator.email !== "rasymokh@gmail.com" ||
+       !Number.isInteger(maxOperatorLifetime) ||
+       maxOperatorLifetime < 1 || maxOperatorLifetime > 900)) deny();
   let endpoint: URL;
   try { endpoint = new URL(config.jwksUrl); } catch { return deny(); }
   if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password ||
@@ -105,6 +117,13 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
             signature);
     } catch { return deny(); }
     if (!valid) deny();
+    // Authorize only signed claims. A Neon project admin or matching email
+    // without verified mailbox ownership is not an approved app identity.
+    // JWT validity ends at exp; this does not replace live session revocation.
+    if (operator && (payload.email !== operator.email ||
+        payload.emailVerified !== true ||
+        (payload.banned !== undefined && payload.banned !== false) ||
+        (payload.exp as number) - (payload.iat as number) > maxOperatorLifetime)) deny();
     return Object.freeze({ userId: verifiedSubject, authenticated: true });
   };
 }

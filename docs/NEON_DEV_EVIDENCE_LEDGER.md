@@ -209,3 +209,54 @@ Regression tests were added for wrong database, missing RLS/FORCE, absent SELECT
 - This module does not ingest real data, authorize users, read Neon, execute marketing actions or establish a completed DEMAND experiment. Verification labels are **trusted-adapter inputs**, not cryptographic attestation.
 - Security blockers remain: restricted direct Neon LOGIN still has PASSWORD NULL, authoritative tenant memberships count 0, Neon Auth not enabled, no server-only credential or authenticated Preview HTTP negative tests. Issue #11 OPEN, PR #10 DRAFT.
 - No changes to production, Neon role/password, Vercel, provider permissions, Meta spend, Buffer publishing, HitPay, pricing, entitlements or BROS LABS.
+
+## BCI_NEON_PRIVATE_PREVIEW_20261026 — restricted runtime and approved operator
+
+This checkpoint supersedes older statements above about password-disabled readers,
+an empty membership table, and the absence of an HTTP adapter. Production and all
+commercial/provider workflows remain outside this change.
+
+- Migration 0005 is present on the approved Neon Free development branch. Both
+  SQL-created reader roles now have independent passwords and remain LOGIN,
+  NOBYPASSRLS, non-superuser, with no schema creation privileges. Secrets were
+  generated server-side and saved only as Vercel sensitive variables targeted to
+  Preview and `feat/neon-bci-dev-ledger-20261025`; no owner/BROS credential is used.
+- Actual direct-password connections verified both `current_user` and
+  `session_user`. Each role was denied writes and reads of the other role's table.
+  Evidence returned zero rows without scope, one expected synthetic row with a
+  synthetic scope, and zero again after its transaction ended.
+- The sole approved existing Auth subject has exactly two active memberships,
+  CONTENT and DEMAND, in a fresh empty internal tenant. Enrollment SQL is in
+  `neon/dev/enroll_approved_internal_operator.sql`; it cannot create another Auth
+  user, set email verification, copy evidence, reactivate a revoked grant, or
+  change an existing tenant assignment. Membership is authorization, not identity.
+- `/api/internal/neon-evidence` composes signed JWT verification, the exact approved
+  verified email, fresh product membership, and a separate pinned read-only
+  evidence transaction. It requires Preview, the exact branch, and the enable
+  flag. Client tenant/user overrides, unsafe connections, data crossing a scope,
+  and all failures deny access. Responses are private/no-store and errors generic.
+- `/internal/neon-preview` provides official Neon SDK email OTP sign-in for the
+  approved account only. The user initiates code delivery and enters the code
+  directly in the page. The application never displays or logs JWTs or codes.
+  Only these two exact paths bypass the unrelated Supabase session proxy.
+- Local Node 24: **116/116 tests PASS** including the concurrent HTTP helper
+  commits; strict TypeScript PASS; Next.js build PASS for the runtime changes.
+  An independent security review found no material regression. Local Request/
+  Response tests with locally signed fixtures and real restricted Neon connections
+  returned 200 with zero evidence for each approved product, 403 for unverified
+  identity, 400 for a tenant override, and 401 without a token. These fixtures
+  **are not real Neon Auth tokens or a hosted authenticated success**.
+
+The provider still reports the approved email as unverified at this checkpoint.
+Neon's console explicitly states that restricted provider signup is not currently
+available. The protected Preview and signed verified sole-operator gate therefore
+remain mandatory; no public signup UI or customer access is enabled. A JWT can
+remain valid until its expiry after sign-out, while membership revocation is
+checked on every read. No immediate JWT revocation is claimed.
+
+Before closing Issue #11, verify the deployed exact commit and HTTP negative
+responses, then have the owner complete OTP sign-in and verify both protected
+product reads and session restoration/sign-out. Record current hosted evidence in
+Issue #11 and the canonical decision Doc. Keep PR #10 Draft and Issue #11 open
+until the provider-authenticated flow is actually proven. No Production, spend,
+publishing, other admin, customer, existing automation, or BROS LABS change.
