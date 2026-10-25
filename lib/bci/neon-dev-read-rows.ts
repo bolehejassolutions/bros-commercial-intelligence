@@ -41,9 +41,12 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
           role.rows[0].bypass_rls !== false) deny();
 
       // Scope is derived upstream from trusted membership, not request data.
-      // set_config(...,true) is transactional; never share the session with a
+      // set_config(...,true) binds tenant AND product transaction-locally; never share the session with a
       // second request or run this on an unpinned connection/pooled HTTP call.
-      await query("SELECT set_config('bci.tenant_id', $1::text, true) AS scope", [scope.tenantId]);
+      await query(
+        "SELECT set_config('bci.tenant_id', $1::text, true) AS tenant_scope, set_config('bci.product', $2::text, true) AS product_scope",
+        [scope.tenantId, scope.product]
+      );
       const response = await query(
         `SELECT id::text AS "id", tenant_id::text AS "tenantId", product, provider,
                 provider_record_key AS "providerRecordKey", metrics
