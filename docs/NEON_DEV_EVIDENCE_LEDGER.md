@@ -163,3 +163,15 @@ Checkpoint: `BCI_GROWTH_EVIDENCE_SUMMARY_20261025`. **Code and offline tests onl
 - CONTENT INTERNAL V1 remains partial: independently decode/validate actual media bytes, resolve publisher media errors via its approved workflow, retain provider SENT references, connect channel measurement to learning, and distinguish BROS SELL internal instance from standalone product readiness.
 
 No provider writes, posting, paid spending, production deployment, customer access or credentials were changed.
+
+
+### 25 October — real-byte QA of scheduled Instagram media (BCI_BUFFER_MEDIA_MIME_QA_20261025)
+
+**Actual source bytes inspected**, not only Buffer metadata. For scheduled IG post `6adca7ad0b5343d0708289d1` (26 Oct 01:00 UTC / 09:00 MYT), Buffer reports both attached assets as `image/jpeg`, while the two linked Primary Drive files are **PNG** (actual PNG file signature, MIME `image/png`). This format mismatch is a **plausible cause** of the existing Buffer media-specification error, not a proven sole cause.
+
+- Slide 1 Drive file `1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM`: PNG, 1080x1350 RGB, 1,751,408 bytes, Pillow full decode/verify PASS.
+- Slide 2 Drive file `1WZY8YTFz-bOStIixu6uuTgLeCNQ-nJ4d`: PNG, 1080x1350 RGB, 1,790,827 bytes, Pillow full decode/verify PASS.
+- Prepared **local repair-ready JPEG copies only**, 1080x1350 RGB, decoded/verified successfully. Slide 1 JPEG: 381,400 bytes, SHA256 `67f93dfa2769f454d2c2086db4075f0a652870dadfea786b44ecce2416c81c8b`. Slide 2 JPEG: 394,402 bytes, SHA256 `a5b94544435ecaa716908ceb0ea34dda1caf46a06f0d5357d05a3eb4956b1295`. These local copies are **not uploaded to Buffer or Primary Drive**.
+- **No queue/post mutation** performed. Existing scheduled post is **NOT SENT**, `sentAt=null`; do not count it as success. The approved publisher workflow should revalidate media MIME/bytes before publishing or replacing assets, without changing schedules/approval automatically.
+
+This is actual image decoding and metadata diagnosis for one affected internal post, **not universal CONTENT media QA completion**.
