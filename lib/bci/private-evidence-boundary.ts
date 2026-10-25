@@ -76,7 +76,8 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) denied();
 
     const principal = await deps.authenticate();
-    if (!principal || principal.authenticated !== true || !validUuid(principal.userId)) denied();
+    if (!principal) throw new PrivateEvidenceAccessDenied();
+    if (principal.authenticated !== true || !validUuid(principal.userId)) denied();
 
     const grants = await deps.membershipsFor(principal.userId, request.product);
     if (!Array.isArray(grants) || grants.length !== 1) denied();
