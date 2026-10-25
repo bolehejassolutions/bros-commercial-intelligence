@@ -272,3 +272,34 @@ publishing, other admin, customer, existing automation, or BROS LABS change.
 - Buffer **read-only** check for BROS SELL internal posts scheduled 25 Oct 21:00 MYT: Facebook `6add890e3d5b27036bb7b9c3` SENT 21:00:49, Instagram `6add89138b3d437ddcf0044e` SENT 21:02:15, TikTok `6add8918bd33ce99c3567297` SENT 21:02:33 (all MYT). Provider metrics at inspection: FB 1 impression / 0 clicks (updated 25 Oct 17:43 UTC); IG 5 views / 3 reach / 0 reactions (updated 25 Oct 15:34 UTC); TikTok 53 views / 1 reaction (updated 25 Oct 15:40 UTC). These are provider-reported status and metrics, **not** independent platform verification, byte-level QA of these three posts, qualified leads or sales. No Buffer queue or publishing mutation.
 - Fresh Neon read-only inspection: one Auth user, **zero email-verified**, two active product memberships. The protected Preview is still awaiting genuine owner OTP; CI/synthetic tests cannot close authenticated E2E Issue #11. Existing direct restricted-login proof is preserved from prior checkpoint.
 - **Open gates:** real provider-authenticated negative HTTP matrix, complete CONTENT per-post media QA/measurement-to-learning, DEMAND one actual approved experiment with verified outcome, BCI provider-backed reuse, and HitPay live/test/product/payout/entitlement attestation. No Production, spend, publishing, price, permissions, secrets, automation or BROS LABS changes.
+
+
+## BCI_CONTENT_SENT_MEDIA_BYTE_QA_20261026 — BROS SELL internal CONTENT, provider SENT + actual source media QA (26 Oct 2026)
+
+**Evidence level: source bytes VERIFIED, Buffer SENT/metrics PROVIDER-REPORTED, published platform media bytes NOT independently fetched.** Read-only Buffer get_post and Primary Google Drive binary fetch; Pillow full decode/verify/load plus visual contact-sheet review of **all five** source PNGs. No Buffer or publishing writes.
+
+- Facebook Buffer post `6add890e3d5b27036bb7b9c3`: `sent` 2026-10-25T13:00:49.633Z; 1 image 1080x1350; metrics 1 impression, 0 clicks (metricsUpdatedAt 2026-10-25T17:43:10Z).
+- Instagram Buffer post `6add89138b3d437ddcf0044e`: `sent` 2026-10-25T13:02:15.296Z; 2 images 1080x1350; metrics 5 views, 3 reach, 0 reactions (metricsUpdatedAt 2026-10-25T15:34:40Z).
+- TikTok Buffer post `6add8918bd33ce99c3567297`: `sent` 2026-10-25T13:02:33.103Z; 2 images 1080x1920; metrics 53 views, 1 reaction, average watch time 2.18 seconds (metricsUpdatedAt 2026-10-25T15:40:38Z). TikTok post metadata `isAiGenerated:false` conflicts with caption declaring AI illustrations: metadata-compliance review required; do not mutate historical post without approval.
+
+**Verified source-file manifest (SHA256; no personal data):**
+
+| Platform / source Drive file ID | Actual bytes | Size | Dimensions / mode | SHA256 |
+| --- | --- | ---: | --- | --- |
+| FB `1A01akLmfNGWdN0Ft_8qMAQafesXLgrnb` | PNG | 1,724,949 | 1080x1350 RGB | `871599d4b1951abbc8bc7a2a69ea3eece55379e9eaa0fe08f3c3150db375d439` |
+| IG 1 `1ou8iqBIx6kTNSUE_DqELRr5Cr6D8XUr2` | PNG | 1,677,129 | 1080x1350 RGB | `55cc5553e30efe58ca6266fe7f8c7dbf4794679020a38187c9d0833863572a33` |
+| IG 2 `1bK9blcHVOLfy8ShaQuL-crxuu1_GnWM6` | PNG | 1,675,755 | 1080x1350 RGB | `2fa67fca1077f3b3c977d6db83c4c819ae532c97682d8cd6200c5b476cb7709b` |
+| TikTok 1 `1FFsTmh6dH56JZPmxjTBrUyPG8d7VrWrb` | PNG | 2,333,727 | 1080x1920 RGB | `ace749b67a75fbfb375ec8af2815fa453bb9814b6cb0329335c0c40e5f1e5217` |
+| TikTok 2 `1JK-N0iwO9vLegrE6usx2Yh-BR4pAhcyY` | PNG | 2,312,394 | 1080x1920 RGB | `6df4d052de754f91221ad4ddfd4f2312943ba4c1b6138e86834ee243f9cd20dd` |
+
+All five actual Drive sources: PNG signature, full Pillow verify/decode PASS, expected dimensions, RGB; visual review found consistent seller-facing teaching of delivery-date clarification, correct BROS SELL typographic signature and no unsupported outcome claims. **Metadata mismatch:** Buffer calls FB/IG assets `image/jpeg`, but corresponding Drive source files are PNG. Despite this, Buffer reports SENT. Future publisher QA should derive MIME from actual bytes; do not infer this caused any failure or that Buffer served unmodified Drive bytes.
+
+**Learning (observational):** One approved seller-first teaching concept demonstrably reached Buffer SENT status on three channels with provider metrics. No qualified visits/leads, verified HitPay sale linkage, acquisition effect, or causal improvement is established. This is an INTERNAL BROS SELL instance proof, not general multi-tenant BROS CONTENT SaaS readiness. Media-byte/source QA + provider SENT + measurement are demonstrated for this set; end-to-end provider media identity and reusable approval→publisher→measurement→learning workflow remain gated.
+
+## BCI_HITPAY_PAYOUT_LINKAGE_READONLY_20261026 — HitPay charge/order/product/payout boundary (26 Oct 2026)
+
+Read-only provider list_charges, list_orders, get_charge_details, list_payouts and get_top_products for 1–26 Oct 2026 returned one matching completed/paid store order and succeeded charge, **MYR 50.00** (5,000 minor units); order fulfilment marked completed. Charge detail: fee MYR 1.70, net MYR 48.30, `payout:null`, refunded MYR 0. A separate payout row marked `paid` for **MYR 48.30** exists, and top-products aggregate reports one BROS SELL Closing OS unit at MYR 50.00. These are real provider observations, not necessarily a current-price transaction.
+
+**Do not join by equal amount alone:** payout row lacks a transaction/charge mapping, and product aggregate lacks order-level product mapping. Provider environment (live/test), charge-to-payout settlement linkage, BROS SELL product identity for this exact order, and digital entitlement remain **UNVERIFIED**. The charge may be classified only as provider-reported paid order/charge, not trusted `settled_order`, verified BROS SELL revenue, CPA, or fulfilled Web OS entitlement. No customer PII or raw card data retained. The approved current offer remains RM100 one-off; this historical RM50 observation is not a pricing change.
+
+**Next evidence gates:** explicit charge→payout mapping, order line-item→BROS SELL product mapping, environment attestation, and purchase-email entitlement readback. No HitPay writes, production changes, spend, publishing, credential changes or BROS LABS work.
