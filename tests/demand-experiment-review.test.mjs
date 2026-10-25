@@ -49,6 +49,7 @@ test('paid experiments need verified spend and explicit cap',()=>{
   const over=summary(afterScope,{leads:5,spend:3001});
   assert.equal(reviewDemandExperiment(paid,before,over).status,'guardrail_exceeded');
   assert.equal(reviewDemandExperiment(paid,before,over).observedDelta,null);
+  assert.equal(reviewDemandExperiment({...paid,outcomeVerified:false},before,over).status,'guardrail_exceeded');
   assert.throws(()=>reviewDemandExperiment({...paid,maxVerifiedSpendMinor:null},before,within),denied);
 });
 test('cross tenant/product and overlapping windows are rejected',()=>{
