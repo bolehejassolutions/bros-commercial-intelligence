@@ -93,6 +93,10 @@ export function summarizeGrowthEvidence(
       !Array.isArray(evidence) || evidence.length > 10000) fail();
 
   const unique = new Map<string, string>();
+  // One ingestion evidence ID must never refer to two different provider facts.
+  const evidenceIdToSource = new Map<string, string>();
+  const paidByProviderOrder = new Map<string, number>();
+  const settledByProviderOrder = new Map<string, number>();
   const totals: Partial<Record<GrowthKind, number>> = {};
   let excluded = 0;
   for (const item of evidence) {
@@ -122,6 +126,9 @@ export function summarizeGrowthEvidence(
       item.verification, item.windowStart, item.windowEnd, item.count ?? null,
       item.amountMinor ?? null, item.currency ?? null, item.settlementReference ?? null,
     ]);
+    const priorSource = evidenceIdToSource.get(item.evidenceId);
+    if (priorSource !== undefined && priorSource !== key) fail();
+    evidenceIdToSource.set(item.evidenceId, key);
     if (unique.has(key)) {
       if (unique.get(key) !== fingerprint) fail();
       continue;
@@ -131,8 +138,18 @@ export function summarizeGrowthEvidence(
       excluded++;
       continue;
     }
+    if (item.kind === "paid_order") paidByProviderOrder.set(item.providerRecordId, item.amountMinor!);
+    if (item.kind === "settled_order") settledByProviderOrder.set(item.providerRecordId, item.amountMinor!);
     totals[item.kind] = safeAdd(totals[item.kind] ?? 0,
       item.kind === "paid_order" || item.kind === "settled_order" ? 1 : money ? item.amountMinor! : item.count!);
+  }
+  // If both independently verified statuses refer to the same provider order,
+  // reject contradictory amounts rather than counting impossible revenue.
+  // Settled-only evidence is still permitted when the trusted adapter can
+  // attest settlement without a separate paid-order record.
+  for (const [orderId, paidAmount] of paidByProviderOrder) {
+    const settledAmount = settledByProviderOrder.get(orderId);
+    if (settledAmount !== undefined && settledAmount !== paidAmount) fail();
   }
   // Sum each verified order once per status. A paid charge is not a settled payout.
   // The same provider order can appear in both categories only when settlement
