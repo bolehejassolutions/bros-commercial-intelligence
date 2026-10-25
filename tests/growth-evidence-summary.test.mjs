@@ -129,3 +129,29 @@ test("test-mode and unverified paid orders cannot become live paid revenue", () 
   assert.equal(summary.grossPaidRevenueMinor, null);
   assert.equal(summary.excludedTestOrUnverified, 2);
 });
+
+test("reused evidence ID for a different provider fact fails closed", () => {
+  const first = record("qualified_visit_count", "ga4", { count: 5 });
+  const second = record("qualified_visit_count", "ga4", {
+    evidenceId: first.evidenceId, count: 8,
+  });
+  assert.throws(() => summarizeGrowthEvidence(scope, [first, second]), error);
+  // Replays of the SAME provider fact remain idempotent.
+  assert.equal(summarizeGrowthEvidence(scope, [first, { ...first }]).distinctEvidenceRecords, 1);
+});
+
+test("same verified HitPay provider order cannot have contradictory paid/settled amounts", () => {
+  const paid = record("paid_order", "hitpay", { amountMinor: 5000, currency: "MYR" });
+  const settled = record("settled_order", "hitpay", {
+    providerRecordId: paid.providerRecordId,
+    amountMinor: 4900,
+    currency: "MYR",
+  });
+  assert.throws(() => summarizeGrowthEvidence(scope, [paid, settled]), error);
+  const consistent = summarizeGrowthEvidence(scope, [paid, { ...settled, amountMinor: 5000 }]);
+  assert.equal(consistent.grossPaidRevenueMinor, 5000);
+  assert.equal(consistent.grossSettledRevenueMinor, 5000);
+  // Unverified settlement is never promoted to a verified payout.
+  const unknown = summarizeGrowthEvidence(scope, [paid, { ...settled, verification: "unverified" }]);
+  assert.equal(unknown.grossSettledRevenueMinor, null);
+});
