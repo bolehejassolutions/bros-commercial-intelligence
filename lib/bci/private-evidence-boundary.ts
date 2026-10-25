@@ -88,12 +88,20 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
     // Scope must be derived exclusively from verified membership, never request.
     const rows = await deps.readRows({ tenantId: grant.tenantId, product: request.product, limit });
     if (!Array.isArray(rows) || rows.length > limit) denied();
+    // The database schema enforces both keys. Recheck at the API boundary so a
+    // buggy/mock adapter cannot replay one record as multiple independent facts.
+    const seenIds = new Set<string>();
+    const seenProviderKeys = new Set<string>();
     for (const row of rows) {
       // Fail the entire response rather than silently filtering DB cross-tenant leakage.
       if (!row || !validUuid(row.id) || row.tenantId !== grant.tenantId ||
           row.product !== request.product || typeof row.provider !== "string" ||
           !row.provider || typeof row.providerRecordKey !== "string" ||
           !row.providerRecordKey || !validMetrics(row.metrics)) denied();
+      const providerKey = JSON.stringify([row.provider, row.providerRecordKey]);
+      if (seenIds.has(row.id) || seenProviderKeys.has(providerKey)) denied();
+      seenIds.add(row.id);
+      seenProviderKeys.add(providerKey);
     }
     return rows.map(row => Object.freeze({ ...row, metrics: Object.freeze({ ...row.metrics }) }));
   };
