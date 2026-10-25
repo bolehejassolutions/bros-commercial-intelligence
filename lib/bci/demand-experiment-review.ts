@@ -96,11 +96,13 @@ export function reviewDemandExperiment(
     ? observed.qualifiedLeads : observed.settledOrders;
   const spend = observed.verifiedAdSpendMinor;
   let status: DemandReviewStatus;
-  if (!experiment.approvalVerified || !experiment.actionVerified) status = "action_unverified";
+  // A verified spend-cap breach takes precedence even if action/outcome
+  // evidence is missing; do not hide overspend behind another blocker.
+  if (experiment.maxVerifiedSpendMinor !== null && spend !== null &&
+      spend > experiment.maxVerifiedSpendMinor) status = "guardrail_exceeded";
+  else if (!experiment.approvalVerified || !experiment.actionVerified) status = "action_unverified";
   else if (!experiment.outcomeVerified || !experiment.outcomeEvidenceId) status = "outcome_unverified";
   else if (experiment.actionKind === "paid" && spend === null) status = "spend_unverified";
-  else if (experiment.maxVerifiedSpendMinor !== null && spend !== null &&
-           spend > experiment.maxVerifiedSpendMinor) status = "guardrail_exceeded";
   else if (baselineCount === null || observedCount === null) status = "metric_unavailable";
   else status = "observed";
 
