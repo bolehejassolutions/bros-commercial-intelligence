@@ -15,6 +15,7 @@ function mock({
   canLogin = true,
   rows = [],
   rejectAt = -1,
+  safety = {},
 } = {}) {
   const calls = [];
   const transaction = async fn => {
@@ -23,6 +24,13 @@ function mock({
       calls.push({ sql, params });
       if (calls.length - 1 === rejectAt) throw new Error("database unavailable");
       if (sql.includes("current_user AS role_name")) return { rows: [{ role_name: role, session_role_name: sessionRole, bypass_rls: bypass, is_superuser: superuser, can_login: canLogin }] };
+      if (sql.includes("current_database() AS database_name")) return { rows: [{
+        database_name: "bros_intelligence_dev",
+        rls_enabled: true, rls_forced: true, can_read_evidence: true,
+        can_insert_evidence: false, can_read_memberships: false,
+        can_create_schema_objects: false, can_create_database_objects: false,
+        ...safety,
+      }] };
       if (sql.includes("set_config")) return { rows: [{ scope: params[0] }] };
       return { rows };
     };
@@ -45,15 +53,16 @@ test("bound parameters and same transaction; no interpolated tenant or product",
   assert.deepEqual(data, [fixture]);
   assert.equal(calls[0].sql, "TRANSACTION_BEGIN");
   assert.equal(calls.at(-1).sql, "TRANSACTION_COMMIT");
-  assert.deepEqual(calls[2].params, [A, "demand"]);
-  assert.match(calls[2].sql, /set_config\('bci\.tenant_id', \$1::text, true\)/);
-  assert.match(calls[2].sql, /set_config\('bci\.product', \$2::text, true\)/);
-  assert.deepEqual(calls[3].params, [A, "demand", 25]);
-  assert.equal(calls[3].sql.includes("$1::uuid"), true);
-  assert.equal(calls[3].sql.includes("$2::text"), true);
-  assert.equal(calls[3].sql.includes(A), false);
-  assert.equal(calls[3].sql.includes("UPDATE "), false);
-  assert.equal(calls[3].sql.includes("INSERT "), false);
+  assert.match(calls[2].sql, /current_database\(\) AS database_name/);
+  assert.deepEqual(calls[3].params, [A, "demand"]);
+  assert.match(calls[3].sql, /set_config\('bci\.tenant_id', \$1::text, true\)/);
+  assert.match(calls[3].sql, /set_config\('bci\.product', \$2::text, true\)/);
+  assert.deepEqual(calls[4].params, [A, "demand", 25]);
+  assert.equal(calls[4].sql.includes("$1::uuid"), true);
+  assert.equal(calls[4].sql.includes("$2::text"), true);
+  assert.equal(calls[4].sql.includes(A), false);
+  assert.equal(calls[4].sql.includes("UPDATE "), false);
+  assert.equal(calls[4].sql.includes("INSERT "), false);
 });
 
 test("admin BYPASSRLS role rejected before any scoped query", async () => {
@@ -122,4 +131,22 @@ test("untrusted result larger than requested page fails closed", async () => {
   const row = { id: ROW, tenantId: A, product: "demand", provider: "manual", providerRecordKey: "x", metrics: {} };
   const { read } = mock({ rows: [row, row] });
   await assert.rejects(read({ ...scope, limit: 1 }), /access denied/i);
+});
+
+test("wrong database, missing RLS and privilege drift fail before scoped SQL", async () => {
+  for (const safety of [
+    { database_name: "neondb" },
+    { rls_enabled: false },
+    { rls_forced: false },
+    { can_read_evidence: false },
+    { can_insert_evidence: true },
+    { can_read_memberships: true },
+    { can_create_schema_objects: true },
+    { can_create_database_objects: true },
+  ]) {
+    const { calls, read } = mock({ safety });
+    await assert.rejects(read(scope), /access denied/i);
+    assert.equal(calls.some(x => x.sql.includes("set_config")), false);
+    assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+  }
 });
