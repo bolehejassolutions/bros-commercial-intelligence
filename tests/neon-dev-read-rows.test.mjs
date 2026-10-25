@@ -7,14 +7,22 @@ const B = "22222222-2222-4222-8222-222222222222";
 const ROW = "44444444-4444-4444-8444-444444444444";
 const scope = { tenantId: A, product: "demand", limit: 25 };
 
-function mock({ role = "bci_dev_private_reader", bypass = false, rows = [], rejectAt = -1 } = {}) {
+function mock({
+  role = "bci_dev_private_reader",
+  sessionRole = "bci_dev_private_reader",
+  bypass = false,
+  superuser = false,
+  canLogin = true,
+  rows = [],
+  rejectAt = -1,
+} = {}) {
   const calls = [];
   const transaction = async fn => {
     calls.push({ sql: "TRANSACTION_BEGIN", params: [] });
     const query = async (sql, params) => {
       calls.push({ sql, params });
       if (calls.length - 1 === rejectAt) throw new Error("database unavailable");
-      if (sql.includes("current_user AS role_name")) return { rows: [{ role_name: role, bypass_rls: bypass }] };
+      if (sql.includes("current_user AS role_name")) return { rows: [{ role_name: role, session_role_name: sessionRole, bypass_rls: bypass, is_superuser: superuser, can_login: canLogin }] };
       if (sql.includes("set_config")) return { rows: [{ scope: params[0] }] };
       return { rows };
     };
@@ -50,6 +58,21 @@ test("bound parameters and same transaction; no interpolated tenant or product",
 
 test("admin BYPASSRLS role rejected before any scoped query", async () => {
   for (const values of [{ role: "BROS", bypass: true }, { role: "bci_dev_private_reader", bypass: true }, { role: "bci_dev_runtime", bypass: false }]) {
+    const { calls, read } = mock(values);
+    await assert.rejects(read(scope), /access denied/i);
+    assert.equal(calls.some(x => x.sql.includes("set_config")), false);
+    assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+  }
+});
+
+test("admin SET ROLE impersonation, superuser and NOLOGIN session fail before scoped SQL", async () => {
+  for (const values of [
+    { role: "bci_dev_private_reader", sessionRole: "BROS" },
+    { role: "bci_dev_private_reader", sessionRole: "bros_intelligence_dev_owner" },
+    { role: "bci_dev_private_reader", superuser: true },
+    { role: "bci_dev_private_reader", canLogin: false },
+    { role: "bci_dev_private_reader", sessionRole: null },
+  ]) {
     const { calls, read } = mock(values);
     await assert.rejects(read(scope), /access denied/i);
     assert.equal(calls.some(x => x.sql.includes("set_config")), false);
