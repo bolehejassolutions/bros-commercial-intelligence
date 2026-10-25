@@ -45,6 +45,32 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
           role.rows[0].is_superuser !== false ||
           role.rows[0].can_login !== true) deny();
 
+      // Verify the actual connection target and least-privilege posture before
+      // setting any request scope. This detects accidentally wired databases,
+      // missing RLS, and privilege drift; it does NOT verify HTTP identity.
+      const posture = await query(
+        `SELECT current_database() AS database_name,
+                c.relrowsecurity AS rls_enabled,
+                c.relforcerowsecurity AS rls_forced,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'SELECT') AS can_read_evidence,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'INSERT') AS can_insert_evidence,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'SELECT') AS can_read_memberships,
+                has_schema_privilege(current_user, 'bci_dev', 'CREATE') AS can_create_schema_objects,
+                has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects
+         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'bci_dev' AND c.relname = 'evidence' AND c.relkind IN ('r', 'p')`,
+        []
+      );
+      if (posture.rows.length !== 1 || !isObject(posture.rows[0]) ||
+          posture.rows[0].database_name !== "bros_intelligence_dev" ||
+          posture.rows[0].rls_enabled !== true ||
+          posture.rows[0].rls_forced !== true ||
+          posture.rows[0].can_read_evidence !== true ||
+          posture.rows[0].can_insert_evidence !== false ||
+          posture.rows[0].can_read_memberships !== false ||
+          posture.rows[0].can_create_schema_objects !== false ||
+          posture.rows[0].can_create_database_objects !== false) deny();
+
       // Scope is derived upstream from trusted membership, not request data.
       // set_config(...,true) binds tenant AND product transaction-locally; never share the session with a
       // second request or run this on an unpinned connection/pooled HTTP call.
