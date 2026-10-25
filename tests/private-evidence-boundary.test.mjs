@@ -126,3 +126,16 @@ test("does not mutate original evidence objects supplied by DB adapter", async (
   assert.equal(Object.isFrozen(result), true);
   assert.equal(Object.isFrozen(result.metrics), true);
 });
+
+test("duplicate database evidence IDs and provider record keys fail closed", async () => {
+  const base = { id: ROW, tenantId: A, product: "demand", provider: "manual",
+    providerRecordKey: "provider-event-1", metrics: { clicks: 1 } };
+  const sameId = { ...base, providerRecordKey: "provider-event-2" };
+  const sameProviderKey = { ...base, id: "77777777-7777-4777-8777-777777777777" };
+  for (const rows of [[base, base], [base, sameId], [base, sameProviderKey]]) {
+    const { read } = harness({ rows });
+    await assert.rejects(read({ product: "demand" }), denied);
+  }
+  const { read } = harness({ rows: [base, { ...sameProviderKey, providerRecordKey: "provider-event-2" }] });
+  assert.equal((await read({ product: "demand" })).length, 2);
+});
