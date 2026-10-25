@@ -186,3 +186,16 @@ This is actual image decoding and metadata diagnosis for one affected internal p
 - Fresh read-only Neon dev verification: `bci_dev_private_reader` has LOGIN but no password and NOBYPASSRLS; `bci_dev_runtime` is NOLOGIN; `bci_dev.tenant_memberships` contains **0** authoritative memberships. Therefore real restricted direct login and authenticated tenant/product API isolation remain **UNPROVEN**.
 - No BROS CONTENT SENT/measurement or BROS DEMAND verified experiment is established by these code tests. No BROS LABS work started.
 
+
+
+## BCI_NEON_READ_POSTURE_20261025 — connection-target and least-privilege preflight (25 Oct 2026)
+
+**Status:** development code hardening and read-only Neon catalog verification; **not** authenticated Preview or direct restricted LOGIN proof.
+
+The private evidence SQL adapter now checks, inside the same pinned transaction and **before** setting tenant/product GUCs: (1) direct non-bypass `bci_dev_private_reader` session and current role (existing guard); (2) exact development database `bros_intelligence_dev`; (3) `bci_dev.evidence` has RLS enabled and forced; (4) the effective role has evidence SELECT but not INSERT, membership-table SELECT, schema CREATE, or database CREATE. Missing/unsafe catalog facts fail the whole read closed without falling back to unscoped SQL.
+
+Actual Neon Free **read-only catalog query**, with privileges explicitly evaluated for `bci_dev_private_reader`, returned: database `bros_intelligence_dev`, RLS enabled=true, FORCE=true, evidence SELECT=true, evidence INSERT=false, memberships SELECT=false, schema CREATE=false, database CREATE=false. Role catalog still reports `LOGIN=true`, `BYPASSRLS=false`, **PASSWORD NULL=true**; authoritative tenant membership count remains **0**. These are administrative catalog observations, **not** a direct login or authenticated HTTP test.
+
+Regression tests were added for wrong database, missing RLS/FORCE, absent SELECT and accidental write/schema/membership privileges. GitHub commits: `bd11c4977dfea04477a00e5d72f337765d2bcf47`, `dc915edf63bec98ae079907854c9775867cd0028`. CI status must be verified separately for the final commit. No credentials, API routes, deployments, migrations, publishing, budgets, customer access, or production systems changed.
+
+**Hard blockers unchanged:** trusted signed principal, authoritative revocable per-product membership, secret provisioning for restricted direct login, Preview-only authenticated HTTP negative tests, and actual provider-to-outcome integration. Issue #11 stays OPEN; PR #10 stays DRAFT.
