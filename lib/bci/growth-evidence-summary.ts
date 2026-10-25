@@ -1,0 +1,149 @@
+/**
+ * Deterministic INTERNAL BCI evidence summary for CONTENT/DEMAND.
+ * Not an ingestion adapter, authorization boundary, or attribution engine.
+ * Only trusted server-side adapters may mark evidence `verified`; a provider
+ * event or test checkout must never be promoted to a settled HitPay sale.
+ */
+export type GrowthProduct = "content" | "demand";
+export type GrowthKind =
+  | "settled_order"
+  | "platform_purchase_event"
+  | "qualified_visit_count"
+  | "qualified_lead_count"
+  | "ad_spend";
+export type GrowthProvider = "hitpay" | "meta_ads" | "ga4" | "manual";
+export type GrowthEvidence = Readonly<{
+  evidenceId: string;
+  tenantId: string;
+  product: GrowthProduct;
+  provider: GrowthProvider;
+  providerRecordId: string;
+  kind: GrowthKind;
+  environment: "live" | "test" | "unknown";
+  verification: "verified" | "unverified";
+  windowStart: string;
+  windowEnd: string;
+  count?: number;
+  amountMinor?: number;
+  currency?: "MYR";
+}>;
+export type GrowthScope = Readonly<{
+  tenantId: string;
+  product: GrowthProduct;
+  windowStart: string;
+  windowEnd: string;
+}>;
+export type GrowthSummary = Readonly<{
+  scope: GrowthScope;
+  qualifiedVisits: number | null;
+  qualifiedLeads: number | null;
+  platformAttributedPurchaseEvents: number | null;
+  settledOrders: number | null;
+  grossSettledRevenueMinor: number | null;
+  verifiedAdSpendMinor: number | null;
+  observedOrdersPerQualifiedVisit: number | null;
+  cpaMinor: null;
+  excludedTestOrUnverified: number;
+  distinctEvidenceRecords: number;
+}>;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const allowedProviders: Readonly<Record<GrowthKind, readonly GrowthProvider[]>> = {
+  settled_order: ["hitpay"],
+  platform_purchase_event: ["meta_ads"],
+  qualified_visit_count: ["ga4", "manual"],
+  qualified_lead_count: ["ga4", "manual"],
+  ad_spend: ["meta_ads"],
+};
+const fail = (): never => { throw new Error("Invalid or inconsistent BCI growth evidence"); };
+const isTime = (v: unknown): v is string =>
+  typeof v === "string" && ISO_UTC.test(v) && Number.isFinite(Date.parse(v));
+const isAmount = (v: unknown): v is number =>
+  typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+const safeAdd = (a: number, b: number): number => {
+  const sum = a + b;
+  if (!Number.isSafeInteger(sum)) fail();
+  return sum;
+};
+
+/**
+ * Fail closed on mixed scopes, malformed records and conflicting source IDs.
+ * Null means unobserved; a provider-confirmed zero-count record means zero.
+ * CPA deliberately remains null: same-window spend and orders alone do not
+ * establish a reconciled acquisition denominator or campaign attribution.
+ */
+export function summarizeGrowthEvidence(
+  scope: GrowthScope,
+  evidence: readonly GrowthEvidence[],
+): GrowthSummary {
+  if (!scope || !UUID.test(scope.tenantId) ||
+      (scope.product !== "content" && scope.product !== "demand") ||
+      !isTime(scope.windowStart) || !isTime(scope.windowEnd) ||
+      Date.parse(scope.windowStart) >= Date.parse(scope.windowEnd) ||
+      !Array.isArray(evidence) || evidence.length > 10000) fail();
+
+  const unique = new Map<string, string>();
+  const totals: Partial<Record<GrowthKind, number>> = {};
+  let excluded = 0;
+  for (const item of evidence) {
+    if (!item || typeof item !== "object" ||
+        item.tenantId !== scope.tenantId || item.product !== scope.product ||
+        item.windowStart !== scope.windowStart || item.windowEnd !== scope.windowEnd ||
+        typeof item.evidenceId !== "string" || !item.evidenceId.trim() ||
+        typeof item.providerRecordId !== "string" || !item.providerRecordId.trim() ||
+        !Object.prototype.hasOwnProperty.call(allowedProviders, item.kind) ||
+        !allowedProviders[item.kind]?.includes(item.provider) ||
+        !["live", "test", "unknown"].includes(item.environment) ||
+        !["verified", "unverified"].includes(item.verification)) fail();
+    const money = item.kind === "settled_order" || item.kind === "ad_spend";
+    if (money) {
+      if (!isAmount(item.amountMinor) || item.currency !== "MYR" || item.count !== undefined ||
+          (item.kind === "settled_order" && item.amountMinor === 0)) fail();
+    } else if (!isAmount(item.count) || item.amountMinor !== undefined || item.currency !== undefined) fail();
+
+    const key = `${item.provider}:${item.kind}:${item.providerRecordId}`;
+    const fingerprint = JSON.stringify([
+      item.tenantId, item.product, item.provider, item.kind, item.environment,
+      item.verification, item.windowStart, item.windowEnd, item.count ?? null,
+      item.amountMinor ?? null, item.currency ?? null,
+    ]);
+    if (unique.has(key)) {
+      if (unique.get(key) !== fingerprint) fail();
+      continue;
+    }
+    unique.set(key, fingerprint);
+    if (item.environment !== "live" || item.verification !== "verified") {
+      excluded++;
+      continue;
+    }
+    totals[item.kind] = safeAdd(totals[item.kind] ?? 0,
+      item.kind === "settled_order" ? 1 : money ? item.amountMinor! : item.count!);
+  }
+  let revenue: number | null = null;
+  const settledKeys = new Set<string>();
+  for (const item of evidence) {
+    if (item.kind !== "settled_order" || item.environment !== "live" ||
+        item.verification !== "verified") continue;
+    const key = `${item.provider}:${item.kind}:${item.providerRecordId}`;
+    if (settledKeys.has(key)) continue;
+    settledKeys.add(key);
+    revenue = safeAdd(revenue ?? 0, item.amountMinor!);
+  }
+  const visits = totals.qualified_visit_count ?? null;
+  const orders = totals.settled_order ?? null;
+  return Object.freeze({
+    scope: Object.freeze({ ...scope }),
+    qualifiedVisits: visits,
+    qualifiedLeads: totals.qualified_lead_count ?? null,
+    platformAttributedPurchaseEvents: totals.platform_purchase_event ?? null,
+    settledOrders: orders,
+    grossSettledRevenueMinor: revenue,
+    verifiedAdSpendMinor: totals.ad_spend ?? null,
+    observedOrdersPerQualifiedVisit: visits !== null && visits > 0 && orders !== null
+      ? orders / visits : null,
+    cpaMinor: null,
+    excludedTestOrUnverified: excluded,
+    distinctEvidenceRecords: unique.size,
+  });
+}
