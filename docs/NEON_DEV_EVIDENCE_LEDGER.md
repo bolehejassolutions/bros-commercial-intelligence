@@ -64,3 +64,18 @@ After `SET LOCAL ROLE bci_dev_runtime`:
 
 - No Supabase migration, resume or ownership changes; no Meta Ads writes or spending; no changes to Buffer schedules/queues; no HitPay actions; no customer entitlements.
 - This documentation is evidence of verified schema/testing only, **not** proof of a production integration, customer authentication, provider sync or end-to-end experiment.
+
+
+## Preview-only access boundary — code added 25 Oct 2026
+
+These files are **policy scaffolding only**, with no deployed API, no Neon database driver/connection string and no authentication backend wired:
+
+- [`lib/bci/private-evidence-boundary.ts`](../lib/bci/private-evidence-boundary.ts): pure fail-closed reader policy. Accepts only `product` and a bounded `limit`; derives tenant from a **server-verified principal and authoritative membership**. Rejects caller-supplied tenant/user identifiers, unauthenticated principals, missing/ambiguous/inactive memberships, cross-tenant/product result rows, nonnumeric metrics, and oversized responses. Preserves `null` as unknown distinct from zero.
+- [`lib/bci/private-evidence-server.ts`](../lib/bci/private-evidence-server.ts): server-only composition point, disabled unless both `VERCEL_ENV=preview` and `BCI_NEON_DEV_PRIVATE_READS=enabled`. Neither flag is set by this PR. No HTTP handler imports or exposes this adapter.
+- [`tests/private-evidence-boundary.test.mjs`](../tests/private-evidence-boundary.test.mjs): pure offline tests with synthetic data (spoofed scope, cross-tenant rows, cross-product rows, fail-closed access and invalid metrics).
+
+**Required integration before any preview read:** determine and operate an authenticated session authority; implement server-side membership table/checks bound to that principal, per-product entitlement/tenancy and revoke tests. Implement a **separate, LOGIN-enabled, non-BYPASSRLS, least-privileged Postgres role**; the currently provisioned admin `BROS` role bypasses RLS, while `bci_dev_runtime` is NOLOGIN and only a smoke-test role. Review credential lifecycle, connection pooling and RLS identity binding. Query must use parameterized `tenant_id` and `product` restrictions and SQL-level authorization, not rely on a self-settable `bci.tenant_id` GUC alone. Avoid copying a tenant id from incoming HTTP headers, form fields, route params or unverified JWT claims.
+
+Existing Supabase Auth/BCI operator RPC is not available as a verified customer-tenant membership authority while dedicated BCI Supabase is inactive. Do not confuse its internal operator check with user-facing tenant membership. The production Supabase BROS SELL authentication remains unchanged.
+
+**Verification rules:** Passing offline tests or Next.js compilation is *not* a live authenticated API integration test. No reads from the Neon SQL adapter, browser access, production permission changes, customer entitlement or Meta/Buffer provider mutation have been activated.
