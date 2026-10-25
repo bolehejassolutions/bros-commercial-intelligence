@@ -2,7 +2,9 @@
  * Parameterized, transactional SQL adapter for BCI's internal Neon DEV evidence.
  *
  * Not a public API. The caller MUST supply a server-only transaction executor
- * authenticated as SQL-created bci_dev_private_reader (not admin/BROS).
+ * directly authenticated as SQL-created bci_dev_private_reader (not admin/BROS).
+ * Both session_user and current_user must equal this restricted LOGIN role:
+ * an admin SET ROLE impersonation is NOT proof of a restricted login.
  * A caller-supplied tenant ID is not acceptable: compose ONLY after a
  * verified principal + authoritative tenant-membership check.
  */
@@ -33,12 +35,15 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
 
     return transaction(async (query) => {
       const role = await query(
-        "SELECT current_user AS role_name, rolbypassrls AS bypass_rls FROM pg_roles WHERE rolname = current_user",
+        "SELECT current_user AS role_name, session_user AS session_role_name, rolbypassrls AS bypass_rls, rolsuper AS is_superuser, rolcanlogin AS can_login FROM pg_roles WHERE rolname = current_user",
         []
       );
       if (role.rows.length !== 1 || !isObject(role.rows[0]) ||
           role.rows[0].role_name !== "bci_dev_private_reader" ||
-          role.rows[0].bypass_rls !== false) deny();
+          role.rows[0].session_role_name !== "bci_dev_private_reader" ||
+          role.rows[0].bypass_rls !== false ||
+          role.rows[0].is_superuser !== false ||
+          role.rows[0].can_login !== true) deny();
 
       // Scope is derived upstream from trusted membership, not request data.
       // set_config(...,true) binds tenant AND product transaction-locally; never share the session with a
