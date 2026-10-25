@@ -61,3 +61,6 @@ REVOKE ALL ON bci_dev.tenant_memberships FROM PUBLIC,bci_dev_private_reader,bci_
 
 -- @@STEP
 COMMENT ON TABLE bci_dev.tenant_memberships IS 'Server-authoritative membership staging, admin-managed only; no app role read grant. DO NOT derive membership from client-supplied UUID without independently verified authentication.';
+
+-- @@STEP
+GRANT bci_dev_private_reader TO "BROS" WITH INHERIT FALSE, SET TRUE;
