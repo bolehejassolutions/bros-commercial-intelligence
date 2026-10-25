@@ -87,9 +87,10 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
       // ambiguous grants rather than choosing a tenant or leaking an array.
       if (found.rows.length > 1) deny();
       return Object.freeze(found.rows.map((row) => {
-        if (!obj(row) || row.principalId !== verifiedPrincipalId ||
+        if (!obj(row)) throw new NeonMembershipAccessDenied();
+        if (row.principalId !== verifiedPrincipalId ||
             typeof row.tenantId !== "string" || !UUID.test(row.tenantId) ||
-            row.product !== product || row.active !== true || row.revokedAt !== null) deny();
+            row.product !== product || row.active !== true || row.revokedAt !== null) throw new NeonMembershipAccessDenied();
         return Object.freeze({ principalId: verifiedPrincipalId, tenantId: row.tenantId,
           product, active: true as const });
       }));
