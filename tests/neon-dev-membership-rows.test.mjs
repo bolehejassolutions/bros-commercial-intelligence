@@ -38,7 +38,7 @@ test("verified principal and product are SQL parameters inside one transaction",
   assert.equal(calls[0].sql, "BEGIN"); assert.equal(calls.at(-1).sql, "COMMIT");
   assert.deepEqual(calls[3].params, [USER]);
   assert.deepEqual(calls[4].params, [USER, "content"]);
-  assert.match(calls[4].sql, /principal_id = \\$1::uuid AND product = \\$2::text/);
+  assert.match(calls[4].sql, /principal_id = \$1::uuid AND product = \$2::text/);
   assert.equal(calls[4].sql.includes(USER), false);
 });
 
