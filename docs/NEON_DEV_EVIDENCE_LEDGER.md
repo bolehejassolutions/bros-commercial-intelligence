@@ -79,3 +79,18 @@ These files are **policy scaffolding only**, with no deployed API, no Neon datab
 Existing Supabase Auth/BCI operator RPC is not available as a verified customer-tenant membership authority while dedicated BCI Supabase is inactive. Do not confuse its internal operator check with user-facing tenant membership. The production Supabase BROS SELL authentication remains unchanged.
 
 **Verification rules:** Passing offline tests or Next.js compilation is *not* a live authenticated API integration test. No reads from the Neon SQL adapter, browser access, production permission changes, customer entitlement or Meta/Buffer provider mutation have been activated.
+
+
+## SQL-only restricted LOGIN role and transactional reader — 25 October 2026
+
+**Database development proof — deployed only to Neon dev:**
+
+- [Migration 0003](../neon/migrations/0003_dev_private_reader_and_membership.sql) creates PostgreSQL-SQL role `bci_dev_private_reader` with `LOGIN`, `NOBYPASSRLS`, `NOINHERIT`, `NOCREATEROLE`, `NOCREATEDB`, `NOREPLICATION`, and **`PASSWORD NULL`**. That role **cannot authenticate remotely yet**. No Neon/Vercel connection string or application secret was issued or saved. Neon management API role creation was avoided because it would inherit administrator `BYPASSRLS` privileges.
+- Grants on that role: database CONNECT, `bci_dev` schema USAGE, **SELECT only** on evidence/cases/proposals/links; no INSERT/UPDATE/DELETE, CREATE or access to `tenant_memberships`.
+- Creates empty `bci_dev.tenant_memberships` table (principal id, tenant id, product, active, timestamps), `FORCE RLS`, **no grants** to preview reader, runtime, or PUBLIC. Populating real memberships requires a verified auth provider and separate approval; none were imported.
+- Administrative role `BROS` received `GRANT bci_dev_private_reader WITH INHERIT FALSE, SET TRUE` to allow a scoped SQL test without inheriting grants into unrelated sessions. This **does not change** the elevated nature of the Neon admin role and is **not evidence of successful direct password login**.
+- Tested with `SET LOCAL ROLE bci_dev_private_reader`: role `BYPASSRLS=false`; no tenant scope = 0 evidence; synthetic A = 2 evidence; synthetic B = 1 evidence. Reading memberships and updating evidence as reader both fail due to permission denial.
+- [Transactional query adapter](../lib/bci/neon-dev-read-rows.ts) is pure injectable code with **no Neon driver/secret**, not a public endpoint. It rejects unexpected role names or `BYPASSRLS=true` before any query; uses a single pinned transaction, binds tenant/product/limit values as parameters, sets tenant context transaction-locally and rejects any returned cross-tenant/cross-product/malformed row. It is safe to test offline, but SQL GUC is still self-settable and not an authentication boundary.
+- [Adapter negative tests](../tests/neon-dev-read-rows.test.mjs) run in GitHub CI, including admin-role rejection, SQL parameterization, fail-closed malformed scope, cross-tenant leakage rejection and transaction rollback. These do **not** replace integration tests using a real restricted login and a verifiable principal.
+
+**Remaining hard gate:** select/configure free identity provider (e.g., Neon Managed Auth after security/cost review), prove cryptographic session verification and authoritative user-to-tenant-to-product membership, securely provision a separate restricted database password to **Preview only**, test actual login via the deployed server driver and negative API cases. Do not copy Neon admin `BROS` URI or auto-resume Supabase projects. No real customer or provider data; no ad spending; no customer APIs were enabled.
