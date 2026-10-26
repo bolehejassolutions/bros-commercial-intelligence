@@ -96,7 +96,10 @@ export function assessDemandUtmReadback(
       !Number.isFinite(Date.parse(row.retrievedAt)) ||
       !validDate(row.periodStart) || !validDate(row.periodEnd) ||
       row.periodStart > row.periodEnd ||
-      row.periodEnd > row.retrievedAt.slice(0, 10) ||
+      // GA4 reports use the property's MYT calendar, not the UTC date. At 00:05 MYT
+      // the UTC timestamp still belongs to the previous day; UTC comparison
+      // would falsely reject a legitimate current-day acquisition readback.
+      row.periodEnd > new Date(Date.parse(row.retrievedAt) + 8 * 60 * 60 * 1000).toISOString().slice(0, 10) ||
       !count(row.sessions) || !count(row.engagedSessions) ||
       (row.sessions !== null && row.engagedSessions !== null && row.engagedSessions > row.sessions)) fail();
   if (row.landingPath !== "/" ||
