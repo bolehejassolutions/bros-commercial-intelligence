@@ -34,7 +34,7 @@ function fixture({ role = "bci_dev_membership_reader", sessionRole = role,
         can_truncate_evidence: false,
         can_reference_evidence: false, can_trigger_evidence: false,
         can_create_schema_objects: false,
-        can_create_database_objects: false, no_definer_exec: true, other_bci_tables_denied: true, ...posture }] };
+        can_create_database_objects: false, no_definer_exec: true, no_external_table_access: true, other_bci_tables_denied: true, ...posture }] };
       if (sql.includes("set_config")) return { rows: [{ principal_scope: params[0] }] };
       return { rows };
     };
@@ -105,7 +105,8 @@ test("rejects wrong database, RLS drift and excessive membership privileges", as
     { can_reference_evidence: null }, { can_trigger_evidence: null },
     { can_create_schema_objects: true }, { can_create_database_objects: true },
     { other_bci_tables_denied: false }, { other_bci_tables_denied: null },
-    { no_definer_exec: false }, { no_definer_exec: null }]) {
+    { no_definer_exec: false }, { no_definer_exec: null },
+    { no_external_table_access: false }, { no_external_table_access: null }]) {
     const { calls, lookup } = fixture({ posture });
     await assert.rejects(lookup(USER, "content"), NeonMembershipAccessDenied);
     assert.equal(calls.some(c => c.sql.includes("set_config")), false);
@@ -158,4 +159,15 @@ test("membership reader fails closed on executable BCI SECURITY DEFINER privileg
   assert.match(posture.sql, /has_function_privilege\(current_user, proc\.oid, 'EXECUTE'\)/);
   assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
   assert.equal(calls.at(-1).sql, "ROLLBACK");
+});
+
+
+test("restricted LOGIN rejects accidental non-BCI table grants before setting scope", async () => {
+  const { calls, lookup } = fixture({ posture: { no_external_table_access: false } });
+  await assert.rejects(lookup(USER, "content"), /access denied/i);
+  const posture = calls.find(c => c.sql?.includes("no_external_table_access"));
+  assert.ok(posture);
+  assert.match(posture.sql, /outside_ns\.nspname <> 'bci_dev'/);
+  assert.match(posture.sql, /has_table_privilege\(current_user, outside_table\.oid/);
+  assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
 });
