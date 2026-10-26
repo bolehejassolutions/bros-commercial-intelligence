@@ -31,6 +31,8 @@ export type MetaFunnelScope = Readonly<{
 }>;
 export type MetaFunnelObservation = Readonly<{
   sourceKey: string;
+  /** Immutable projected-snapshot identity; sourceKey remains the campaign/window grouping key. */
+  snapshotKey: string;
   tenantId: string;
   product: "demand";
   provider: "meta_ads";
@@ -133,8 +135,23 @@ export function normalizeMetaCampaignFunnel(
   const mismatch = purchaseAliases.some(v => v !== purchaseAliases[0]);
   const inline = count(row.inline_link_clicks);
   const lpv = get("landing_page_view");
+  // Campaign/window identity is stable, but Meta may revise a report for the
+  // same window. Never overwrite an earlier projected snapshot by sourceKey.
+  // Use snapshotKey for immutable candidate snapshots; neither key attests
+  // provider authentication, tenant membership, settlement or BCI persistence.
+  const sourceKey = "meta_ads:tenant:" + scope.tenantId.toLowerCase() + ":" +
+    scope.accountId + ":campaign:" + scope.campaignId + ":" + scope.since + ":" + scope.until;
+  const spendMinor = money(row.spend);
+  const impressions = count(row.impressions), reach = count(row.reach);
+  const clicks = count(row.clicks);
+  const attributed = mismatch ? null : generic;
+  const pixelEvents = mismatch ? null : pixel;
+  const snapshotFields = [spendMinor, impressions, reach, clicks, inline, lpv,
+    attributed, pixelEvents, mismatch ? 1 : 0];
+  const snapshotKey = sourceKey + ":snapshot:" + scope.collectedAt + ":" +
+    snapshotFields.map(v => v === null ? "null" : String(v)).join(":");
   return Object.freeze({
-    sourceKey: "meta_ads:tenant:" + scope.tenantId.toLowerCase() + ":" + scope.accountId + ":campaign:" + scope.campaignId + ":" + scope.since + ":" + scope.until,
+    sourceKey, snapshotKey,
     tenantId: scope.tenantId, product: "demand" as const, provider: "meta_ads" as const,
     accountId: scope.accountId, campaignId: scope.campaignId,
     windowStart: scope.since, windowEndInclusive: scope.until,
@@ -142,12 +159,11 @@ export function normalizeMetaCampaignFunnel(
     calendarWindowStatus: scope.until === collectedMytDate
       ? "CURRENT_MYT_DAY" as const : "PAST_MYT_DAY" as const,
     currency: "MYR" as const,
-    spendMinor: money(row.spend), impressions: count(row.impressions),
-    reach: count(row.reach), clicks: count(row.clicks), inlineLinkClicks: inline,
+    spendMinor, impressions, reach, clicks, inlineLinkClicks: inline,
     landingPageViews: lpv,
     // Ambiguous alias counts fail closed rather than silently choosing a winner.
-    metaAttributedPurchases: mismatch ? null : generic,
-    pixelPurchaseEvents: mismatch ? null : pixel,
+    metaAttributedPurchases: attributed,
+    pixelPurchaseEvents: pixelEvents,
     actionAliasMismatch: mismatch,
     observedLandingPageViewsPerInlineLinkClick: lpv !== null && inline !== null && inline > 0
       ? lpv / inline : null,
