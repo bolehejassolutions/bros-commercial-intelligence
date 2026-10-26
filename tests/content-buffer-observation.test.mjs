@@ -81,3 +81,39 @@ test("trusted asOf rejects future SENT and metric snapshots without inventing ze
   assert.ok(futureMetrics.flags.includes("METRICS_IN_FUTURE"));
   assert.throws(()=>make({}, {asOf:"2026-02-30T14:00:00.000Z"}),/INVALID_TRUSTED_OBSERVATION_TIME/);
 });
+
+// CONTENT_IG_FRESH_METRICS_LEARNING_6ADCA7AD_20261026: synthetic replay of observed provider-shaped snapshot.
+test("fresh post-SENT metrics yield evidence-linked, noncausal next action",()=>{
+  const o=make({id:"post-fresh",sentAt:"2026-10-26T01:02:51.262Z",
+    metricsUpdatedAt:"2026-10-26T14:32:54.244Z",
+    metrics:[{type:"views",unit:"count",value:6},{type:"reach",unit:"count",value:4}]},
+    {asOf:"2026-10-26T15:00:00.000Z"});
+  assert.equal(o.status,"MEASURED");
+  const r=next([o]);
+  assert.equal(r.reason,"INSUFFICIENT_MEASURED_POSTS");
+  assert.equal(r.nextAction,"COLLECT_COMPARABLE_SAME_CHANNEL_MEASUREMENT");
+  assert.equal(r.evidenceStatus,"UNATTESTED_PROVIDER_PROJECTION");
+  assert.deepEqual(r.evidence.map(x=>[x.postId,x.views,x.reach,x.providerAttestedByModule]),[["post-fresh",6,4,false]]);
+  assert.equal(r.evidence[0].nativeUrl,"https://www.instagram.com/p/ABC/");
+  assert.equal(r.executionAllowed,false);assert.equal(r.causalLiftProven,false);
+});
+test("unequal-age measured posts produce evidence, not a performance winner",()=>{
+  const a=make({id:"post-old",sentAt:"2026-10-22T05:00:56.507Z",
+    metricsUpdatedAt:"2026-10-26T14:32:54.245Z"});
+  const b=make({id:"post-new",sentAt:"2026-10-26T01:02:51.262Z",
+    metricsUpdatedAt:"2026-10-26T14:32:54.244Z",
+    metrics:[{type:"views",unit:"count",value:6},{type:"reach",unit:"count",value:4}]});
+  const r=next([a,b]);
+  assert.equal(r.reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+  assert.equal(r.evidence.length,2);
+  assert.deepEqual(r.evidence.map(x=>x.postId),["post-new","post-old"]);
+  assert.equal(r.nextAction,"COLLECT_COMPARABLE_SAME_CHANNEL_MEASUREMENT");
+  assert.equal(r.causalLiftProven,false);
+});
+test("review-required observations cannot become learning evidence",()=>{
+  const held=make({metadata:{isAiGenerated:false}});
+  const r=next([held]);
+  assert.equal(r.reason,"AI_DISCLOSURE_REVIEW");
+  assert.equal(r.nextAction,"REVIEW_AI_DISCLOSURE");
+  assert.deepEqual(r.evidence,[]);
+});
