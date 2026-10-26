@@ -414,3 +414,11 @@ Doc after publication of this development commit. Keep Issue #11 OPEN and PR #10
 DRAFT until genuine provider JWT → membership → evidence HTTP success and the
 remaining authenticated tests are verified. No Production, new spend, publishing,
 admin/customer access, credential rotation, automation or BROS LABS changes.
+
+## BCI_HITPAY_CROSS_STATUS_GUARD_20261026 — reject test/unverified paid-order promotion to settled revenue (26 Oct 2026)
+
+**Evidence level: Draft PR #10 code + regression test + GitHub CI SUCCESS; NOT live HitPay settlement/entitlement proof.** Shared BCI `summarizeGrowthEvidence` previously permitted a verified live `settled_order` row to be counted even when the *same provider order ID* was also supplied as a test/unknown/unverified `paid_order`. That contradictory cross-status provenance could overstate settled orders/revenue. Now a verified live settlement is rejected if a matching paid-order record is not also live and verified; paid-live plus settlement-unverified remains paid-only (no settlement). This conservative check does not claim payout linkage from a reference string alone.
+
+Source commit `17a0294cd36f00f8003c123eb3b438dc573386c2`; regression test commit `0b3dbc8765508f11b36bdd239f5f87a14a8bb78d`; source and test blobs read back. [GitHub Actions 40279407128](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40279407128) **SUCCESS** on the test commit (workflow checks). No live provider ingest, Production deployment or acquisition outcome was established.
+
+Fresh read-only Neon DEV SQL: 1 Auth user, 1 email-verified user, 1 active CONTENT membership, 1 active DEMAND membership. HitPay read-only charges 25–26 Oct: empty page with `has_more=false` (no charges in that date-filtered response, not a historical sales conclusion). Actual Neon provider JWT → authenticated CONTENT/DEMAND reads and hosted negative cross-tenant/product matrix remain OPEN; official Neon examples do not guarantee an `emailVerified` JWT claim, so verifier compatibility requires real signed-provider-token validation without weakening checks. CONTENT approval→SENT→measurement, DEMAND verified experiment, BCI live reuse and HitPay environment/order/payout/entitlement linkage remain OPEN. No Meta spend/write, publishing, Production, price, permissions, automation schedule or BROS LABS changes.
