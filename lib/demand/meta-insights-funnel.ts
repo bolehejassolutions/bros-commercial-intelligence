@@ -118,12 +118,14 @@ export function normalizeMetaCampaignFunnel(
   const get = (name: string): number | null => actions.get(name) ?? null;
   const generic = get("purchase"), omni = get("omni_purchase");
   const pixel = get("offsite_conversion.fb_pixel_purchase");
-  const mismatch = (generic !== null && omni !== null && generic !== omni) ||
-    (generic !== null && pixel !== null && generic !== pixel);
+  // Compare every present purchase alias, including omni vs pixel when the
+  // generic purchase action is missing. These are overlapping labels, not sales.
+  const purchaseAliases = [generic, omni, pixel].filter((v): v is number => v !== null);
+  const mismatch = purchaseAliases.some(v => v !== purchaseAliases[0]);
   const inline = count(row.inline_link_clicks);
   const lpv = get("landing_page_view");
   return Object.freeze({
-    sourceKey: "meta_ads:" + scope.accountId + ":campaign:" + scope.campaignId + ":" + scope.since + ":" + scope.until,
+    sourceKey: "meta_ads:tenant:" + scope.tenantId.toLowerCase() + ":" + scope.accountId + ":campaign:" + scope.campaignId + ":" + scope.since + ":" + scope.until,
     tenantId: scope.tenantId, product: "demand" as const, provider: "meta_ads" as const,
     accountId: scope.accountId, campaignId: scope.campaignId,
     windowStart: scope.since, windowEndInclusive: scope.until,
