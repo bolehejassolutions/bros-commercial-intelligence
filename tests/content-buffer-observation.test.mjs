@@ -209,6 +209,7 @@ test("BCI handoff rejects forged freshness, native URL, metric values and age",(
   const time="2026-10-26T17:00:00.000Z",o=make();
   assert.throws(()=>handoff(o,scope,"2026-10-21T00:00:00.000Z"),/PROVENANCE/);
   assert.throws(()=>handoff({...o,nativeUrl:"https://fake.instagram.com/p/ABC/"},scope,time),/PROVENANCE/);
+  assert.throws(()=>handoff({...o,nativeUrl:null},scope,time),/PROVENANCE/);
   assert.throws(()=>handoff({...o,metrics:{...o.metrics,views:-1}},scope,time),/METRICS/);
   assert.throws(()=>handoff({...o,measurementAgeSeconds:0},scope,time),/STATUS/);
 });
