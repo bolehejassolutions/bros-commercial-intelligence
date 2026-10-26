@@ -13,6 +13,11 @@ function mock({
   bypass = false,
   superuser = false,
   canLogin = true,
+  canCreateDatabase = false,
+  canManageRoles = false,
+  canReplicate = false,
+  inheritsRoles = false,
+  parentRoleCount = 0,
   rows = [],
   rejectAt = -1,
   safety = {},
@@ -23,7 +28,9 @@ function mock({
     const query = async (sql, params) => {
       calls.push({ sql, params });
       if (calls.length - 1 === rejectAt) throw new Error("database unavailable");
-      if (sql.includes("current_user AS role_name")) return { rows: [{ role_name: role, session_role_name: sessionRole, bypass_rls: bypass, is_superuser: superuser, can_login: canLogin }] };
+      if (sql.includes("current_user AS role_name")) return { rows: [{ role_name: role, session_role_name: sessionRole, bypass_rls: bypass, is_superuser: superuser, can_login: canLogin, can_create_database: canCreateDatabase,
+        can_manage_roles: canManageRoles, can_replicate: canReplicate,
+        inherits_roles: inheritsRoles, parent_role_count: parentRoleCount }] };
       if (sql.includes("current_database() AS database_name")) return { rows: [{
         database_name: "bros_intelligence_dev",
         rls_enabled: true, rls_forced: true, can_read_evidence: true,
@@ -86,6 +93,18 @@ test("admin SET ROLE impersonation, superuser and NOLOGIN session fail before sc
     { role: "bci_dev_private_reader", sessionRole: null },
   ]) {
     const { calls, read } = mock(values);
+    await assert.rejects(read(scope), /access denied/i);
+    assert.equal(calls.some(x => x.sql.includes("set_config")), false);
+    assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+  }
+});
+
+test("restricted evidence LOGIN rejects elevated attributes and inherited parent roles", async () => {
+  for (const elevated of [
+    { canCreateDatabase: true }, { canManageRoles: true }, { canReplicate: true },
+    { inheritsRoles: true }, { parentRoleCount: 1 }, { parentRoleCount: null },
+  ]) {
+    const { calls, read } = mock(elevated);
     await assert.rejects(read(scope), /access denied/i);
     assert.equal(calls.some(x => x.sql.includes("set_config")), false);
     assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
