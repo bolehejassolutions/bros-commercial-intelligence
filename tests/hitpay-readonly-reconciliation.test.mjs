@@ -55,6 +55,20 @@ test("invalid amounts and timestamps fail rather than coerce major/minor units",
   }
 });
 
+test("reject impossible calendar instants, rollover times and timezone offsets", () => {
+  for (const closed_at of [
+    "2026-02-29T07:53:25+08:00", "2026-04-31T07:53:25+08:00",
+    "2026-13-09T07:53:25+08:00", "2026-10-09T24:00:00+08:00",
+    "2026-10-09T07:60:00+08:00", "2026-10-09T07:53:60+08:00",
+    "2026-10-09T07:53:25+15:00", "2026-10-09T07:53:25+14:30",
+    "2026-10-09T07:53:25+08:60",
+  ]) assert.throws(() => reconcileHitPayPaidPair({ ...charge, closed_at }, order), mismatch);
+  for (const closed_at of [
+    "2024-02-29T23:59:59Z", "2026-10-09T07:53:25.123+08:00",
+    "2026-10-09T07:53:25-05:30",
+  ]) assert.equal(reconcileHitPayPaidPair({ ...charge, closed_at }, order).closedAt, closed_at);
+});
+
 test("pending provider fulfilment remains pending; no entitlement inferred", () => {
   const row = reconcileHitPayPaidPair(charge, { ...order, fulfilment_status: "pending" });
   assert.equal(row.providerFulfilmentState, "pending");
