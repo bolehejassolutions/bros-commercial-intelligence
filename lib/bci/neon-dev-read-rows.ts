@@ -66,6 +66,7 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
                 has_table_privilege(current_user, 'bci_dev.evidence', 'DELETE') AS can_delete_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'TRUNCATE') AS can_truncate_evidence,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'SELECT') AS can_read_memberships,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'INSERT') AS can_insert_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'UPDATE') AS can_update_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'DELETE') AS can_delete_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'TRUNCATE') AS can_truncate_memberships,
@@ -85,6 +86,7 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
           posture.rows[0].can_delete_evidence !== false ||
           posture.rows[0].can_truncate_evidence !== false ||
           posture.rows[0].can_read_memberships !== false ||
+          posture.rows[0].can_insert_memberships !== false ||
           posture.rows[0].can_update_memberships !== false ||
           posture.rows[0].can_delete_memberships !== false ||
           posture.rows[0].can_truncate_memberships !== false ||
