@@ -3,12 +3,15 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
+import { requestNeonPreviewToken } from "@/lib/bci/neon-preview-client-token";
 
 const operatorEmail = "rasymokh@gmail.com";
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
 let client: VanillaBetterAuthClient | undefined;
 function auth(): VanillaBetterAuthClient {
-  client ??= createAuthClient<BetterAuthVanillaAdapterInstance>(authBase, { adapter: BetterAuthVanillaAdapter() });
+  client ??= createAuthClient<BetterAuthVanillaAdapterInstance>(authBase, {
+    adapter: BetterAuthVanillaAdapter({ fetchOptions: { credentials: "include" } }),
+  });
   return client;
 }
 
@@ -100,11 +103,10 @@ export default function NeonPreviewSignIn() {
       if (!await hasVerifiedOperatorSession()) throw new Error();
       phase = "token";
       // The short-lived token stays in this call and is never displayed, persisted or logged.
-      const { data, error } = await auth().token();
-      if (error || typeof data?.token !== "string") throw new Error();
+      const token = await requestNeonPreviewToken(auth());
       phase = "request";
       const response = await fetch(`/api/internal/neon-evidence?product=${product}&limit=1`, {
-        headers: { Authorization: `Bearer ${data.token}` }, cache: "no-store", redirect: "error",
+        headers: { Authorization: `Bearer ${token}` }, cache: "no-store", redirect: "error",
       });
       if (!response.ok) {
         // Only fixed, non-sensitive stage labels are displayed. Never render

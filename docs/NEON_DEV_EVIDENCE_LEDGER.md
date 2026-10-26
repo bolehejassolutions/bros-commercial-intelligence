@@ -379,3 +379,38 @@ Fresh Neon dev read-only: one Auth user, zero email-verified users, one active C
 **Read-only provider checks:** Buffer Instagram BROS SELL post `6adca7ad0b5343d0708289d1` was provider-reported SENT on 26 Oct 09:02 MYT with two image assets and `metrics=null`. Its `metricsUpdatedAt=2026-10-24T12:42:21.316Z` predates `sentAt=2026-10-26T01:02:51.262Z`; this post already fails learning due to missing metrics, not due to the new numerical-metric guard. HitPay `list_charges` for 25–26 Oct returned zero records (not a historical sales conclusion). Neon dev read-only SQL: 1 Auth user, 0 email verified, 1 active CONTENT and 1 active DEMAND membership. No restricted-role direct login was retested through the pinned Neon connector.
 
 **OPEN gates:** genuine operator OTP/JWT and hosted negative cross-tenant/product tests, trusted CONTENT approval→publisher→SENT→measurement→BCI learning integration, one DEMAND verified acquisition experiment, BCI live audit reuse, HitPay live/test product/settlement/entitlement reconciliation. No Production, Meta spend/writes, publishing mutation, price/permissions, automation schedule or BROS LABS change.
+
+## BCI_NEON_SDK_TOKEN_CACHE_FIX_20261026 — verified owner, fresh token retrieval
+
+Neon read-only SQL now confirms the approved owner's email is verified, with
+three unexpired provider sessions and two active product memberships. The owner
+uses another browser/device; its cookie session is not available in the agent's
+Edge tab. The owner reported the older Preview's generic protected-access error.
+
+An actual installed-SDK reproduction found the concrete pre-request defect:
+`@neondatabase/auth@0.7.0-beta` maps both `/get-session` and `/token` to the same
+session-cache hook. After `getSession()` populates the cache, plain `token()`
+returns `{session,user}` without a token or a `/token` network request. The page
+then fails before calling the protected API.
+
+The client now uses `requestNeonPreviewToken`, which invokes the SDK's supported
+force-fetch hook to obtain a fresh provider token. The SDK strips its local
+control header before the provider request. Cross-origin cookies are explicitly
+included. Missing/malformed/oversized responses and returned/thrown errors fail
+closed without revealing provider details; server signature, verified-operator,
+membership, database and redirect checks remain unchanged.
+
+Local verification: **158/158 tests PASS**, including three installed-SDK
+regressions after dependency installation; TypeScript PASS and Next.js build
+PASS. The regression uses a synthetic transport and synthetic session/token,
+not the owner's secrets or a provider-authenticated success. Public provider
+health/OpenAPI/JWKS checks passed; unauthenticated `/token` returned 401.
+
+Use the stable protected branch Preview for the owner's next check:
+https://bros-commercial-intelligence-git-4a0d3f-bolehejassolutions-8492.vercel.app/internal/neon-preview
+Its origin is already trusted by the development Auth service. Exact deployment,
+CI and owner test results are recorded in Issue #11 and the canonical decision
+Doc after publication of this development commit. Keep Issue #11 OPEN and PR #10
+DRAFT until genuine provider JWT → membership → evidence HTTP success and the
+remaining authenticated tests are verified. No Production, new spend, publishing,
+admin/customer access, credential rotation, automation or BROS LABS changes.
