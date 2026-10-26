@@ -54,6 +54,7 @@ function database(kind, rows, calls, error) {
           can_update_evidence: false, can_delete_evidence: false,
           can_truncate_evidence: false,
           can_create_schema_objects: false, can_create_database_objects: false,
+          other_bci_tables_denied: true,
         }] };
         if (sql.includes("set_config")) return { rows: [] };
         return { rows };
