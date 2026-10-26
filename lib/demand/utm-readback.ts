@@ -107,7 +107,7 @@ export function assessDemandUtmReadback(
       row.campaign !== proposal.experimentId || row.content !== proposal.variant) {
     return result("REJECTED_SCOPE", null, null, null);
   }
-  return result("MATCHED_UNATTESTED",
-    `demand:utm-candidate:${proposal.proposalId}:${row.reportId}`,
+  // Include GA4 property and report window in the candidate identity: a reportId\n  // alone is not globally unique across properties or reporting periods.\n  // This remains UNATTESTED and must never be used as a BCI evidence key.\n  return result("MATCHED_UNATTESTED",
+    `demand:utm-candidate:${proposal.proposalId}:${row.propertyId}:${row.periodStart}:${row.periodEnd}:${row.reportId}`,
     row.sessions, row.engagedSessions);
 }
