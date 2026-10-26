@@ -156,6 +156,24 @@ test("same verified HitPay provider order cannot have contradictory paid/settled
   assert.equal(unknown.grossSettledRevenueMinor, null);
 });
 
+test("a test or unverified paid HitPay order cannot become verified settled revenue", () => {
+  const paid = record("paid_order", "hitpay", { amountMinor: 5000, currency: "MYR" });
+  const settled = record("settled_order", "hitpay", {
+    providerRecordId: paid.providerRecordId, amountMinor: 5000, currency: "MYR",
+    settlementReference: "verified-provider-payout",
+  });
+  for (const patch of [{ environment: "test" }, { environment: "unknown" },
+    { verification: "unverified" }]) {
+    assert.throws(() => summarizeGrowthEvidence(scope, [{ ...paid, ...patch }, settled]), error);
+  }
+  // A verified paid order with unverified settlement remains PAID, never SETTLED.
+  const pending = summarizeGrowthEvidence(scope, [paid, { ...settled, verification: "unverified" }]);
+  assert.equal(pending.paidOrders, 1);
+  assert.equal(pending.settledOrders, null);
+  // Fully verified, live provider-matched paid and settled statuses are permitted.
+  assert.equal(summarizeGrowthEvidence(scope, [paid, settled]).settledOrders, 1);
+});
+
 test("rejects impossible calendar dates in shared BCI measurement windows", () => {
   for (const bad of ["2026-02-31T00:00:00Z", "2026-10-01T24:00:00Z"]) {
     assert.throws(() => summarizeGrowthEvidence({ ...scope, windowStart: bad }, []), error);
