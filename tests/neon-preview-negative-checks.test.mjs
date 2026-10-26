@@ -11,7 +11,7 @@ test("both authenticated product controls precede seven bounded denial probes", 
   calls.push({url,options});
   if (url.includes("&limit=1")) return control();
   const status=options.method==="POST"?405:url.endsWith("?product=content")&&!options.headers.Authorization?401:400;
-  return new Response(JSON.stringify({error:"denied"}),{status,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"}});
+  return new Response(JSON.stringify({error:status===405?"Method not allowed.":"BCI private evidence access denied."}),{status,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"}});
  };
  const report=await runNeonPreviewNegativeChecks(token,mock);
  assert.equal(report.authenticatedControlsPassed,2);
@@ -66,4 +66,38 @@ test("invalid authenticated control fails closed before any denial probes",async
   await assert.rejects(runNeonPreviewNegativeChecks(token,mock),/Authenticated preview controls failed/);
   assert.equal(called,1);
  }
+});
+
+test("matching status and privacy headers cannot mask unexpected denial payloads",async()=>{
+ for(const payload of [
+  {error:"BCI private evidence access denied.",evidence:[{secret:"must-not-pass"}]},
+  {error:"BCI private evidence access denied.",debug:"postgres://secret"},
+  {error:"wrong denial"},
+  {data:[{tenantId:"untrusted"}]},
+  "not-json",
+  "x".repeat(4096),
+ ]){
+  const mock=async (url,options)=>{
+   if(url.includes("&limit=1")) return control();
+   const status=options.method==="POST"?405:url.endsWith("?product=content")&&!options.headers.Authorization?401:400;
+   return new Response(typeof payload==="string"?payload:JSON.stringify(payload),{
+    status,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"},
+   });
+  };
+  const report=await runNeonPreviewNegativeChecks(token,mock);
+  assert.equal(report.authenticatedControlsPassed,2);
+  assert.equal(report.passed,0);
+  assert.equal(JSON.stringify(report).includes("secret"),false);
+ }
+});
+test("authenticated control rejects cross-product evidence even with HTTP 200",async()=>{
+ let called=0;
+ const mock=async (url)=>{
+  called++;
+  return new Response(JSON.stringify({scope:"internal-development",evidence:[{
+   product:url.includes("product=content")?"demand":"content",
+  }]}),{status:200,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"}});
+ };
+ await assert.rejects(runNeonPreviewNegativeChecks(token,mock),/Authenticated preview controls failed/);
+ assert.equal(called,1);
 });
