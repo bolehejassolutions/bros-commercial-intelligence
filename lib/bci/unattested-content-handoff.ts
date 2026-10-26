@@ -84,6 +84,14 @@ export function projectUnattestedContentHandoff(
   if (metricNames.some(key => metrics[key] !== null &&
       (typeof metrics[key] !== "number" || !Number.isSafeInteger(metrics[key]) ||
        (metrics[key] as number) < 0))) deny();
+  // CONTENT legitimately uses windowEnd=null for SENT_UNMEASURED. Never
+  // accept that shape with measured counts, nor promote missing metrics to 0.
+  // The optional flag and the provider metric window must agree exactly.
+  const measured = metricNames.some(key => metrics[key] !== null);
+  const unavailable = input.unknowns.includes("MEASUREMENT_UNAVAILABLE");
+  if (measured === unavailable ||
+      (provenance.windowEnd === null) !== !measured ||
+      (!measured && provenance.observedAt !== provenance.windowStart)) deny();
 
   // Treat a CONTENT-shaped observation as an untrusted projection, NEVER
   // as provider_verified or a live outcome. Repeated collection of the same
