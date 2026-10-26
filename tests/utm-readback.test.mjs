@@ -127,3 +127,26 @@ test('GA4 candidate identity scopes report ID by property and date window withou
     assert.equal(x.causalLift,null);
   }
 });
+
+test('GA4 revised snapshots cannot alias one candidate key despite identical report IDs',()=>{
+  const first=assessDemandUtmReadback(proposal,row);
+  const later=assessDemandUtmReadback(proposal,{...row,retrievedAt:'2026-10-26T14:15:00Z'});
+  const revised=assessDemandUtmReadback(proposal,{...row,sessions:6,engagedSessions:3});
+  const missing=assessDemandUtmReadback(proposal,{...row,sessions:null,engagedSessions:null});
+  const reportedZero=assessDemandUtmReadback(proposal,{...row,sessions:0,engagedSessions:0});
+  const keys=[first,later,revised,missing,reportedZero].map(x=>x.candidateReportCorrelationKey);
+  assert.equal(new Set(keys).size,keys.length);
+  assert.equal(first.candidateReportCorrelationKey,
+    assessDemandUtmReadback(proposal,{...row}).candidateReportCorrelationKey);
+  for(const x of [first,later,revised,missing,reportedZero]){
+    assert.equal(x.status,'MATCHED_UNATTESTED');
+    assert.equal(x.providerAuthenticationVerified,false);
+    assert.equal(x.tenantMembershipVerified,false);
+    assert.equal(x.utmCaptureVerified,false);
+    assert.equal(x.checkoutAttributionVerified,false);
+    assert.equal(x.qualifiedLeads,null);
+    assert.equal(x.settledOrders,null);
+    assert.equal(x.verifiedCacMinor,null);
+    assert.equal(x.causalLift,null);
+  }
+});
