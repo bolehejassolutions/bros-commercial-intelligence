@@ -189,11 +189,16 @@ test("BCI handoff keeps provider projection unverified, null distinct from zero"
   assert.ok(e.unknowns.includes("SHARED_BCI_AUDIT_NOT_WRITTEN"));
   assert.ok(e.evidenceId.startsWith("content-buffer-"));
 });
-test("BCI handoff snapshot IDs are exact-replay deterministic, revision sensitive",()=>{
+test("BCI handoff deduplicates repeated provider snapshots while tracking real revisions",()=>{
   const time="2026-10-26T17:00:00.000Z",o=make();
   const a=handoff(o,scope,time);
+  const replay=handoff(o,scope,"2026-10-26T17:01:00.000Z");
   assert.equal(handoff(o,scope,time).evidenceId,a.evidenceId);
-  assert.notEqual(handoff(o,scope,"2026-10-26T17:01:00.000Z").evidenceId,a.evidenceId);
+  assert.equal(replay.evidenceId,a.evidenceId,"collection-time-only retry must not create duplicate BCI evidence");
+  assert.notEqual(replay.provenance.collectedAt,a.provenance.collectedAt,"collection time remains auditable");
+  assert.notEqual(handoff({...o,nativeUrl:"https://www.instagram.com/p/DEF/"},scope,time).evidenceId,a.evidenceId,"native permalink is part of source identity");
+  const revisedTime="2026-10-25T15:35:40.061Z";
+  assert.notEqual(handoff({...o,metricsUpdatedAt:revisedTime,measurementAgeSeconds:Math.floor((Date.parse(revisedTime)-Date.parse(o.sentAt))/1000)},scope,time).evidenceId,a.evidenceId,"provider metric timestamp revision is distinct");
   assert.notEqual(handoff(make({metrics:[{type:"views",unit:"count",value:8},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:0}]}),scope,time).evidenceId,a.evidenceId);
   assert.notEqual(handoff(make({metrics:[{type:"views",unit:"count",value:7},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:1}]}),scope,time).evidenceId,a.evidenceId);
 });
