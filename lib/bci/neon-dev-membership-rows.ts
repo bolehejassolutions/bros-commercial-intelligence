@@ -76,7 +76,14 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
                 has_table_privilege(current_user, 'bci_dev.evidence', 'DELETE') AS can_delete_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'TRUNCATE') AS can_truncate_evidence,
                 has_schema_privilege(current_user, 'bci_dev', 'CREATE') AS can_create_schema_objects,
-                has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects
+                has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects,
+                (SELECT COUNT(*) = 3 AND bool_and(
+                    NOT has_table_privilege(current_user, extra.oid,
+                      'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'))
+                 FROM pg_class extra JOIN pg_namespace extra_ns ON extra_ns.oid = extra.relnamespace
+                 WHERE extra_ns.nspname = 'bci_dev'
+                   AND extra.relname IN ('cases', 'case_evidence', 'proposals')
+                   AND extra.relkind IN ('r', 'p')) AS other_bci_tables_denied
          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE n.nspname = 'bci_dev' AND c.relname = 'tenant_memberships' AND c.relkind IN ('r', 'p')`, []);
       if (posture.rows.length !== 1 || !obj(posture.rows[0]) ||
@@ -93,7 +100,8 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
           posture.rows[0].can_delete_evidence !== false ||
           posture.rows[0].can_truncate_evidence !== false ||
           posture.rows[0].can_create_schema_objects !== false ||
-          posture.rows[0].can_create_database_objects !== false) deny();
+          posture.rows[0].can_create_database_objects !== false ||
+          posture.rows[0].other_bci_tables_denied !== true) deny();
 
       // The principal was cryptographically verified upstream. This GUC only
       // scopes this already-authorized server transaction, not the identity.
