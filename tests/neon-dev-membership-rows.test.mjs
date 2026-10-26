@@ -27,6 +27,7 @@ function fixture({ role = "bci_dev_membership_reader", sessionRole = role,
         can_read_memberships: true, can_insert_memberships: false,
         can_update_memberships: false, can_delete_memberships: false,
         can_truncate_memberships: false, can_read_evidence: false,
+        can_insert_evidence: false,
         can_update_evidence: false, can_delete_evidence: false,
         can_truncate_evidence: false, can_create_schema_objects: false,
         can_create_database_objects: false, ...posture }] };
@@ -92,7 +93,7 @@ test("rejects wrong database, RLS drift and excessive membership privileges", as
     { rls_forced: false }, { can_read_memberships: false },
     { can_insert_memberships: true },
     { can_update_memberships: true }, { can_delete_memberships: true }, { can_truncate_memberships: true },
-    { can_read_evidence: true },
+    { can_read_evidence: true }, { can_insert_evidence: true },
     { can_update_evidence: true }, { can_delete_evidence: true }, { can_truncate_evidence: true },
     { can_create_schema_objects: true }, { can_create_database_objects: true }]) {
     const { calls, lookup } = fixture({ posture });
