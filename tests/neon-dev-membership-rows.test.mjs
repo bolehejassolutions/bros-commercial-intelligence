@@ -7,7 +7,9 @@ const TENANT = "22222222-2222-4222-8222-222222222222";
 const OTHER = "33333333-3333-4333-8333-333333333333";
 const membership = { principalId: USER, tenantId: TENANT, product: "content", active: true, revokedAt: null };
 function fixture({ role = "bci_dev_membership_reader", sessionRole = role,
-  bypass = false, superuser = false, canLogin = true, posture = {}, rows = [membership],
+  bypass = false, superuser = false, canLogin = true,
+  canCreateDatabase = false, canManageRoles = false, canReplicate = false,
+  inheritsRoles = false, parentRoleCount = 0, posture = {}, rows = [membership],
   errorAt = -1 } = {}) {
   const calls = [];
   const transaction = async fn => {
@@ -17,7 +19,9 @@ function fixture({ role = "bci_dev_membership_reader", sessionRole = role,
       if (calls.length - 1 === errorAt) throw new Error("DB offline");
       if (sql.includes("current_user AS role_name")) return { rows: [{ role_name: role,
         session_role_name: sessionRole, bypass_rls: bypass, is_superuser: superuser,
-        can_login: canLogin }] };
+        can_login: canLogin, can_create_database: canCreateDatabase,
+        can_manage_roles: canManageRoles, can_replicate: canReplicate,
+        inherits_roles: inheritsRoles, parent_role_count: parentRoleCount }] };
       if (sql.includes("current_database() AS database_name")) return { rows: [{
         database_name: "bros_intelligence_dev", rls_enabled: true, rls_forced: true,
         can_read_memberships: true, can_insert_memberships: false,
@@ -65,6 +69,18 @@ test("rejects admin session SET ROLE impersonation and any privileged role", asy
     { role: "bci_dev_membership_reader", superuser: true },
     { role: "bci_dev_membership_reader", canLogin: false }]) {
     const { calls, lookup } = fixture(options);
+    await assert.rejects(lookup(USER, "content"), NeonMembershipAccessDenied);
+    assert.equal(calls.some(c => c.sql.includes("set_config")), false);
+    assert.equal(calls.at(-1).sql, "ROLLBACK");
+  }
+});
+
+test("restricted membership LOGIN rejects elevated attributes and inherited parent roles", async () => {
+  for (const elevated of [
+    { canCreateDatabase: true }, { canManageRoles: true }, { canReplicate: true },
+    { inheritsRoles: true }, { parentRoleCount: 1 }, { parentRoleCount: null },
+  ]) {
+    const { calls, lookup } = fixture(elevated);
     await assert.rejects(lookup(USER, "content"), NeonMembershipAccessDenied);
     assert.equal(calls.some(c => c.sql.includes("set_config")), false);
     assert.equal(calls.at(-1).sql, "ROLLBACK");
