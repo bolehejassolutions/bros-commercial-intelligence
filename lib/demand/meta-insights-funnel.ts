@@ -39,6 +39,8 @@ export type MetaFunnelObservation = Readonly<{
   windowStart: string;
   windowEndInclusive: string;
   collectedAt: string;
+  /** MYT calendar status only; past day is NOT provider-final attribution. */
+  calendarWindowStatus: "CURRENT_MYT_DAY" | "PAST_MYT_DAY";
   currency: "MYR";
   spendMinor: number | null;
   impressions: number | null;
@@ -100,10 +102,17 @@ export function normalizeMetaCampaignFunnel(
       !/^act_\d+$/.test(scope.accountId) || !/^\d+$/.test(scope.campaignId) ||
       scope.currency !== "MYR" || !validDate(scope.since) || !validDate(scope.until) ||
       scope.since > scope.until || !validUtc(scope.collectedAt) ||
-      scope.collectedAt.slice(0, 10) < scope.since ||
       row.campaign_id !== scope.campaignId || row.date_start !== scope.since ||
       row.date_stop !== scope.until ||
       (row.actions !== undefined && (!Array.isArray(row.actions) || row.actions.length > 200))) fail();
+
+  // Meta account is Asia/Kuala_Lumpur (UTC+08:00, no DST). The UTC
+  // collection date alone is incorrect near local midnight. Reject a report
+  // ending in the future local day; never label an ongoing day as closed.
+  // A past calendar day can still be revised by Meta attribution later.
+  const collectedMytDate = new Date(Date.parse(scope.collectedAt) + 8 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  if (collectedMytDate < scope.since || scope.until > collectedMytDate) fail();
 
   const actions = new Map<string, number>();
   for (const action of row.actions ?? []) {
@@ -129,7 +138,10 @@ export function normalizeMetaCampaignFunnel(
     tenantId: scope.tenantId, product: "demand" as const, provider: "meta_ads" as const,
     accountId: scope.accountId, campaignId: scope.campaignId,
     windowStart: scope.since, windowEndInclusive: scope.until,
-    collectedAt: scope.collectedAt, currency: "MYR" as const,
+    collectedAt: scope.collectedAt,
+    calendarWindowStatus: scope.until === collectedMytDate
+      ? "CURRENT_MYT_DAY" as const : "PAST_MYT_DAY" as const,
+    currency: "MYR" as const,
     spendMinor: money(row.spend), impressions: count(row.impressions),
     reach: count(row.reach), clicks: count(row.clicks), inlineLinkClicks: inline,
     landingPageViews: lpv,
