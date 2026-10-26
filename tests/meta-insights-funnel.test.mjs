@@ -100,3 +100,25 @@ test('conflicting omni and pixel purchase aliases fail closed even without gener
   assert.equal(x.hitpayPaidOrders,null);
   assert.equal(x.verifiedCacMinor,null);
 });
+
+
+test('MYT calendar boundary classifies partial reporting without claiming provider finality',()=>{
+  const ongoing=normalizeMetaCampaignFunnel(scope,row);
+  assert.equal(ongoing.calendarWindowStatus,'CURRENT_MYT_DAY');
+  const past=normalizeMetaCampaignFunnel({...scope,collectedAt:'2026-10-27T00:00:00Z'},row);
+  assert.equal(past.calendarWindowStatus,'PAST_MYT_DAY');
+  assert.equal(past.verifiedCacMinor,null);
+  assert.equal(past.hitpaySettledOrders,null);
+});
+
+test('MYT calendar boundary accepts valid local midnight and rejects future local report day',()=>{
+  const midnightScope={...scope,since:'2026-10-26',until:'2026-10-26',
+    collectedAt:'2026-10-25T16:05:00Z'};
+  const midnightRow={...row,date_start:'2026-10-26',date_stop:'2026-10-26'};
+  assert.equal(normalizeMetaCampaignFunnel(midnightScope,midnightRow).calendarWindowStatus,
+    'CURRENT_MYT_DAY');
+  assert.throws(()=>normalizeMetaCampaignFunnel(
+    {...midnightScope,collectedAt:'2026-10-25T15:59:59Z'},midnightRow),invalid);
+  const futureRow={...row,date_stop:'2026-10-27'};
+  assert.throws(()=>normalizeMetaCampaignFunnel({...scope,until:'2026-10-27'},futureRow),invalid);
+});
