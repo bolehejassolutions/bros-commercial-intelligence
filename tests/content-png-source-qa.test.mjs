@@ -27,3 +27,23 @@ test('PNG Up filter decodes to same pixels as None filter',()=>{
   assert.equal(verify(filtered,opts).pixelSha256,verify(png(30),opts).pixelSha256);
   assert.throws(()=>set([filtered,png(30)],opts),/DUPLICATE_PIXELS/);
 });
+
+// CONTENT_STATIC_PNG_ANIMATION_TRANSPARENCY_GATE_20261027: CRC-valid APNG and RGB color-key transparency must not masquerade as static RGB evidence.
+test('rejects APNG animation chunks even when image CRC and first frame are valid',()=>{
+  const base=png(30),header=Buffer.alloc(13);
+  header.writeUInt32BE(2,0);header.writeUInt32BE(2,4);header[8]=8;header[9]=2;
+  const rows=Buffer.alloc(14,30);rows[0]=0;rows[7]=0;
+  const frameCount=Buffer.alloc(8);frameCount.writeUInt32BE(2,0);
+  const animated=Buffer.concat([sig,chunk('IHDR',header),chunk('acTL',frameCount),chunk('IDAT',deflateSync(rows)),chunk('IEND',Buffer.alloc(0))]);
+  assert.ok(base.length>0);
+  assert.throws(()=>verify(animated,opts),/UNSUPPORTED_ANIMATED_PNG/);
+  const frameControl=Buffer.concat([sig,chunk('IHDR',header),chunk('fcTL',Buffer.alloc(26)),chunk('IDAT',deflateSync(rows)),chunk('IEND',Buffer.alloc(0))]);
+  assert.throws(()=>verify(frameControl,opts),/UNSUPPORTED_ANIMATED_PNG/);
+});
+test('rejects truecolor tRNS color-key transparency absent from RGB pixel digest',()=>{
+  const header=Buffer.alloc(13);header.writeUInt32BE(2,0);header.writeUInt32BE(2,4);header[8]=8;header[9]=2;
+  const rows=Buffer.alloc(14,30);rows[0]=0;rows[7]=0;
+  const transparentRgb=Buffer.from([0,30,0,30,0,30]);
+  const transparent=Buffer.concat([sig,chunk('IHDR',header),chunk('tRNS',transparentRgb),chunk('IDAT',deflateSync(rows)),chunk('IEND',Buffer.alloc(0))]);
+  assert.throws(()=>verify(transparent,opts),/UNSUPPORTED_COLOR_KEY_TRANSPARENCY/);
+});
