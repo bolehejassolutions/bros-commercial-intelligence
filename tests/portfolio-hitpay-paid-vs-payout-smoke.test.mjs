@@ -275,3 +275,62 @@ test("complete synthetic CONTENT/DEMAND flows still require independent external
     ...input, experimentId: "different-experiment-id",
   }), /Invalid DEMAND experiment evidence/);
 });
+
+
+/**
+ * PORTFOLIO_CONTENT_BCI_RUNTIME_ENVELOPE_BOUNDARY_20261027_0718
+ * Consumer-driven, OFFLINE runtime contract against the shared BCI parser.
+ * Fixture mirrors CONTENT PR #15 public handoff shape at commit 77ee6a7;
+ * the diverged branches are NOT combined or provider-authenticated here.
+ * Mapping/auth/persistence remain exclusively Neon/BCI worker ownership.
+ */
+test("raw CONTENT observation cannot bypass trusted BCI evidence-envelope mapping", async () => {
+  const { normalizeEvidenceEnvelope } = await import("../lib/bci/evidence-envelope.ts");
+  const contentSnapshotId = "content-buffer-" + "a".repeat(64);
+  const handoff = {
+    schemaVersion: 1, tenantId, product: "content",
+    evidenceId: contentSnapshotId, category: "content_post_observation",
+    provenance: {
+      provider: "buffer", providerObjectId: "synthetic-buffer-post",
+      collectedAt: "2026-10-27T00:15:00Z",
+      observedAt: "2026-10-26T15:34:46Z",
+      windowStart: "2026-10-26T01:02:51Z",
+      windowEnd: "2026-10-26T15:34:46Z",
+      sourceReference: "https://www.instagram.com/p/synthetic/",
+      completeness: "unverified",
+    },
+    metrics: { views: 6, reach: 4, comments: 0, saves: null },
+    observedFacts: ["Synthetic projection only, not a provider attestation."],
+    unknowns: [
+      "PROVIDER_AUTHENTICATION_UNVERIFIED",
+      "PUBLICATION_APPROVAL_UNVERIFIED",
+      "NATIVE_MEDIA_BYTES_UNVERIFIED",
+      "SHARED_BCI_AUDIT_NOT_WRITTEN",
+    ],
+  };
+  // BCI expects server-derived flat provider/provenance fields. Raw
+  // product payload must not be accepted as a trusted ingestion envelope.
+  assert.throws(() => normalizeEvidenceEnvelope(handoff), /Invalid evidence envelope/);
+
+  // A *hypothetical* mapping can preserve a stable provider snapshot key,
+  // null-vs-zero metrics, and explicit non-live synthetic provenance.
+  // This does NOT grant any provider, tenant or publication attestation.
+  const mapped = {
+    tenantId, product: "content", provider: "buffer",
+    providerRecordKey: handoff.evidenceId,
+    observedAt: handoff.provenance.observedAt,
+    environment: "unknown", provenance: "synthetic",
+    metrics: handoff.metrics,
+  };
+  const normalized = normalizeEvidenceEnvelope(mapped);
+  assert.equal(normalized.providerRecordKey, contentSnapshotId);
+  assert.equal(normalized.product, "content");
+  assert.equal(normalized.provenance, "synthetic");
+  assert.equal(normalized.environment, "unknown");
+  assert.equal(normalized.metrics.comments, 0);
+  assert.equal(normalized.metrics.saves, null);
+  assert.deepEqual(normalizeEvidenceEnvelope({ ...mapped }), normalized);
+  assert.throws(() => normalizeEvidenceEnvelope({
+    ...mapped, environment: "live",
+  }), /Invalid evidence envelope/);
+});
