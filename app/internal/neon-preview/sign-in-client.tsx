@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
-import { requestNeonPreviewToken } from "@/lib/bci/neon-preview-client-token";
+import { requestNeonPreviewToken, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
 
 const operatorEmail = "rasymokh@gmail.com";
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
@@ -129,8 +129,9 @@ export default function NeonPreviewSignIn() {
       setMessage(`Protected ${product.toUpperCase()} access verified. ${result.evidence.length === 0
         ? "No development evidence is available in this scope."
         : "One development evidence record was returned."}`);
-    } catch {
-      setMessage(`Protected access check failed before completion (phase: ${phase}). No access has been granted.`);
+    } catch (error) {
+      const category = phase === "token" && error instanceof NeonPreviewTokenUnavailable ? `; category: ${error.category}` : "";
+      setMessage(`Protected access check failed before completion (phase: ${phase}${category}). No access has been granted.`);
     } finally { setBusy(false); }
   }
 
