@@ -7,6 +7,8 @@ export type PreviewNegativeCheck = Readonly<{ id: string; passed: boolean }>;
 export type PreviewNegativeReport = Readonly<{
   passed: number;
   total: number;
+  authenticatedControlsPassed: number;
+  authenticatedControlsTotal: number;
   checks: readonly PreviewNegativeCheck[];
 }>;
 type Probe = Readonly<{ id: string; path: string; expected: number; method?: "POST"; extraHeader?: readonly [string,string]; bearer: boolean }>;
@@ -19,11 +21,37 @@ const probes: readonly Probe[] = [
   { id: "product_header", path: "?product=content", expected: 400, bearer: true, extraHeader: ["x-product","demand"] },
   { id: "write_method", path: "?product=content", expected: 405, bearer: true, method: "POST" },
 ];
+const controlProducts = ["content", "demand"] as const;
+const safeHeaders = (response: Response) =>
+  /no-store/i.test(response.headers.get("cache-control") ?? "") &&
+  /Authorization/i.test(response.headers.get("vary") ?? "");
+
+/** Positive authenticated controls prevent false 7/7 when the bearer is invalid or expired. */
 export async function runNeonPreviewNegativeChecks(
   token: string, request: typeof fetch = fetch,
 ): Promise<PreviewNegativeReport> {
   if (typeof token !== "string" || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token) ||
       token.length > 16000) throw new Error("Invalid preview token");
+  let authenticatedControlsPassed = 0;
+  for (const product of controlProducts) {
+    try {
+      const response = await request(`/api/internal/neon-evidence?product=${product}&limit=1`, {
+        method: "GET", headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 || !safeHeaders(response)) throw new Error();
+      const raw = await response.text();
+      if (raw.length > 65536) throw new Error();
+      const body: unknown = JSON.parse(raw);
+      if (body === null || typeof body !== "object" || Array.isArray(body) ||
+          !("scope" in body) || body.scope !== "internal-development" ||
+          !("evidence" in body) || !Array.isArray(body.evidence) || body.evidence.length > 1) throw new Error();
+      authenticatedControlsPassed++;
+    } catch {
+      // Never retain response bodies, tokens, identifiers or raw provider errors.
+      throw new Error("Authenticated preview controls failed");
+    }
+  }
   const checks: PreviewNegativeCheck[] = [];
   for (const probe of probes) {
     try {
@@ -33,9 +61,7 @@ export async function runNeonPreviewNegativeChecks(
         method: probe.method ?? "GET", headers, cache: "no-store", redirect: "error",
       });
       const raw = await response.text();
-      const passed = response.status === probe.expected &&
-        /no-store/i.test(response.headers.get("cache-control") ?? "") &&
-        /Authorization/i.test(response.headers.get("vary") ?? "") &&
+      const passed = response.status === probe.expected && safeHeaders(response) &&
         !/"evidence"\s*:/.test(raw);
       checks.push(Object.freeze({ id: probe.id, passed }));
     } catch {
@@ -43,5 +69,6 @@ export async function runNeonPreviewNegativeChecks(
     }
   }
   return Object.freeze({ passed: checks.filter(check => check.passed).length,
-    total: checks.length, checks: Object.freeze(checks) });
+    total: checks.length, authenticatedControlsPassed,
+    authenticatedControlsTotal: controlProducts.length, checks: Object.freeze(checks) });
 }
