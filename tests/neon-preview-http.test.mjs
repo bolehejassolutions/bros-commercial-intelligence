@@ -97,6 +97,9 @@ async function denied(response, status) {
   assert.match(response.headers.get("vary"), /Authorization/i);
   const raw = await response.text();
   assert.doesNotMatch(raw, /postgres|password|DATABASE_URL|rasymokh|11111111|secret-sentinel/i);
+  if (status === 403) assert.deepEqual(JSON.parse(raw), {
+    error: "BCI private evidence access denied.",
+  });
   return raw;
 }
 
@@ -214,4 +217,22 @@ test("HTTP direct handler reuse rejects wrong paths and encoded route lookalikes
     await denied(await f.handler(request), 400);
     assert.equal(f.calls.length, 0);
   }
+});
+
+test("HTTP 403 does not reveal whether identity, membership or evidence failed", async () => {
+  const cases = [
+    { options: {}, jwt: token({ exp: NOW }) },
+    { options: { grants: [] }, jwt: token() },
+    { options: { evidenceError: "secret-sentinel" }, jwt: token() },
+  ];
+  const envelopes = [];
+  for (const item of cases) {
+    const f = harness(item.options);
+    const response = await f.handler(f.request("product=content", item.jwt));
+    envelopes.push(await denied(response, 403));
+  }
+  assert.equal(new Set(envelopes).size, 1);
+  assert.equal(envelopes[0], JSON.stringify({
+    error: "BCI private evidence access denied.",
+  }));
 });
