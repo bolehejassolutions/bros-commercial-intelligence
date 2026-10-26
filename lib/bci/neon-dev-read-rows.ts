@@ -65,13 +65,26 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
                 has_table_privilege(current_user, 'bci_dev.evidence', 'UPDATE') AS can_update_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'DELETE') AS can_delete_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'TRUNCATE') AS can_truncate_evidence,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'REFERENCES') AS can_reference_evidence,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'TRIGGER') AS can_trigger_evidence,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'SELECT') AS can_read_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'INSERT') AS can_insert_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'UPDATE') AS can_update_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'DELETE') AS can_delete_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'TRUNCATE') AS can_truncate_memberships,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'REFERENCES') AS can_reference_memberships,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'TRIGGER') AS can_trigger_memberships,
                 has_schema_privilege(current_user, 'bci_dev', 'CREATE') AS can_create_schema_objects,
-                has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects
+                has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects,
+                (SELECT COUNT(*) = 3 AND bool_and(
+                    extra.relrowsecurity AND extra.relforcerowsecurity AND
+                    has_table_privilege(current_user, extra.oid, 'SELECT') AND
+                    NOT has_table_privilege(current_user, extra.oid,
+                      'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'))
+                 FROM pg_class extra JOIN pg_namespace extra_ns ON extra_ns.oid = extra.relnamespace
+                 WHERE extra_ns.nspname = 'bci_dev'
+                   AND extra.relname IN ('cases', 'case_evidence', 'proposals')
+                   AND extra.relkind IN ('r', 'p')) AS lineage_tables_readonly
          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE n.nspname = 'bci_dev' AND c.relname = 'evidence' AND c.relkind IN ('r', 'p')`,
         []
@@ -85,13 +98,18 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
           posture.rows[0].can_update_evidence !== false ||
           posture.rows[0].can_delete_evidence !== false ||
           posture.rows[0].can_truncate_evidence !== false ||
+          posture.rows[0].can_reference_evidence !== false ||
+          posture.rows[0].can_trigger_evidence !== false ||
           posture.rows[0].can_read_memberships !== false ||
           posture.rows[0].can_insert_memberships !== false ||
           posture.rows[0].can_update_memberships !== false ||
           posture.rows[0].can_delete_memberships !== false ||
           posture.rows[0].can_truncate_memberships !== false ||
+          posture.rows[0].can_reference_memberships !== false ||
+          posture.rows[0].can_trigger_memberships !== false ||
           posture.rows[0].can_create_schema_objects !== false ||
-          posture.rows[0].can_create_database_objects !== false) deny();
+          posture.rows[0].can_create_database_objects !== false ||
+          posture.rows[0].lineage_tables_readonly !== true) deny();
 
       // Scope is derived upstream from trusted membership, not request data.
       // set_config(...,true) binds tenant AND product transaction-locally; never share the session with a
