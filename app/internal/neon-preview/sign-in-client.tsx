@@ -144,7 +144,7 @@ export default function NeonPreviewSignIn() {
       if (!await hasVerifiedOperatorSession()) throw new Error();
       const token = await requestNeonPreviewToken(auth());
       const report = await runNeonPreviewNegativeChecks(token);
-      setMessage(`Preview HTTP rejection probes: ${report.passed}/${report.total} passed. These checks do not prove cross-tenant database isolation, membership revocation, or independent hosted verification.`);
+      setMessage(`Authenticated CONTENT/DEMAND controls: ${report.authenticatedControlsPassed}/${report.authenticatedControlsTotal} passed; Preview HTTP rejection probes: ${report.passed}/${report.total} passed. These checks do not prove cross-tenant database isolation, membership revocation, or independent hosted verification.`);
     } catch {
       setMessage("Preview HTTP rejection probes could not complete. No security gate has been certified.");
     } finally { setBusy(false); }
