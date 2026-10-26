@@ -1,5 +1,16 @@
 # Neon BCI development ledger — internal-only prototype
 
+## BCI_NEON_RESTRICTED_DML_DRIFT_GUARD_20261026 — restricted reader DML privilege drift gate (26 Oct 2026)
+
+**VERIFIED code + regression tests + exact-commit GitHub CI SUCCESS + read-only Neon catalog; NOT a new authenticated hosted negative matrix or direct restricted LOGIN test.** Both Preview server-only readers now reject privilege drift if either restricted role acquires UPDATE, DELETE or TRUNCATE on either `bci_dev.evidence` or `bci_dev.tenant_memberships`. Existing direct-login identity, RLS FORCE, read-only transaction and cross-table SELECT checks remain. The checks run before tenant/product/principal transaction scope is set and fail closed. No grants, credentials, database migration or production deploy.
+
+Provider catalog read-only on `empty-tooth-43040036` / `br-broad-math-b3f4d2r4` / `bros_intelligence_dev`: both restricted LOGIN roles currently have all six mutation privileges FALSE; neither sensitive table has PUBLIC SELECT/INSERT; both tables have RLS enabled and forced. The separate `bci_dev_runtime` role is NOLOGIN and is not a Preview reader. Catalog checks do not constitute restricted direct-login or authenticated API evidence.
+
+Code/tests: `lib/bci/neon-dev-read-rows.ts`, `lib/bci/neon-dev-membership-rows.ts`, corresponding unit tests and HTTP fixture updated, readback verified. Final code/test commit `5de36a5fddfd8589d03ee0dbb8abcec136ba9773`. Initial CI failures reflected stale HTTP fixture; corrected final GitHub Actions [40316793543](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40316793543) **SUCCESS** (182 Node tests, TypeScript and Next.js build). This is drift prevention, not a new proof of least-privilege direct login or cross-tenant isolation.
+
+OPEN: owner-session latest 2/2 authenticated controls + 7/7 negative probes; independent cross-tenant/product/revocation and admin-impersonation end-to-end; shared BCI provider audit reuse and remaining CONTENT/DEMAND/HitPay gates. Issue #11 OPEN, PR #10 DRAFT. No Production, Neon plan/paid costs, permissions, secrets, Meta spend, Buffer publishing, BROS SELL tasks or BROS LABS changes.
+
+
 ## BCI_HITPAY_TIMESTAMP_CALENDAR_GUARD_20261026
 
 **26 Oct 2026 — VERIFIED DRAFT PR SOURCE + REGRESSION + CI SUCCESS; NOT LIVE HITPAY SETTLEMENT OR INTERNAL V1.** The read-only HitPay list-row paid-pair reconciler previously accepted calendar-invalid `closed_at` values because `Date.parse` can normalize impossible dates. It now validates leap years, month/day bounds, 24-hour clock, seconds/minutes and realistic signed timezone offsets before accepting the provider timestamp. The provider's actual observed timestamp format remains accepted. Rejected input cannot be promoted into even the provisional provider-reported paid pair.
