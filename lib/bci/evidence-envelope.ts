@@ -27,19 +27,20 @@ export function normalizeEvidenceEnvelope(input:unknown):EvidenceEnvelope {
      !["test","live","unknown"].includes(String(input.environment))||
      !["synthetic","provider_reported","provider_verified"].includes(String(input.provenance))||
      !object(input.metrics)||Object.keys(input.metrics).length>100) deny();
-  if (!object(input)) deny();
+  if (!object(input)) throw new Error("Invalid evidence envelope");
+  const record: Record<string, unknown> = input;
   // A synthetic fixture can never be labelled as live provider evidence.
-  if(input.provenance==="synthetic"&&input.environment==="live") deny();
+  if(record.provenance==="synthetic"&&record.environment==="live") deny();
   const metrics:Record<string,number|null>={};
-  for(const [key,value] of Object.entries(input.metrics)){
+  for(const [key,value] of Object.entries(record.metrics)){
     if(!/^[a-z][a-z0-9_]{0,63}$/.test(key)||
        (value!==null&&(typeof value!=="number"||!Number.isFinite(value)))) deny();
     metrics[key]=value as number|null;
   }
   return Object.freeze({
-    tenantId:input.tenantId as string,product:input.product as IngestProduct,
-    provider:input.provider as string,providerRecordKey:input.providerRecordKey as string,
-    observedAt:input.observedAt as string,environment:input.environment as EvidenceEnvelope["environment"],
-    provenance:input.provenance as EvidenceEnvelope["provenance"],metrics:Object.freeze(metrics),
+    tenantId:record.tenantId as string,product:record.product as IngestProduct,
+    provider:record.provider as string,providerRecordKey:record.providerRecordKey as string,
+    observedAt:record.observedAt as string,environment:record.environment as EvidenceEnvelope["environment"],
+    provenance:record.provenance as EvidenceEnvelope["provenance"],metrics:Object.freeze(metrics),
   });
 }
