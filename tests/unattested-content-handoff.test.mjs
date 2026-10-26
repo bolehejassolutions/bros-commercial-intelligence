@@ -65,6 +65,30 @@ test("rejects forged provider status, malformed snapshot identity and unknown fl
     /Invalid unattested CONTENT handoff/);
 });
 
+test("accepts genuine unmeasured CONTENT shape without inventing zero metrics", () => {
+  const unmeasured = {
+    ...handoff,
+    provenance: { ...provenance, observedAt: provenance.windowStart, windowEnd: null },
+    metrics: Object.fromEntries(Object.keys(metrics).map(key => [key, null])),
+    unknowns: [...unknowns, "MEASUREMENT_UNAVAILABLE"],
+    observedFacts: [handoff.observedFacts[0], "No valid measured metric values are available."],
+  };
+  const result = projectUnattestedContentHandoff(unmeasured, scope);
+  assert.equal(result.envelope.observedAt, provenance.windowStart);
+  assert.ok(Object.values(result.envelope.metrics).every(value => value === null));
+  assert.equal(result.envelope.provenance, "synthetic");
+  assert.equal(result.persisted, false);
+
+  for (const invalid of [
+    { ...unmeasured, unknowns },
+    { ...unmeasured, provenance: { ...unmeasured.provenance, windowEnd: provenance.observedAt } },
+    { ...unmeasured, provenance: { ...unmeasured.provenance, observedAt } },
+    { ...unmeasured, metrics: { ...unmeasured.metrics, views: 0 } },
+    { ...handoff, unknowns: [...unknowns, "MEASUREMENT_UNAVAILABLE"] },
+  ]) assert.throws(() => projectUnattestedContentHandoff(invalid, scope),
+    /Invalid unattested CONTENT handoff/);
+});
+
 test("rejects provider future timestamps and hidden data fields", () => {
   for (const input of [
     { ...handoff, provenance: { ...provenance,
