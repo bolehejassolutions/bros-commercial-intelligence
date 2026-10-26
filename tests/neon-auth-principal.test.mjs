@@ -39,11 +39,17 @@ test("rejects unsigned, malformed, tampered and mismatched key tokens", async ()
   }
 });
 test("rejects expired, not-yet-valid, missing audience and wrong issuer", async () => {
-  for (const claims of [{ exp: NOW }, { nbf: NOW+100 }, { iat: NOW+200 },
+  for (const claims of [{ exp: NOW }, { nbf: NOW+1 }, { nbf: NOW+59 }, { nbf: NOW+100 }, { iat: NOW+200 },
     { aud: "other" }, { iss: "https://evil.test" }, { sub: "attacker" }, { exp: NOW+90000 }]) {
     await assert.rejects(verifier()(jwt("RS256", claims)), denied);
   }
 });
+test("not-before is enforced at the current second without rejecting valid boundary tokens", async () => {
+  assert.deepEqual(await verifier()(jwt("EdDSA", { nbf: NOW })), { userId: USER, authenticated: true });
+  assert.deepEqual(await verifier()(jwt("EdDSA", { nbf: NOW-1 })), { userId: USER, authenticated: true });
+  await assert.rejects(verifier()(jwt("EdDSA", { nbf: NOW+1 })), denied);
+});
+
 test("rejects duplicate kid, wrong key algorithm and JWKS retrieval failures", async () => {
   const rsa = pairs.RS256.publicKey.export({ format: "jwk" });
   const key = { ...rsa, kid: "test-RS256", alg: "RS256" };
