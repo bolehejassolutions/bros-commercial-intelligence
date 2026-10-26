@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * BROS DEMAND internal, read-only Meta Ads campaign funnel projection.
  *
@@ -148,8 +149,19 @@ export function normalizeMetaCampaignFunnel(
   const pixelEvents = mismatch ? null : pixel;
   const snapshotFields = [spendMinor, impressions, reach, clicks, inline, lpv,
     attributed, pixelEvents, mismatch ? 1 : 0];
+  // DEMAND_META_ACTION_SNAPSHOT_INTEGRITY_20261027: derived metrics can
+  // collide when two different raw Meta action reports both fail closed
+  // (e.g. conflicting purchase aliases), or when an unprojected action
+  // changes. Fingerprint every normalized action label/value, independent
+  // of provider array order or identical duplicate labels. This is an
+  // observation identity, NOT a provider signature or verified sale.
+  const normalizedActionDigest = createHash("sha256")
+    .update(JSON.stringify([...actions.entries()].sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0)))
+    .digest("hex");
   const snapshotKey = sourceKey + ":snapshot:" + scope.collectedAt + ":" +
-    snapshotFields.map(v => v === null ? "null" : String(v)).join(":");
+    snapshotFields.map(v => v === null ? "null" : String(v)).join(":") +
+    ":actions-sha256:" + normalizedActionDigest;
   return Object.freeze({
     sourceKey, snapshotKey,
     tenantId: scope.tenantId, product: "demand" as const, provider: "meta_ads" as const,
