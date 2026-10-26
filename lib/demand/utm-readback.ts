@@ -55,9 +55,25 @@ export function assessDemandUtmReadback(
   proposal: DemandUtmProposal,
   row: DemandGa4UtmRow | null,
 ): DemandUtmReadback {
+  // Never accept a caller-supplied proposal ID independently of its
+  // immutable channel/variant/campaign identity. Otherwise two different
+  // proposals could collide in downstream idempotency or evidence correlation.
   if (!proposal || proposal.status !== "PROPOSED" ||
-      typeof proposal.proposalId !== "string" ||
+      typeof proposal.experimentId !== "string" ||
+      !/^[a-z][a-z0-9_]{2,63}$/.test(proposal.experimentId) ||
+      !["facebook", "instagram", "tiktok", "whatsapp"].includes(proposal.channel) ||
+      (proposal.variant !== "a" && proposal.variant !== "b") ||
+      proposal.proposalId !==
+        `demand:utm:${proposal.experimentId}:${proposal.channel}:${proposal.variant}` ||
       typeof proposal.taggedUrl !== "string") fail();
+  let url: URL;
+  try { url = new URL(proposal.taggedUrl); } catch { return fail(); }
+  if (url.origin !== "https://bros.bolehejas.com" || url.pathname !== "/" ||
+      url.username || url.password || url.hash || url.searchParams.size !== 4 ||
+      url.searchParams.get("utm_source") !== proposal.channel ||
+      url.searchParams.get("utm_medium") !== "organic_social" ||
+      url.searchParams.get("utm_campaign") !== proposal.experimentId ||
+      url.searchParams.get("utm_content") !== proposal.variant) fail();
   const result = (status: DemandUtmReadback["status"], evidenceId: string | null,
     sessions: number | null, engaged: number | null): DemandUtmReadback => Object.freeze({
     proposalId: proposal.proposalId,
@@ -83,14 +99,6 @@ export function assessDemandUtmReadback(
       row.periodEnd > row.retrievedAt.slice(0, 10) ||
       !count(row.sessions) || !count(row.engagedSessions) ||
       (row.sessions !== null && row.engagedSessions !== null && row.engagedSessions > row.sessions)) fail();
-  let url: URL;
-  try { url = new URL(proposal.taggedUrl); } catch { return fail(); }
-  if (url.origin !== "https://bros.bolehejas.com" || url.pathname !== "/" ||
-      url.searchParams.size !== 4 ||
-      url.searchParams.get("utm_source") !== proposal.channel ||
-      url.searchParams.get("utm_medium") !== "organic_social" ||
-      url.searchParams.get("utm_campaign") !== proposal.experimentId ||
-      url.searchParams.get("utm_content") !== proposal.variant) fail();
   if (row.landingPath !== "/" ||
       row.source !== proposal.channel || row.medium !== "organic_social" ||
       row.campaign !== proposal.experimentId || row.content !== proposal.variant) {
