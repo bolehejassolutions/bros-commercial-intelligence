@@ -59,13 +59,27 @@ export function createNeonPreviewHandler(deps: Dependencies) {
     const token = authorization.slice(7);
     try {
       // The closure is request-local. No token, principal or membership is cached across requests.
-      const reader = createPrivateEvidenceReader({
-        authenticate: () => verify(token),
-        membershipsFor: deps.membershipsFor,
-        readRows: deps.readRows,
-      });
-      const evidence = await reader({ product, ...(rawLimit === null ? {} : { limit: Number(rawLimit) }) });
-      return json({ evidence, scope: "internal-development" }, 200);
+      let stage: "identity" | "membership" | "evidence" = "identity";
+      try {
+        const reader = createPrivateEvidenceReader({
+          authenticate: () => verify(token),
+          membershipsFor: async (...args) => {
+            stage = "membership";
+            return deps.membershipsFor(...args);
+          },
+          readRows: async (...args) => {
+            stage = "evidence";
+            return deps.readRows(...args);
+          },
+        });
+        const evidence = await reader({ product, ...(rawLimit === null ? {} : { limit: Number(rawLimit) }) });
+        return json({ evidence, scope: "internal-development" }, 200);
+      } catch {
+        // Emit only a fixed stage label. Never log exception objects, identifiers,
+        // credentials, bearer tokens, SQL parameters or request URLs.
+        console.warn("bci_neon_preview_denied", stage);
+        return denied(403);
+      }
     } catch {
       // Never serialize provider/driver errors, connection strings, tokens or SQL parameters.
       return denied(403);
