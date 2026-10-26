@@ -139,3 +139,33 @@ test("duplicate database evidence IDs and provider record keys fail closed", asy
   const { read } = harness({ rows: [base, { ...sameProviderKey, providerRecordKey: "provider-event-2" }] });
   assert.equal((await read({ product: "demand" })).length, 2);
 });
+
+
+test("unreviewed DB columns and noncanonical metric payloads are denied before serialization", async () => {
+  const base = { id: ROW, tenantId: A, product: "demand",
+    provider: "manual", providerRecordKey: "synthetic-a", metrics: { clicks: 0 } };
+  for (const extra of [
+    { customerEmail: "private@example.test" },
+    { principalId: USER },
+    { admin: true },
+  ]) {
+    const { read } = harness({ rows: [{ ...base, ...extra }] });
+    await assert.rejects(read({ product: "demand" }), denied);
+  }
+  for (const metrics of [
+    JSON.parse('{"__proto__": 1}'),
+    { "unreviewed metric": 1 },
+    { "Atypical": 2 },
+    { clicks: undefined },
+    Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`m_${i}`, i])),
+  ]) {
+    const { read } = harness({ rows: [{ ...base, metrics }] });
+    await assert.rejects(read({ product: "demand" }), denied);
+  }
+  const { read } = harness({ rows: [base] });
+  const [row] = await read({ product: "demand" });
+  assert.deepEqual(Object.keys(row).sort(), [
+    "id", "tenantId", "product", "provider", "providerRecordKey", "metrics",
+  ].sort());
+  assert.deepEqual(row.metrics, { clicks: 0 });
+});
