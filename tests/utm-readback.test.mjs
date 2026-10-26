@@ -54,3 +54,28 @@ test('no authority to execute, publish or claim actual acquisition outcome',()=>
   assert.equal('paidOrders' in x,false);
   assert.equal('verifiedRevenue' in x,false);
 });
+
+
+test('proposal identity is immutable across channel, variant, campaign and missing readback',()=>{
+  const bad=[
+    {...proposal,proposalId:'demand:utm:another:instagram:a'},
+    {...proposal,proposalId:'demand:utm:demand_sell_decision_state_v1:instagram:b'},
+    {...proposal,channel:'facebook'},
+    {...proposal,variant:'b'},
+    {...proposal,experimentId:'another_experiment'},
+    {...proposal,experimentId:'invalid/campaign'},
+    {...proposal,proposalId:'demand:utm:fake'},
+  ];
+  for(const spoof of bad){
+    assert.throws(()=>assessDemandUtmReadback(spoof,row),invalid);
+    assert.throws(()=>assessDemandUtmReadback(spoof,null),invalid);
+  }
+});
+test('URL userinfo and fragments cannot alias a canonical proposal ID',()=>{
+  for(const taggedUrl of [
+    proposal.taggedUrl+'#other',
+    proposal.taggedUrl.replace('https://','https://user:pass@'),
+    proposal.taggedUrl+'&utm_medium=paid_social',
+    proposal.taggedUrl.replace('bros.bolehejas.com','evil.example'),
+  ]) assert.throws(()=>assessDemandUtmReadback({...proposal,taggedUrl},row),invalid);
+});
