@@ -121,7 +121,7 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
         const rawMetrics = value.metrics;
         const metricEntries = Object.entries(rawMetrics);
         if (metricEntries.length > 100) throw new PrivateEvidenceAccessDenied();
-        const metrics: Record<string, number | null> = Object.create(null);
+        const metrics: Record<string, number | null> = {};
         for (const [key, raw] of metricEntries) {
           if (!/^[a-z][a-z0-9_]{0,63}$/.test(key)) throw new PrivateEvidenceAccessDenied();
           if (raw === null) metrics[key] = null;
