@@ -18,7 +18,7 @@ async function hasVerifiedOperatorSession(): Promise<boolean> {
 }
 
 export default function NeonPreviewSignIn() {
-  const [step, setStep] = useState<"start" | "code" | "ready">("start");
+  const [step, setStep] = useState<"start" | "verify-code" | "signin-code" | "ready">("start");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(true);
   const [cooldown, setCooldown] = useState(0);
@@ -31,7 +31,7 @@ export default function NeonPreviewSignIn() {
     hasVerifiedOperatorSession().then(verified => {
       if (cancelled) return;
       setStep(verified ? "ready" : "start");
-      setMessage(verified ? "Your email is verified and you are signed in." : "Request a code to sign in with your approved email.");
+      setMessage(verified ? "Your email is verified and you are signed in." : "Neon Console Google login is separate from BROS app login. Verify your email here first, or sign in if already verified.");
     }).catch(() => {
       if (!cancelled) setMessage("Your session could not be checked. You can request a new sign-in code.");
     }).finally(() => { if (!cancelled) setBusy(false); });
@@ -44,17 +44,17 @@ export default function NeonPreviewSignIn() {
     return () => window.clearTimeout(timer);
   }, [cooldown]);
 
-  async function sendCode() {
+  async function sendCode(kind: "verify" | "signin") {
     if (busy || cooldown > 0) return;
     setBusy(true);
     setMessage("Requesting your sign-in code…");
     try {
-      const { error } = await auth().emailOtp.sendVerificationOtp({ email: operatorEmail, type: "sign-in" });
+      const { error } = await auth().emailOtp.sendVerificationOtp({ email: operatorEmail, type: kind === "verify" ? "email-verification" : "sign-in" });
       if (error) throw new Error();
       setCode("");
-      setStep("code");
+      setStep(kind === "verify" ? "verify-code" : "signin-code");
       setCooldown(60);
-      setMessage("Enter the code sent to your approved email. Keep the code in this page.");
+      setMessage(kind === "verify" ? "Enter the Neon Auth email-verification code to confirm mailbox ownership." : "Enter the Neon Auth sign-in code. Do not share the code.");
     } catch {
       setMessage("The code could not be requested. Check your connection and try again. No access has been granted.");
     } finally { setBusy(false); }
@@ -66,14 +66,28 @@ export default function NeonPreviewSignIn() {
     setBusy(true);
     setMessage("Verifying your sign-in code…");
     try {
-      const { error } = await auth().signIn.emailOtp({ email: operatorEmail, otp: code });
-      setCode("");
-      if (error || !await hasVerifiedOperatorSession()) throw new Error();
-      setStep("ready");
-      setMessage("Your email is verified and you are signed in. Check protected access below.");
+      if (step === "verify-code") {
+        const { error } = await auth().emailOtp.verifyEmail({ email: operatorEmail, otp: code });
+        if (error) throw new Error();
+        setCode("");
+        setCooldown(0);
+        if (await hasVerifiedOperatorSession()) {
+          setStep("ready");
+          setMessage("Your email is verified and you are signed in. Check protected access below.");
+        } else {
+          setStep("start");
+          setMessage("Email verification accepted. Request a separate sign-in code to open your BROS session.");
+        }
+      } else if (step === "signin-code") {
+        const { error } = await auth().signIn.emailOtp({ email: operatorEmail, otp: code });
+        setCode("");
+        if (error || !await hasVerifiedOperatorSession()) throw new Error();
+        setStep("ready");
+        setMessage("Your email is verified and you are signed in. Check protected access below.");
+      } else throw new Error();
     } catch {
       setCode("");
-      setMessage("Sign-in could not be verified. Enter a valid code, or request a new one when available.");
+      setMessage("The code could not be verified or a verified session was not created. Request a new code if needed.");
     } finally { setBusy(false); }
   }
 
@@ -128,10 +142,10 @@ export default function NeonPreviewSignIn() {
           <input type="email" value={operatorEmail} readOnly autoComplete="email" />
         </label>
         <p role="status" aria-live="polite">{message}</p>
-        {step === "start" ? <button type="button" disabled={busy || cooldown > 0} onClick={sendCode}>
-          {cooldown > 0 ? `Request another code in ${cooldown}s` : "Send sign-in code"}
-        </button> : null}
-        {step === "code" ? (
+        {step === "start" ? <div className="auth-form"><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("verify")}>
+          {cooldown > 0 ? `Wait ${cooldown}s` : "Verify email (first app login)"}
+        </button><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>Send sign-in code (already verified)</button></div> : null}
+        {(step === "verify-code" || step === "signin-code") ? (
           <form className="auth-form" onSubmit={verifyCode}>
             <label>
               Sign-in code
@@ -139,8 +153,8 @@ export default function NeonPreviewSignIn() {
                 minLength={6} maxLength={6} required value={code} disabled={busy}
                 onChange={event => setCode(event.target.value.replace(/[^0-9]/g, ""))} />
             </label>
-            <button type="submit" disabled={busy || code.length !== 6}>Verify and sign in</button>
-            <button type="button" disabled={busy || cooldown > 0} onClick={sendCode}>
+            <button type="submit" disabled={busy || code.length !== 6}>{step === "verify-code" ? "Verify email" : "Sign in"}</button>
+            <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode(step === "verify-code" ? "verify" : "signin")}>
               {cooldown > 0 ? `Resend available in ${cooldown}s` : "Send a new code"}
             </button>
           </form>
