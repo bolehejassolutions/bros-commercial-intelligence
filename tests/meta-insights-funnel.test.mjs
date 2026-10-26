@@ -154,3 +154,36 @@ test('Meta snapshot identity normalizes equivalent provider number encodings',()
   });
   assert.equal(first.snapshotKey,equivalent.snapshotKey);
 });
+
+
+// DEMAND_META_ACTION_SNAPSHOT_INTEGRITY_20261027
+test('conflicting Meta alias reports retain distinct immutable snapshot IDs even when projected counts are null',()=>{
+  const one=normalizeMetaCampaignFunnel(scope,{...row,actions:[
+    {action_type:'purchase',value:1},{action_type:'omni_purchase',value:2}]});
+  const two=normalizeMetaCampaignFunnel(scope,{...row,actions:[
+    {action_type:'purchase',value:1},{action_type:'omni_purchase',value:3}]});
+  assert.equal(one.actionAliasMismatch,true);
+  assert.equal(two.actionAliasMismatch,true);
+  assert.equal(one.metaAttributedPurchases,null);
+  assert.equal(two.metaAttributedPurchases,null);
+  assert.equal(one.sourceKey,two.sourceKey);
+  assert.notEqual(one.snapshotKey,two.snapshotKey);
+  assert.equal(one.hitpaySettledOrders,null);
+  assert.equal(two.verifiedCacMinor,null);
+});
+test('unprojected Meta action revisions cannot overwrite candidate snapshots',()=>{
+  const base=normalizeMetaCampaignFunnel(scope,row);
+  const changed=normalizeMetaCampaignFunnel(scope,{...row,actions:row.actions.map(a=>
+    a.action_type==='omni_landing_page_view'?{...a,value:34}:a)});
+  assert.equal(base.landingPageViews,changed.landingPageViews);
+  assert.equal(base.metaAttributedPurchases,changed.metaAttributedPurchases);
+  assert.notEqual(base.snapshotKey,changed.snapshotKey);
+});
+test('Meta action order, exact duplicates and equivalent number encodings preserve snapshot identity',()=>{
+  const base=normalizeMetaCampaignFunnel(scope,row);
+  const shuffled=normalizeMetaCampaignFunnel(scope,{...row,actions:[
+    ...row.actions.slice().reverse().map(a=>({...a,value:String(a.value)})),
+    {action_type:'purchase',value:'1'}]});
+  assert.equal(base.snapshotKey,shuffled.snapshotKey);
+  assert.match(base.snapshotKey,/:actions-sha256:[a-f0-9]{64}$/);
+});
