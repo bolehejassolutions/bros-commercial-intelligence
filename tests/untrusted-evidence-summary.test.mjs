@@ -9,3 +9,9 @@ test("reject duplicates and forged verification",()=>{
  assert.throws(()=>summarizeUntrustedEvidence([base,base]),/Duplicate/);
  assert.throws(()=>summarizeUntrustedEvidence([{...base,provenance:"provider_verified"}]),/Untrusted evidence/);
 });
+
+test("compound provider identities cannot collide through delimiters",()=>{
+ const first={...base,provider:"a:b",providerRecordKey:"c"};
+ const second={...base,provider:"a",providerRecordKey:"b:c"};
+ assert.equal(summarizeUntrustedEvidence([first,second]).accepted,2);
+});
