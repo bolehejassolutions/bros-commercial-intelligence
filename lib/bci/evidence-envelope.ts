@@ -31,6 +31,7 @@ export function normalizeEvidenceEnvelope(input:unknown):EvidenceEnvelope {
   const record: Record<string, unknown> = input;
   // A synthetic fixture can never be labelled as live provider evidence.
   if(record.provenance==="synthetic"&&record.environment==="live") deny();
+  if (!object(record.metrics)) throw new Error("Invalid evidence envelope");
   const metrics:Record<string,number|null>={};
   for(const [key,value] of Object.entries(record.metrics)){
     if(!/^[a-z][a-z0-9_]{0,63}$/.test(key)||
