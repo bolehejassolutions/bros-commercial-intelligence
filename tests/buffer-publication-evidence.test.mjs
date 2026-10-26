@@ -68,3 +68,11 @@ test('publisher source binding must be an exact safe HTTPS reference',()=>{
  assert.ok(changedQuery.warnings.includes('asset_source_mismatch'));
  assert.equal(changedQuery.readyForObservationalLearning,false);
 });
+
+// A provider may retain a draft-era metrics timestamp after a post is SENT.
+test("pre-SENT metric snapshot cannot be promoted to post-publication learning",()=>{
+ const r=reconcileBufferPublication(make({metricsUpdatedAt:"2026-10-24T12:42:21.316Z"}));
+ assert.equal(r.metrics.impressions,1);
+ assert.ok(r.warnings.includes("metrics_timestamp_before_sent"));
+ assert.equal(r.readyForObservationalLearning,false);
+});

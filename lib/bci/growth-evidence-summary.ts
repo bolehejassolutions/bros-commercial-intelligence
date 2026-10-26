@@ -65,7 +65,8 @@ const allowedProviders: Readonly<Record<GrowthKind, readonly GrowthProvider[]>> 
 };
 const fail = (): never => { throw new Error("Invalid or inconsistent BCI growth evidence"); };
 const isTime = (v: unknown): v is string =>
-  typeof v === "string" && ISO_UTC.test(v) && Number.isFinite(Date.parse(v));
+  typeof v === "string" && ISO_UTC.test(v) && Number.isFinite(Date.parse(v)) &&
+  new Date(v).toISOString().slice(0, 19) === v.slice(0, 19);
 const isAmount = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 const safeAdd = (a: number, b: number): number => {

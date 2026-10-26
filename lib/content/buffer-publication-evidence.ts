@@ -33,7 +33,7 @@ export type PublicationWarning =
   | "asset_count_mismatch" | "asset_dimensions_mismatch"
   | "asset_mime_mismatch" | "asset_source_unbound" | "asset_source_mismatch"
   | "ai_disclosure_mismatch"
-  | "metrics_unavailable";
+  | "metrics_unavailable" | "metrics_timestamp_before_sent";
 export type PublicationEvidence = Readonly<{
   postId: string;
   channel: ContentChannel;
@@ -140,6 +140,11 @@ export function reconcileBufferPublication(input: PublicationReviewInput): Publi
     if (Object.keys(metrics).length === 0) metrics = null;
   }
   if (!metrics) push(warnings, "metrics_unavailable");
+  // Provider metric snapshots dated before actual delivery are not post-publication measurements.
+  // Buffer can return metricsUpdatedAt from draft creation even when the post is SENT.
+  if (metrics !== null && metricsUpdatedAt !== null && sentAt !== null &&
+      Date.parse(metricsUpdatedAt) < Date.parse(sentAt))
+    push(warnings, "metrics_timestamp_before_sent");
   const hashes = Object.freeze(reviews.map(r => r.attestation.sha256));
   const ready = sent && sentAt !== null && allDecoded && allApproved && metrics !== null &&
     !warnings.some(w => w !== "asset_mime_mismatch");
