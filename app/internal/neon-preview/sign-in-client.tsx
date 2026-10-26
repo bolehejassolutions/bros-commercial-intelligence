@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
 import { requestNeonPreviewToken, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
+import { runNeonPreviewNegativeChecks } from "@/lib/bci/neon-preview-negative-checks";
 
 const operatorEmail = "rasymokh@gmail.com";
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
@@ -135,6 +136,20 @@ export default function NeonPreviewSignIn() {
     } finally { setBusy(false); }
   }
 
+  async function checkNegativeAccess() {
+    if (busy) return;
+    setBusy(true);
+    setMessage("Running read-only HTTP rejection probes…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const report = await runNeonPreviewNegativeChecks(token);
+      setMessage(`Preview HTTP rejection probes: ${report.passed}/${report.total} passed. These checks do not prove cross-tenant database isolation, membership revocation, or independent hosted verification.`);
+    } catch {
+      setMessage("Preview HTTP rejection probes could not complete. No security gate has been certified.");
+    } finally { setBusy(false); }
+  }
+
   async function signOut() {
     if (busy) return;
     setBusy(true);
@@ -186,6 +201,7 @@ export default function NeonPreviewSignIn() {
               </select>
             </label>
             <button type="button" disabled={busy} onClick={checkAccess}>Check protected access</button>
+            <button type="button" disabled={busy} onClick={checkNegativeAccess}>Run HTTP rejection checks</button>
             <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
           </div>
         ) : null}
