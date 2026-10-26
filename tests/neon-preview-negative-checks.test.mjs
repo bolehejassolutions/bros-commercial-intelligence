@@ -140,3 +140,40 @@ test("empty tenant smoke rejects invalid bearer before network requests",async()
  await assert.rejects(runNeonPreviewEmptyTenantIsolationSmoke("invalid",async()=>{called++;}),/Invalid preview token/);
  assert.equal(called,0);
 });
+
+
+test("authenticated controls reject unreviewed response fields and malformed evidence rows",async()=>{
+ const validRow={
+  id:"44444444-4444-4444-8444-444444444444",
+  tenantId:"22222222-2222-4222-8222-222222222222",
+  product:"content",provider:"buffer",providerRecordKey:"post-1",metrics:{views:2,clicks:null},
+ };
+ const invalid=[
+  {scope:"internal-development",evidence:[],debug:"private"},
+  {scope:"internal-development",evidence:[{...validRow,secret:"must-not-pass"}]},
+  {scope:"internal-development",evidence:[{...validRow,id:"not-a-uuid"}]},
+  {scope:"internal-development",evidence:[{...validRow,metrics:{views:"2"}}]},
+  {scope:"internal-development",evidence:[{...validRow,product:"demand"}]},
+ ];
+ for(const payload of invalid){
+  let calls=0;
+  const mock=async()=>{calls++;return new Response(JSON.stringify(payload),{
+   status:200,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"},
+  });};
+  await assert.rejects(runNeonPreviewNegativeChecks(token,mock),/Authenticated preview controls failed/);
+  assert.equal(calls,1);
+ }
+ const mock=async (url,options)=>{
+  if(url.includes("&limit=1"))return new Response(JSON.stringify({
+   scope:"internal-development",evidence:url.includes("product=content")?[validRow]:[],
+  }),{status:200,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"}});
+  const status=options.method==="POST"?405:url.endsWith("?product=content")&&!options.headers.Authorization?401:400;
+  return new Response(JSON.stringify({error:status===405?"Method not allowed.":"BCI private evidence access denied."}),{
+   status,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"},
+  });
+ };
+ const report=await runNeonPreviewNegativeChecks(token,mock);
+ assert.equal(report.authenticatedControlsPassed,2);
+ assert.equal(report.passed,7);
+ assert.equal(JSON.stringify(report).includes("post-1"),false);
+});
