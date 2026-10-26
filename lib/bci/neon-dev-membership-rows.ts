@@ -81,6 +81,11 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
                 has_table_privilege(current_user, 'bci_dev.evidence', 'TRIGGER') AS can_trigger_evidence,
                 has_schema_privilege(current_user, 'bci_dev', 'CREATE') AS can_create_schema_objects,
                 has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects,
+                (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_proc proc JOIN pg_namespace proc_ns ON proc_ns.oid = proc.pronamespace
+                    WHERE proc_ns.nspname = 'bci_dev' AND proc.prosecdef
+                      AND has_function_privilege(current_user, proc.oid, 'EXECUTE')
+                )) AS no_definer_exec,
                 (SELECT COUNT(*) = 3 AND bool_and(
                     NOT has_table_privilege(current_user, extra.oid,
                       'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'))
@@ -109,6 +114,7 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
           posture.rows[0].can_trigger_evidence !== false ||
           posture.rows[0].can_create_schema_objects !== false ||
           posture.rows[0].can_create_database_objects !== false ||
+          posture.rows[0].no_definer_exec !== true ||
           posture.rows[0].other_bci_tables_denied !== true) deny();
 
       // The principal was cryptographically verified upstream. This GUC only
