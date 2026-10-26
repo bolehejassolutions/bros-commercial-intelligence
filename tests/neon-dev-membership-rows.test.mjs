@@ -26,10 +26,14 @@ function fixture({ role = "bci_dev_membership_reader", sessionRole = role,
         database_name: "bros_intelligence_dev", rls_enabled: true, rls_forced: true,
         can_read_memberships: true, can_insert_memberships: false,
         can_update_memberships: false, can_delete_memberships: false,
-        can_truncate_memberships: false, can_read_evidence: false,
+        can_truncate_memberships: false,
+        can_reference_memberships: false, can_trigger_memberships: false,
+        can_read_evidence: false,
         can_insert_evidence: false,
         can_update_evidence: false, can_delete_evidence: false,
-        can_truncate_evidence: false, can_create_schema_objects: false,
+        can_truncate_evidence: false,
+        can_reference_evidence: false, can_trigger_evidence: false,
+        can_create_schema_objects: false,
         can_create_database_objects: false, other_bci_tables_denied: true, ...posture }] };
       if (sql.includes("set_config")) return { rows: [{ principal_scope: params[0] }] };
       return { rows };
@@ -93,8 +97,12 @@ test("rejects wrong database, RLS drift and excessive membership privileges", as
     { rls_forced: false }, { can_read_memberships: false },
     { can_insert_memberships: true },
     { can_update_memberships: true }, { can_delete_memberships: true }, { can_truncate_memberships: true },
+    { can_reference_memberships: true }, { can_trigger_memberships: true },
+    { can_reference_memberships: null }, { can_trigger_memberships: null },
     { can_read_evidence: true }, { can_insert_evidence: true },
     { can_update_evidence: true }, { can_delete_evidence: true }, { can_truncate_evidence: true },
+    { can_reference_evidence: true }, { can_trigger_evidence: true },
+    { can_reference_evidence: null }, { can_trigger_evidence: null },
     { can_create_schema_objects: true }, { can_create_database_objects: true },
     { other_bci_tables_denied: false }, { other_bci_tables_denied: null }]) {
     const { calls, lookup } = fixture({ posture });
@@ -122,4 +130,19 @@ test("database errors roll back and never return stale memberships", async () =>
   await assert.rejects(lookup(USER, "content"), /DB offline/);
   assert.equal(calls.at(-1).sql, "ROLLBACK");
   assert.equal(calls.some(c => c.sql.includes("FROM bci_dev.tenant_memberships")), false);
+});
+
+
+test("membership reader checks REFERENCES and TRIGGER on both tables before setting principal", async () => {
+  const { calls, lookup } = fixture({ posture: { can_trigger_memberships: true } });
+  await assert.rejects(lookup(USER, "content"), NeonMembershipAccessDenied);
+  const posture = calls.find(c => c.sql?.includes("current_database() AS database_name"));
+  assert.ok(posture);
+  for (const table of ["tenant_memberships", "evidence"]) {
+    for (const privilege of ["REFERENCES", "TRIGGER"]) {
+      assert.ok(posture.sql.includes(`'bci_dev.${table}', '${privilege}'`));
+    }
+  }
+  assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
+  assert.equal(calls.at(-1).sql, "ROLLBACK");
 });
