@@ -174,3 +174,19 @@ test("wrong database, missing RLS and privilege drift fail before scoped SQL", a
     assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
   }
 });
+
+
+test("malformed provider metric keys and unbounded JSONB maps fail closed", async () => {
+  const base = { id: ROW, tenantId: A, product: "demand",
+    provider: "manual", providerRecordKey: "x" };
+  for (const metrics of [
+    JSON.parse('{"__proto__": null}'),
+    { "bad key": 1 },
+    { "Uppercase": 1 },
+    Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`metric_${i}`, i])),
+  ]) {
+    const { read, calls } = mock({ rows: [{ ...base, metrics }] });
+    await assert.rejects(read(scope), /access denied/i);
+    assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+  }
+});
