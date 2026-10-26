@@ -43,3 +43,41 @@ test("near-equal windows remain only nonexecuting candidates",()=>{
   const a=make(),b=make({id:"post456",metricsUpdatedAt:"2026-10-25T16:20:40.061Z"});
   const r=next([a,b]);assert.equal(r.reason,"SAME_CHANNEL_CANDIDATES");assert.equal(r.executionAllowed,false);assert.equal(r.causalLiftProven,false);
 });
+
+
+// CONTENT_NATIVE_PERMALINK_AND_FUTURE_SNAPSHOT_GUARD_20261026: provider-shaped URLs from existing BROS SELL posts; synthetic scoped IDs.
+test("realistic native IG/FB/TT permalinks are accepted and tracking is stripped",()=>{
+  const ig=make({externalLink:"https://www.instagram.com/p/DeyLqz7EYPk/?utm_source=buffer#part"});
+  assert.equal(ig.status,"MEASURED");
+  assert.equal(ig.nativeUrl,"https://www.instagram.com/p/DeyLqz7EYPk/");
+  const fb=make({channelService:"facebook",channelId:"fb123",externalLink:"https://www.facebook.com/967812963066089/posts/979084248605627"},{channelService:"facebook",channelId:"fb123"});
+  assert.equal(fb.status,"MEASURED");
+  const tt=make({channelService:"tiktok",channelId:"tt123",externalLink:"https://www.tiktok.com/@bros.sell/video/7699352537861737735?utm_source=7103819247981182978"},{channelService:"tiktok",channelId:"tt123"});
+  assert.equal(tt.status,"MEASURED");
+  assert.equal(tt.nativeUrl,"https://www.tiktok.com/@bros.sell/video/7699352537861737735");
+});
+test("homepages profiles login and off-platform lookalikes are not SENT proof",()=>{
+  for(const url of [
+    "https://www.instagram.com/",
+    "https://www.instagram.com/accounts/login/",
+    "https://www.instagram.com/bros.sell/",
+    "https://www.instagram.com.evil.example/p/DeyLqz7EYPk/",
+    "https://user:pass@www.instagram.com/p/DeyLqz7EYPk/",
+    "https://www.instagram.com/p/ABC%2Ffake/"
+  ]){
+    const o=make({externalLink:url});
+    assert.equal(o.status,"REVIEW_REQUIRED",url);
+    assert.equal(o.nativeUrl,null,url);
+  }
+});
+test("trusted asOf rejects future SENT and metric snapshots without inventing zero",()=>{
+  const asOf="2026-10-26T14:00:00.000Z";
+  const good=make({}, {asOf});assert.equal(good.status,"MEASURED");
+  const futureSent=make({sentAt:"2026-10-27T01:00:00.000Z",metricsUpdatedAt:null,metrics:null},{asOf});
+  assert.equal(futureSent.status,"REVIEW_REQUIRED");
+  assert.ok(futureSent.flags.includes("SENT_IN_FUTURE"));
+  const futureMetrics=make({metricsUpdatedAt:"2026-10-27T01:00:00.000Z"},{asOf});
+  assert.equal(futureMetrics.status,"REVIEW_REQUIRED");
+  assert.ok(futureMetrics.flags.includes("METRICS_IN_FUTURE"));
+  assert.throws(()=>make({}, {asOf:"2026-02-30T14:00:00.000Z"}),/INVALID_TRUSTED_OBSERVATION_TIME/);
+});
