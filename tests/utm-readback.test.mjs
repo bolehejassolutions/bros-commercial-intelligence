@@ -79,3 +79,29 @@ test('URL userinfo and fragments cannot alias a canonical proposal ID',()=>{
     proposal.taggedUrl.replace('bros.bolehejas.com','evil.example'),
   ]) assert.throws(()=>assessDemandUtmReadback({...proposal,taggedUrl},row),invalid);
 });
+
+
+test('MYT midnight permits current local GA4 report day while UTC date is previous',()=>{
+  const early={...row,reportId:'ga4report_20261027_01',
+    retrievedAt:'2026-10-26T16:05:00Z',periodStart:'2026-10-27',
+    periodEnd:'2026-10-27'};
+  const result=assessDemandUtmReadback(proposal,early);
+  assert.equal(result.status,'MATCHED_UNATTESTED');
+  assert.equal(result.utmCaptureVerified,false);
+  assert.equal(result.checkoutAttributionVerified,false);
+  assert.equal(result.settledOrders,null);
+});
+
+test('MYT boundary rejects report periods that have not started locally',()=>{
+  const future={...row,reportId:'ga4report_20261027_02',
+    retrievedAt:'2026-10-26T15:59:59Z',periodStart:'2026-10-27',
+    periodEnd:'2026-10-27'};
+  assert.throws(()=>assessDemandUtmReadback(proposal,future),invalid);
+});
+
+test('MYT year rollover keeps the correct local GA4 reporting date',()=>{
+  const rollover={...row,reportId:'ga4report_20270101_01',
+    retrievedAt:'2026-12-31T16:01:00Z',periodStart:'2027-01-01',
+    periodEnd:'2027-01-01'};
+  assert.equal(assessDemandUtmReadback(proposal,rollover).status,'MATCHED_UNATTESTED');
+});
