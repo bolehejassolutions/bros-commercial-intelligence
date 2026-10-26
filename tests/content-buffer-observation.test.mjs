@@ -82,6 +82,26 @@ test("trusted asOf rejects future SENT and metric snapshots without inventing ze
   assert.throws(()=>make({}, {asOf:"2026-02-30T14:00:00.000Z"}),/INVALID_TRUSTED_OBSERVATION_TIME/);
 });
 
+// CONTENT_PROVIDER_SCOPE_URL_GUARD_20261027_0054: synthetic negative regression fixtures only.
+test("missing channel identity cannot pass even when both sides omit channelId",()=>{
+  assert.throws(()=>make({channelId:undefined},{channelId:undefined}),/INVALID_TRUSTED_SCOPE/);
+  assert.throws(()=>make({channelId:""},{channelId:""}),/INVALID_TRUSTED_SCOPE/);
+});
+test("attacker-controlled social subdomains cannot serve as native SENT permalinks",()=>{
+  for(const url of ["https://evil.instagram.com/p/ABC/","https://mimic.www.instagram.com/p/ABC/","https://cdn.instagram.com/p/ABC/"]){
+    const o=make({externalLink:url});
+    assert.equal(o.status,"REVIEW_REQUIRED",url);
+    assert.equal(o.nativeUrl,null,url);
+  }
+});
+test("malformed or credential-bearing asset links require review",()=>{
+  for(const source of ["https://","https://user:pass@drive.google.com/a.png","https://drive.google.com/a.png#fragment","https://drive.google.com:444/a.png","http://drive.google.com/a.png"]){
+    const o=make({assets:[{type:"image",source},post.assets[1]]});
+    assert.equal(o.status,"REVIEW_REQUIRED",source);
+    assert.ok(o.flags.includes("ASSET_EVIDENCE_MISMATCH"),source);
+  }
+});
+
 // CONTENT_IG_FRESH_METRICS_LEARNING_6ADCA7AD_20261026: synthetic replay of observed provider-shaped snapshot.
 test("fresh post-SENT metrics yield evidence-linked, noncausal next action",()=>{
   const o=make({id:"post-fresh",sentAt:"2026-10-26T01:02:51.262Z",
