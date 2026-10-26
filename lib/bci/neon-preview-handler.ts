@@ -78,7 +78,9 @@ export function createNeonPreviewHandler(deps: Dependencies) {
         // Emit only a fixed stage label. Never log exception objects, identifiers,
         // credentials, bearer tokens, SQL parameters or request URLs.
         console.warn("bci_neon_preview_denied", stage);
-        return denied(403);
+        // The stage is non-sensitive and lets the operator distinguish auth, membership
+        // and evidence failures even when the hosting plan does not retain logs.
+        return json({ error: "BCI private evidence access denied.", stage }, 403);
       }
     } catch {
       // Never serialize provider/driver errors, connection strings, tokens or SQL parameters.
