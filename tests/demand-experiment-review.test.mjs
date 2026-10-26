@@ -59,6 +59,14 @@ test('cross tenant/product and overlapping windows are rejected',()=>{
   const overlapping=summary({...afterScope,windowStart:'2026-10-07T00:00:00Z'});
   assert.throws(()=>reviewDemandExperiment(exp,before,overlapping),denied);
 });
+test('unequal observation durations cannot masquerade as acquisition growth',()=>{
+  const longer=summary({...afterScope,windowEnd:'2026-10-17T00:00:00Z'},{leads:8});
+  const shorterBaseline=summary({...baseScope,windowStart:'2026-10-02T00:00:00Z'},{leads:3});
+  assert.throws(()=>reviewDemandExperiment(exp,before,longer),denied);
+  assert.throws(()=>reviewDemandExperiment(exp,shorterBaseline,after),denied);
+  // Existing equal-duration baseline and outcome remain observational only.
+  assert.equal(reviewDemandExperiment(exp,before,after).status,'observed');
+});
 test('invalid time, identity, attestation and numeric inputs fail closed',()=>{
   for(const patch of [{experimentId:'x'},{diagnosisId:'x'},{actionEffectiveAt:'2026-02-31T00:00:00Z'},
     {outcomeEvidenceId:' '},{outcomeVerified:'yes'},{maxVerifiedSpendMinor:-1},{maxVerifiedSpendMinor:1.2}])
