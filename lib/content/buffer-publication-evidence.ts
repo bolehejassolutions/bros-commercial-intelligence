@@ -17,6 +17,8 @@ export type SourceReview = Readonly<{
   fullDecodeVerified: boolean;
   /** Independently evidenced editorial approval for this exact SHA256. */
   approved: boolean;
+  /** Exact Buffer asset.source recorded independently at approval/publish time. */
+  providerAssetSource?: string;
 }>;
 export type PublicationReviewInput = Readonly<{
   expectedPostId: string;
@@ -29,7 +31,8 @@ export type PublicationWarning =
   | "not_sent" | "invalid_sent_timestamp" | "missing_source_qa"
   | "source_not_fully_decoded" | "source_not_approved"
   | "asset_count_mismatch" | "asset_dimensions_mismatch"
-  | "asset_mime_mismatch" | "ai_disclosure_mismatch"
+  | "asset_mime_mismatch" | "asset_source_unbound" | "asset_source_mismatch"
+  | "ai_disclosure_mismatch"
   | "metrics_unavailable";
 export type PublicationEvidence = Readonly<{
   postId: string;
@@ -101,6 +104,19 @@ export function reconcileBufferPublication(input: PublicationReviewInput): Publi
       push(warnings, "asset_dimensions_mismatch");
     if (typeof asset.mimeType !== "string" || asset.mimeType.toLowerCase() !== a.detectedMime)
       push(warnings, "asset_mime_mismatch");
+    // A matching dimension/MIME does not prove that the approved SHA was the
+    // asset sent to Buffer. Require a separate, exact publisher source binding.
+    // URL identity is not platform-served byte attestation.
+    const boundSource = reviews[i]!.providerAssetSource;
+    if (boundSource === undefined) push(warnings, "asset_source_unbound");
+    else {
+      if (typeof boundSource !== "string" || boundSource.length > 2048) deny();
+      let parsed: URL;
+      try { parsed = new URL(boundSource); } catch { return deny(); }
+      if (parsed.protocol !== "https:" || !parsed.hostname || parsed.username ||
+          parsed.password || parsed.hash) deny();
+      if (asset.source !== boundSource) push(warnings, "asset_source_mismatch");
+    }
   }
   // Only flag explicit contradiction, not absent/unsupported metadata.
   if (input.expectedChannel === "tiktok" || input.expectedChannel === "instagram") {
