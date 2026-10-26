@@ -26,6 +26,18 @@ const safeHeaders = (response: Response) =>
   /no-store/i.test(response.headers.get("cache-control") ?? "") &&
   /Authorization/i.test(response.headers.get("vary") ?? "");
 
+/** A denial is only a PASS if the response contains the exact generic envelope.
+ * Merely returning the expected HTTP status must not conceal leaked private data.
+ */
+const safeDenial = (raw: string, status: number): boolean => {
+  if (raw.length > 2048) return false;
+  let body: unknown;
+  try { body = JSON.parse(raw); } catch { return false; }
+  return body !== null && typeof body === "object" && !Array.isArray(body) &&
+    Object.keys(body).length === 1 && "error" in body &&
+    body.error === (status === 405 ? "Method not allowed." : "BCI private evidence access denied.");
+};
+
 /** Positive authenticated controls prevent false 7/7 when the bearer is invalid or expired. */
 export async function runNeonPreviewNegativeChecks(
   token: string, request: typeof fetch = fetch,
@@ -45,7 +57,9 @@ export async function runNeonPreviewNegativeChecks(
       const body: unknown = JSON.parse(raw);
       if (body === null || typeof body !== "object" || Array.isArray(body) ||
           !("scope" in body) || body.scope !== "internal-development" ||
-          !("evidence" in body) || !Array.isArray(body.evidence) || body.evidence.length > 1) throw new Error();
+          !("evidence" in body) || !Array.isArray(body.evidence) || body.evidence.length > 1 ||
+          !body.evidence.every((row: unknown) => row !== null && typeof row === "object" &&
+            !Array.isArray(row) && "product" in row && row.product === product)) throw new Error();
       authenticatedControlsPassed++;
     } catch {
       // Never retain response bodies, tokens, identifiers or raw provider errors.
@@ -62,7 +76,7 @@ export async function runNeonPreviewNegativeChecks(
       });
       const raw = await response.text();
       const passed = response.status === probe.expected && safeHeaders(response) &&
-        !/"evidence"\s*:/.test(raw);
+        safeDenial(raw, probe.expected);
       checks.push(Object.freeze({ id: probe.id, passed }));
     } catch {
       checks.push(Object.freeze({ id: probe.id, passed: false }));
