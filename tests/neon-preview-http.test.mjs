@@ -46,7 +46,11 @@ function database(kind, rows, calls, error) {
         if (sql.includes("current_database() AS database_name")) return { rows: [{
           database_name: "bros_intelligence_dev", rls_enabled: true, rls_forced: true,
           can_read_memberships: kind === "membership", can_insert_memberships: false,
+          can_update_memberships: false, can_delete_memberships: false,
+          can_truncate_memberships: false,
           can_read_evidence: kind === "evidence", can_insert_evidence: false,
+          can_update_evidence: false, can_delete_evidence: false,
+          can_truncate_evidence: false,
           can_create_schema_objects: false, can_create_database_objects: false,
         }] };
         if (sql.includes("set_config")) return { rows: [] };
