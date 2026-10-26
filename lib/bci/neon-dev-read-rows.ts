@@ -54,7 +54,13 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
                 c.relforcerowsecurity AS rls_forced,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'SELECT') AS can_read_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'INSERT') AS can_insert_evidence,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'UPDATE') AS can_update_evidence,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'DELETE') AS can_delete_evidence,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'TRUNCATE') AS can_truncate_evidence,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'SELECT') AS can_read_memberships,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'UPDATE') AS can_update_memberships,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'DELETE') AS can_delete_memberships,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'TRUNCATE') AS can_truncate_memberships,
                 has_schema_privilege(current_user, 'bci_dev', 'CREATE') AS can_create_schema_objects,
                 has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects
          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -67,7 +73,13 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
           posture.rows[0].rls_forced !== true ||
           posture.rows[0].can_read_evidence !== true ||
           posture.rows[0].can_insert_evidence !== false ||
+          posture.rows[0].can_update_evidence !== false ||
+          posture.rows[0].can_delete_evidence !== false ||
+          posture.rows[0].can_truncate_evidence !== false ||
           posture.rows[0].can_read_memberships !== false ||
+          posture.rows[0].can_update_memberships !== false ||
+          posture.rows[0].can_delete_memberships !== false ||
+          posture.rows[0].can_truncate_memberships !== false ||
           posture.rows[0].can_create_schema_objects !== false ||
           posture.rows[0].can_create_database_objects !== false) deny();
 
