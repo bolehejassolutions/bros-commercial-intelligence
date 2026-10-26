@@ -84,6 +84,10 @@ export function reviewDemandExperiment(
       !validTime(observed.scope.windowStart) || !validTime(observed.scope.windowEnd) ||
       Date.parse(baseline.scope.windowStart) >= Date.parse(baseline.scope.windowEnd) ||
       Date.parse(observed.scope.windowStart) >= Date.parse(observed.scope.windowEnd) ||
+      // Comparing raw counts from unequal observation windows would manufacture
+      // an apparent acquisition change from exposure duration alone.
+      Date.parse(baseline.scope.windowEnd) - Date.parse(baseline.scope.windowStart) !==
+        Date.parse(observed.scope.windowEnd) - Date.parse(observed.scope.windowStart) ||
       Date.parse(baseline.scope.windowEnd) > Date.parse(experiment.actionEffectiveAt) ||
       Date.parse(experiment.actionEffectiveAt) > Date.parse(observed.scope.windowStart) ||
       !count(baseline.qualifiedLeads) || !count(observed.qualifiedLeads) ||
