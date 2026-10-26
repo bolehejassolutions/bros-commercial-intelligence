@@ -97,6 +97,10 @@ export function summarizeGrowthEvidence(
   // One ingestion evidence ID must never refer to two different provider facts.
   const evidenceIdToSource = new Map<string, string>();
   const paidByProviderOrder = new Map<string, number>();
+  // Keep excluded paid-order provenance for cross-status consistency checks.
+  // A test/unverified paid order must never be promoted by a contradictory
+  // live verified settlement row bearing the same provider order identifier.
+  const paidStatusByProviderOrder = new Map<string, { environment: string; verification: string }>();
   const settledByProviderOrder = new Map<string, number>();
   const totals: Partial<Record<GrowthKind, number>> = {};
   let excluded = 0;
@@ -135,6 +139,10 @@ export function summarizeGrowthEvidence(
       continue;
     }
     unique.set(key, fingerprint);
+    if (item.kind === "paid_order") {
+      paidStatusByProviderOrder.set(item.providerRecordId,
+        { environment: item.environment, verification: item.verification });
+    }
     if (item.environment !== "live" || item.verification !== "verified") {
       excluded++;
       continue;
@@ -148,6 +156,11 @@ export function summarizeGrowthEvidence(
   // reject contradictory amounts rather than counting impossible revenue.
   // Settled-only evidence is still permitted when the trusted adapter can
   // attest settlement without a separate paid-order record.
+  for (const orderId of settledByProviderOrder.keys()) {
+    const paidStatus = paidStatusByProviderOrder.get(orderId);
+    if (paidStatus && (paidStatus.environment !== "live" ||
+        paidStatus.verification !== "verified")) fail();
+  }
   for (const [orderId, paidAmount] of paidByProviderOrder) {
     const settledAmount = settledByProviderOrder.get(orderId);
     if (settledAmount !== undefined && settledAmount !== paidAmount) fail();
