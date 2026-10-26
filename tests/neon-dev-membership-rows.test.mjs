@@ -30,7 +30,7 @@ function fixture({ role = "bci_dev_membership_reader", sessionRole = role,
         can_insert_evidence: false,
         can_update_evidence: false, can_delete_evidence: false,
         can_truncate_evidence: false, can_create_schema_objects: false,
-        can_create_database_objects: false, ...posture }] };
+        can_create_database_objects: false, other_bci_tables_denied: true, ...posture }] };
       if (sql.includes("set_config")) return { rows: [{ principal_scope: params[0] }] };
       return { rows };
     };
@@ -95,7 +95,8 @@ test("rejects wrong database, RLS drift and excessive membership privileges", as
     { can_update_memberships: true }, { can_delete_memberships: true }, { can_truncate_memberships: true },
     { can_read_evidence: true }, { can_insert_evidence: true },
     { can_update_evidence: true }, { can_delete_evidence: true }, { can_truncate_evidence: true },
-    { can_create_schema_objects: true }, { can_create_database_objects: true }]) {
+    { can_create_schema_objects: true }, { can_create_database_objects: true },
+    { other_bci_tables_denied: false }, { other_bci_tables_denied: null }]) {
     const { calls, lookup } = fixture({ posture });
     await assert.rejects(lookup(USER, "content"), NeonMembershipAccessDenied);
     assert.equal(calls.some(c => c.sql.includes("set_config")), false);
