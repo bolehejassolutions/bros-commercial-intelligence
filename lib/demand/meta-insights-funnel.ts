@@ -113,7 +113,7 @@ export function normalizeMetaCampaignFunnel(
     if (value === null) fail();
     const previous = actions.get(action.action_type);
     if (previous !== undefined && previous !== value) fail();
-    actions.set(action.action_type, value);
+    actions.set(action.action_type, value ?? fail());
   }
   const get = (name: string): number | null => actions.get(name) ?? null;
   const generic = get("purchase"), omni = get("omni_purchase");
