@@ -26,6 +26,7 @@ export function parseNeonDevConnection(value: unknown, role: RestrictedRole) {
     const url = new URL(value);
     if ((url.protocol !== "postgres:" && url.protocol !== "postgresql:") ||
         !hosts.has(url.hostname) || (url.port && url.port !== "5432") ||
+        url.username.length === 0 || url.password.length === 0 ||
         decodeURIComponent(url.username) !== role || !url.password || url.hash ||
         decodeURIComponent(url.pathname) !== "/bros_intelligence_dev") throw new Error();
     for (const key of url.searchParams.keys()) {
