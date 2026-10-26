@@ -107,10 +107,11 @@ export function assessDemandUtmReadback(
       row.campaign !== proposal.experimentId || row.content !== proposal.variant) {
     return result("REJECTED_SCOPE", null, null, null);
   }
-  // Include GA4 property and report window in the candidate identity: a reportId
-  // alone is not globally unique across properties or reporting periods.
-  // This remains UNATTESTED and must never be used as a BCI evidence key.
+  // Include GA4 property, window, retrieval timestamp and exact reported counts.
+  // GA4 can revise historical attribution without changing its report ID;
+  // distinct snapshots must not silently overwrite one another. Null is
+  // distinct from provider-reported zero. This is still NOT BCI evidence.
   return result("MATCHED_UNATTESTED",
-    `demand:utm-candidate:${proposal.proposalId}:${row.propertyId}:${row.periodStart}:${row.periodEnd}:${row.reportId}`,
+    `demand:utm-candidate:${proposal.proposalId}:${row.propertyId}:${row.periodStart}:${row.periodEnd}:${row.reportId}:${row.retrievedAt}:${row.sessions === null ? 'null' : row.sessions}:${row.engagedSessions === null ? 'null' : row.engagedSessions}`,
     row.sessions, row.engagedSessions);
 }
