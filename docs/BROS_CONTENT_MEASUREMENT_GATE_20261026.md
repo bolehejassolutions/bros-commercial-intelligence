@@ -27,3 +27,19 @@ The TikTok discrepancy is a **review flag**, not proof of a platform policy viol
 5. No BROS LABS, SaaS release, spending or production cutover.
 
 Source of truth: [Primary portfolio decision](https://docs.google.com/document/d/1AmnN8agBGkMNCVMzQ6esJ1neWtKVuvqBa-F_j3U7rGM/edit) and [CONTENT product spec](https://docs.google.com/document/d/1_9-rYsiWaTeDzi4PR9Gkrs4glKddbi8SxzXeDDSRgl8/edit).
+
+## CONTENT_REAL_MEDIA_BYTES_IG_20261026_2109 — Independent image-byte QA (26 Oct 2026, 21:09–21:15 MYT)
+Status: **VERIFIED ORIGINAL DRIVE FILE BYTES + READ-ONLY BUFFER SENT; NOT NATIVE PLATFORM BYTE IDENTITY, LIVE BCI INGESTION OR INTERNAL V1**.
+
+Scope: existing BROS SELL internal Instagram post `6adca7ad0b5343d0708289d1` (not a CONTENT SaaS customer), SENT `2026-10-26T01:02:51.262Z`, native URL `https://www.instagram.com/p/De8Djl1oNGa/`. Provider returned 2 image assets and two Drive source IDs in this order. Source images fetched via Primary Google Drive as complete raw bytes, then independently validated using Python Pillow `Image.verify()` and full pixel `Image.load()` (no OCR, no post edits).
+
+| Slide | Drive source file ID | Raw bytes | SHA-256 | Decoded format / dimensions / mode |
+|---|---|---:|---|---|
+| 1 | `1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM` | 1,751,408 | `dbd7f3dbaef5eab3d031b45128153c34b57cd0ef85fb39294e6e990d7509e141` | PNG / 1080×1350 / RGB |
+| 2 | `1WZY8YTFz-bOStIixu6uuTgLeCNQ-nJ4d` | 1,790,827 | `a396d0beeaa331510b7aa6f2c2c43991f4c59ec3191faac9680b6e19dac4cee6` | PNG / 1080×1350 / RGB |
+
+QA results: both files fully decode without errors; nonempty 1080×1350 portrait images; distinct SHA-256 and distinct pixel content (pixel mean absolute difference 40.55/255, dHash Hamming distance 22/64). Human visual review: two distinct but coherent workshop scenes, same seller/customer, first slide documents the new shelf request and its unconfirmed status, second slide shows seller writing “Tambahan: satu rak” before confirming scope. Malay copy is legible and seller-directed, typographic BROS SELL™ signature and “Menjelaskan, bukan Memujuk.” are present. No new official logo was fabricated. These are **two genuine independent image files**, not a duplicated file.
+
+**Provenance boundary:** Buffer asset metadata declares `image/jpeg` while its source URLs reference Drive PNG files. This may reflect provider conversion, but native Instagram media bytes were not retrieved; therefore SHA-256 only attests the Drive source bytes, **not** byte identity on Buffer/Instagram. Buffer post is SENT, but metrics remain `null` with `metricsUpdatedAt=2026-10-24T12:42:21.316Z` **before** SENT, so no measured outcome/learning or comparative uplift. Buffer AI flag `isAiGenerated:true` aligns with caption disclosure. No production publishing or queue changes.
+
+Acceptance progress: independent byte-level source media QA for **this one existing internal post** now VERIFIED. Remaining: authenticated product-scoped Buffer ingestion, formal approval chain evidence, BCI shared auditable evidence reuse, fresh measurement and evidence-linked next-content learning. Do not infer a general automated QA pipeline or customer-ready SaaS from this manual check. No secrets, customer data, spending, permissions, schedules or BROS LABS changes.
