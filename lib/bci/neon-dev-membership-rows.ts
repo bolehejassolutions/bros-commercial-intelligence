@@ -44,14 +44,22 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
       const identity = await query(
         `SELECT current_user AS role_name, session_user AS session_role_name,
                 rolbypassrls AS bypass_rls, rolsuper AS is_superuser,
-                rolcanlogin AS can_login
+                rolcanlogin AS can_login,
+                rolcreatedb AS can_create_database, rolcreaterole AS can_manage_roles,
+                rolreplication AS can_replicate, rolinherit AS inherits_roles,
+                (SELECT COUNT(*)::integer FROM pg_auth_members m WHERE m.member = pg_roles.oid) AS parent_role_count
          FROM pg_roles WHERE rolname = current_user`, []);
       if (identity.rows.length !== 1 || !obj(identity.rows[0]) ||
           identity.rows[0].role_name !== "bci_dev_membership_reader" ||
           identity.rows[0].session_role_name !== "bci_dev_membership_reader" ||
           identity.rows[0].bypass_rls !== false ||
           identity.rows[0].is_superuser !== false ||
-          identity.rows[0].can_login !== true) deny();
+          identity.rows[0].can_login !== true ||
+          identity.rows[0].can_create_database !== false ||
+          identity.rows[0].can_manage_roles !== false ||
+          identity.rows[0].can_replicate !== false ||
+          identity.rows[0].inherits_roles !== false ||
+          identity.rows[0].parent_role_count !== 0) deny();
 
       const posture = await query(
         `SELECT current_database() AS database_name,
