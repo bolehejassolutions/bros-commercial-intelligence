@@ -105,3 +105,25 @@ test('MYT year rollover keeps the correct local GA4 reporting date',()=>{
     periodEnd:'2027-01-01'};
   assert.equal(assessDemandUtmReadback(proposal,rollover).status,'MATCHED_UNATTESTED');
 });
+
+test('GA4 candidate identity scopes report ID by property and date window without claiming verification',()=>{
+  const base=assessDemandUtmReadback(proposal,row);
+  const differentProperty=assessDemandUtmReadback(proposal,{...row,propertyId:'properties/87654321'});
+  const differentWindow=assessDemandUtmReadback(proposal,{...row,periodStart:'2026-10-24'});
+  assert.equal(base.status,'MATCHED_UNATTESTED');
+  assert.equal(differentProperty.status,'MATCHED_UNATTESTED');
+  assert.equal(differentWindow.status,'MATCHED_UNATTESTED');
+  assert.notEqual(base.candidateReportCorrelationKey,differentProperty.candidateReportCorrelationKey);
+  assert.notEqual(base.candidateReportCorrelationKey,differentWindow.candidateReportCorrelationKey);
+  assert.equal(base.candidateReportCorrelationKey,
+    assessDemandUtmReadback(proposal,{...row}).candidateReportCorrelationKey);
+  for(const x of [base,differentProperty,differentWindow]){
+    assert.equal(x.providerAuthenticationVerified,false);
+    assert.equal(x.tenantMembershipVerified,false);
+    assert.equal(x.utmCaptureVerified,false);
+    assert.equal(x.checkoutAttributionVerified,false);
+    assert.equal(x.settledOrders,null);
+    assert.equal(x.verifiedCacMinor,null);
+    assert.equal(x.causalLift,null);
+  }
+});
