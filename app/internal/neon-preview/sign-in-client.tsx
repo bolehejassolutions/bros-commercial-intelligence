@@ -110,17 +110,9 @@ export default function NeonPreviewSignIn() {
         headers: { Authorization: `Bearer ${token}` }, cache: "no-store", redirect: "error",
       });
       if (!response.ok) {
-        // Only fixed, non-sensitive stage labels are displayed. Never render
-        // raw provider/database errors, tokens, request URLs or user identifiers.
-        let stage = "unclassified";
-        if (response.status === 403) {
-          const body: unknown = await response.json().catch(() => null);
-          if (body !== null && typeof body === "object" && "stage" in body &&
-              (body.stage === "identity" || body.stage === "membership" || body.stage === "evidence")) {
-            stage = body.stage;
-          }
-        }
-        setMessage(`Protected access denied (HTTP ${response.status}; stage: ${stage}). No access has been granted.`);
+        // Do not surface authentication, membership or database failure stages.
+        // A generic status prevents client-side authorization-stage enumeration.
+        setMessage(`Protected access denied (HTTP ${response.status}). No access has been granted.`);
         return;
       }
       phase = "response";
