@@ -52,9 +52,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const denied = (): never => { throw new PrivateEvidenceAccessDenied(); };
 const validUuid = (value: unknown) => typeof value === "string" && UUID.test(value);
 const validProduct = (value: unknown): value is BciProduct => value === "content" || value === "demand";
+const evidenceFields = new Set(["id", "tenantId", "product", "provider", "providerRecordKey", "metrics"]);
+const metricKey = /^[a-z][a-z0-9_]{0,63}$/;
 const validMetrics = (data: unknown): data is Record<string, number | null> =>
   data !== null && typeof data === "object" && !Array.isArray(data) &&
-  Object.values(data).every(v => v === null || (typeof v === "number" && Number.isFinite(v)));
+  Object.keys(data).length <= 100 &&
+  Object.entries(data).every(([key, value]) =>
+    metricKey.test(key) && value !== undefined &&
+    (value === null || (typeof value === "number" && Number.isFinite(value))));
 
 /**
  * Create a policy gate using ONLY server-injected dependencies.
@@ -94,7 +99,11 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
     const seenProviderKeys = new Set<string>();
     for (const row of rows) {
       // Fail the entire response rather than silently filtering DB cross-tenant leakage.
-      if (!row || !validUuid(row.id) || row.tenantId !== grant.tenantId ||
+      // An adapter may accidentally return sensitive or unreviewed fields.
+      // Reject the entire response instead of serializing extra DB columns.
+      if (!row || Object.keys(row).length !== evidenceFields.size ||
+          Object.keys(row).some(key => !evidenceFields.has(key)) ||
+          !validUuid(row.id) || row.tenantId !== grant.tenantId ||
           row.product !== request.product || typeof row.provider !== "string" ||
           !row.provider || typeof row.providerRecordKey !== "string" ||
           !row.providerRecordKey || !validMetrics(row.metrics)) denied();
@@ -103,6 +112,10 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
       seenIds.add(row.id);
       seenProviderKeys.add(providerKey);
     }
-    return rows.map(row => Object.freeze({ ...row, metrics: Object.freeze({ ...row.metrics }) }));
+    return rows.map(row => Object.freeze({
+      id: row.id, tenantId: row.tenantId, product: row.product,
+      provider: row.provider, providerRecordKey: row.providerRecordKey,
+      metrics: Object.freeze({ ...row.metrics }),
+    }));
   };
 }
