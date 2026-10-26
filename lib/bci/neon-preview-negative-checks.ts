@@ -22,6 +22,39 @@ const probes: readonly Probe[] = [
   { id: "write_method", path: "?product=content", expected: 405, bearer: true, method: "POST" },
 ];
 const controlProducts = ["content", "demand"] as const;
+/** Development-only cross-tenant smoke: the approved operator's internal tenant
+ * currently has zero CONTENT and DEMAND evidence rows, while separate synthetic
+ * tenants have populated rows. A provider-authenticated GET must not return any
+ * of those other tenants' rows. Run only while the internal tenant is known empty.
+ * This is NOT a substitute for revoked-membership, direct LOGIN, or adversarial
+ * multi-tenant end-to-end tests. Never return or log response bodies or tokens.
+ */
+export async function runNeonPreviewEmptyTenantIsolationSmoke(
+  token: string, request: typeof fetch = fetch,
+): Promise<Readonly<{ passed: number; total: 2 }>> {
+  if (typeof token !== "string" || !/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(token) ||
+      token.length > 16000) throw new Error("Invalid preview token");
+  let passed = 0;
+  for (const product of controlProducts) {
+    try {
+      const response = await request(`/api/internal/neon-evidence?product=${product}&limit=50`, {
+        method: "GET", headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 || !safeHeaders(response)) continue;
+      const raw = await response.text();
+      if (raw.length > 65536) continue;
+      const body: unknown = JSON.parse(raw);
+      if (body === null || typeof body !== "object" || Array.isArray(body) ||
+          Object.keys(body).length !== 2 || !("scope" in body) ||
+          body.scope !== "internal-development" || !("evidence" in body) ||
+          !Array.isArray(body.evidence) || body.evidence.length !== 0) continue;
+      passed++;
+    } catch { /* Failure is counted, not logged. */ }
+  }
+  return Object.freeze({ passed, total: 2 as const });
+}
+
 const safeHeaders = (response: Response) =>
   /no-store/i.test(response.headers.get("cache-control") ?? "") &&
   /Authorization/i.test(response.headers.get("vary") ?? "");
