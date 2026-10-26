@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runNeonPreviewNegativeChecks } from "../lib/bci/neon-preview-negative-checks.ts";
+import { runNeonPreviewNegativeChecks, runNeonPreviewEmptyTenantIsolationSmoke } from "../lib/bci/neon-preview-negative-checks.ts";
 const token = "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ0ZXN0In0.c2ln";
 const control = () => new Response(JSON.stringify({ scope: "internal-development", evidence: [] }), {
  status: 200, headers: { "Cache-Control": "private, no-store", "Vary": "Authorization" },
@@ -100,4 +100,43 @@ test("authenticated control rejects cross-product evidence even with HTTP 200",a
  };
  await assert.rejects(runNeonPreviewNegativeChecks(token,mock),/Authenticated preview controls failed/);
  assert.equal(called,1);
+});
+
+test("empty internal tenant smoke performs two authenticated product-scoped full reads",async()=>{
+ const calls=[];
+ const mock=async (url,options)=>{
+  calls.push({url,options});
+  return control();
+ };
+ const report=await runNeonPreviewEmptyTenantIsolationSmoke(token,mock);
+ assert.deepEqual(report,{passed:2,total:2});
+ assert.deepEqual(calls.map(x=>x.url),[
+  "/api/internal/neon-evidence?product=content&limit=50",
+  "/api/internal/neon-evidence?product=demand&limit=50",
+ ]);
+ assert.ok(calls.every(x=>x.options.headers.Authorization===`Bearer ${token}` &&
+   x.options.cache==="no-store" && x.options.redirect==="error" && x.options.method==="GET"));
+ assert.equal(JSON.stringify(report).includes(token),false);
+});
+test("empty tenant smoke fails if cross-tenant evidence or extra response fields appear",async()=>{
+ for(const variant of ["foreign_row","extra_field","wrong_scope","wrong_status","public_cache","network"]){
+  const mock=async (url)=>{
+   if(url.includes("product=demand")) return control();
+   if(variant==="network") throw new Error("secret");
+   const body=variant==="foreign_row"?{scope:"internal-development",evidence:[{product:"content",tenantId:"other"}]}:
+    variant==="extra_field"?{scope:"internal-development",evidence:[],secret:"hidden"}:
+    variant==="wrong_scope"?{scope:"other",evidence:[]}:{scope:"internal-development",evidence:[]};
+   return new Response(JSON.stringify(body),{status:variant==="wrong_status"?403:200,
+    headers:{"Cache-Control":variant==="public_cache"?"public":"private, no-store","Vary":"Authorization"}});
+  };
+  const report=await runNeonPreviewEmptyTenantIsolationSmoke(token,mock);
+  assert.equal(report.passed,1,variant);
+  assert.equal(report.total,2);
+  assert.equal(JSON.stringify(report).includes("secret"),false);
+ }
+});
+test("empty tenant smoke rejects invalid bearer before network requests",async()=>{
+ let called=0;
+ await assert.rejects(runNeonPreviewEmptyTenantIsolationSmoke("invalid",async()=>{called++;}),/Invalid preview token/);
+ assert.equal(called,0);
 });
