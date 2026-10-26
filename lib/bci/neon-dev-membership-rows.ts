@@ -70,11 +70,15 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'UPDATE') AS can_update_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'DELETE') AS can_delete_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'TRUNCATE') AS can_truncate_memberships,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'REFERENCES') AS can_reference_memberships,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'TRIGGER') AS can_trigger_memberships,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'SELECT') AS can_read_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'INSERT') AS can_insert_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'UPDATE') AS can_update_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'DELETE') AS can_delete_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'TRUNCATE') AS can_truncate_evidence,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'REFERENCES') AS can_reference_evidence,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'TRIGGER') AS can_trigger_evidence,
                 has_schema_privilege(current_user, 'bci_dev', 'CREATE') AS can_create_schema_objects,
                 has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects,
                 (SELECT COUNT(*) = 3 AND bool_and(
@@ -94,11 +98,15 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
           posture.rows[0].can_update_memberships !== false ||
           posture.rows[0].can_delete_memberships !== false ||
           posture.rows[0].can_truncate_memberships !== false ||
+          posture.rows[0].can_reference_memberships !== false ||
+          posture.rows[0].can_trigger_memberships !== false ||
           posture.rows[0].can_read_evidence !== false ||
           posture.rows[0].can_insert_evidence !== false ||
           posture.rows[0].can_update_evidence !== false ||
           posture.rows[0].can_delete_evidence !== false ||
           posture.rows[0].can_truncate_evidence !== false ||
+          posture.rows[0].can_reference_evidence !== false ||
+          posture.rows[0].can_trigger_evidence !== false ||
           posture.rows[0].can_create_schema_objects !== false ||
           posture.rows[0].can_create_database_objects !== false ||
           posture.rows[0].other_bci_tables_denied !== true) deny();
