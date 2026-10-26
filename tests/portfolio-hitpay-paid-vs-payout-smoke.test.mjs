@@ -99,3 +99,51 @@ test("even synthetic trusted live PAID evidence does not become SETTLED by equal
   assert.equal(summary.observedOrdersPerQualifiedVisit, null);
   assert.equal(summary.cpaMinor, null);
 });
+
+
+/**
+ * PORTFOLIO_READINESS_FALSE_GREEN_GUARD_20261027
+ * Cross-product acceptance contract on the existing shared BCI pure functions.
+ * All fixtures are SYNTHETIC and do not attest provider identity or hosted E2E.
+ */
+test("portfolio gate remains OPEN with provider-shaped paid/Meta observations even when external flags are asserted", async () => {
+  const { assessInternalReadiness } = await import("../lib/bci/internal-readiness.ts");
+  const paid = summarizeGrowthEvidence(scope, [evidence("unknown", "unverified")]);
+  assert.equal(paid.settledOrders, null);
+  assert.equal(paid.paidOrders, null);
+  const readiness = assessInternalReadiness({
+    tenantId, contentId: "synthetic-content-1", contentEvidence: [],
+    experimentId: "synthetic-experiment-1", demandEvidence: [],
+    neonNegativeTestsVerified: true, sharedBciAuditVerified: true,
+    hitpayReconciliationVerified: true,
+  });
+  assert.equal(readiness.internalV1Ready, false);
+  assert.deepEqual(readiness.pending, ["contentEvidenceComplete", "demandEvidenceComplete"]);
+});
+
+test("portfolio gate does not promote SENT-only or Meta-attributed outcome to completed CONTENT/DEMAND", async () => {
+  const { assessInternalReadiness } = await import("../lib/bci/internal-readiness.ts");
+  const contentEvidence = [{
+    tenantId, product: "content", contentId: "synthetic-content-2",
+    stage: "provider_sent", sourceKey: "synthetic:buffer:post",
+    verified: true, at: "2026-10-26T02:00:00Z",
+    providerPostId: "synthetic-provider-post",
+  }];
+  const stages = ["diagnosis", "decision", "action", "outcome", "learning"];
+  const demandEvidence = stages.map((stage, i) => ({
+    tenantId, product: "demand", experimentId: "synthetic-experiment-2",
+    stage, sourceKey: `synthetic:stage:${stage}`, verified: true,
+    observedAt: new Date(Date.UTC(2026, 9, 26, 3, i)).toISOString(),
+    ...(stage === "outcome" ? { outcomeClass: "platform_observation" } : {}),
+  }));
+  const readiness = assessInternalReadiness({
+    tenantId, contentId: "synthetic-content-2", contentEvidence,
+    experimentId: "synthetic-experiment-2", demandEvidence,
+    neonNegativeTestsVerified: true, sharedBciAuditVerified: true,
+    hitpayReconciliationVerified: true,
+  });
+  assert.equal(readiness.contentEvidenceComplete, false);
+  assert.equal(readiness.demandEvidenceComplete, false);
+  assert.equal(readiness.internalV1Ready, false);
+  assert.deepEqual(readiness.pending, ["contentEvidenceComplete", "demandEvidenceComplete"]);
+});
