@@ -42,11 +42,13 @@ export function projectUnattestedContentHandoff(
   input: unknown,
   serverDerivedScope: Readonly<{ tenantId: string; product: "content" }>,
 ) {
+  // Narrow unknown input independently; TypeScript cannot preserve the guard
+  // when it is interleaved with unrelated short-circuit scope checks.
+  if (!exact(input, handoffKeys)) deny();
   if (!exact(serverDerivedScope, ["tenantId", "product"]) ||
       typeof serverDerivedScope.tenantId !== "string" ||
       !UUID.test(serverDerivedScope.tenantId) ||
       serverDerivedScope.product !== "content" ||
-      !exact(input, handoffKeys) ||
       input.schemaVersion !== 1 || input.product !== "content" ||
       input.tenantId !== serverDerivedScope.tenantId ||
       input.category !== "content_post_observation" ||
