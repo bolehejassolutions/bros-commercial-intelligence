@@ -147,3 +147,36 @@ test("portfolio gate does not promote SENT-only or Meta-attributed outcome to co
   assert.equal(readiness.internalV1Ready, false);
   assert.deepEqual(readiness.pending, ["contentEvidenceComplete", "demandEvidenceComplete"]);
 });
+
+
+/**
+ * PORTFOLIO_SCOPE_TEST_SETTLEMENT_CONFLICT_GUARD_20261027
+ * Synthetic cross-product/tenant and live-vs-test conflict acceptance tests.
+ * This tests the shared BCI projection; it does NOT prove authenticated RLS.
+ */
+test("portfolio HitPay evidence cannot cross tenant or CONTENT/DEMAND product scopes", () => {
+  const verified = evidence("live", "verified");
+  assert.throws(() => summarizeGrowthEvidence(scope, [
+    { ...verified, tenantId: "55555555-5555-4555-8555-555555555555" },
+  ]), /Invalid or inconsistent BCI growth evidence/);
+  assert.throws(() => summarizeGrowthEvidence(scope, [
+    { ...verified, product: "content" },
+  ]), /Invalid or inconsistent BCI growth evidence/);
+  const clean = summarizeGrowthEvidence(scope, [verified]);
+  assert.equal(clean.paidOrders, 1);
+  assert.equal(clean.settledOrders, null);
+  assert.equal(clean.cpaMinor, null);
+});
+
+test("a test PAID order cannot be promoted by a live SETTLED row for the same provider order", () => {
+  const untrustedPaid = evidence("test", "unverified");
+  const claimedSettlement = {
+    ...evidence("live", "verified"),
+    evidenceId: "portfolio-smoke:claimed-settlement",
+    kind: "settled_order",
+    settlementReference: "synthetic-payout-ref-not-provider-attested",
+  };
+  assert.throws(() => summarizeGrowthEvidence(scope, [
+    untrustedPaid, claimedSettlement,
+  ]), /Invalid or inconsistent BCI growth evidence/);
+});
