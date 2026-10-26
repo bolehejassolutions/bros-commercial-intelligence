@@ -56,7 +56,7 @@ test('conflicting replay of same action type fails closed; exact duplicate is id
   assert.deepEqual(x,normalizeMetaCampaignFunnel(scope,{...row,actions:[
     {action_type:'purchase',value:1},{action_type:'purchase',value:'1'}]}));
 });
-test('reject cross-tenant, cross-product, wrong campaign and reporting windows',()=>{
+test('reject invalid product, wrong campaign and reporting windows',()=>{
   for(const patch of [{tenantId:'22222222-2222-4222-8222-222222222222',product:'content'},
     {product:'content'},{accountId:'act_invalid'},{campaignId:'wrong'},
     {since:'2026-10-09'},{until:'2026-10-25'},
@@ -79,4 +79,24 @@ test('landing-page views are observations, not qualified visits or guaranteed cl
   const x=normalizeMetaCampaignFunnel(scope,{...row,inline_link_clicks:'0'});
   assert.equal(x.observedLandingPageViewsPerInlineLinkClick,null);
   assert.equal(x.qualifiedVisits,null);
+});
+
+test('source keys remain stable on replay and distinct across tenant boundaries',()=>{
+  const first=normalizeMetaCampaignFunnel(scope,row);
+  const replay=normalizeMetaCampaignFunnel(scope,{...row});
+  const other=normalizeMetaCampaignFunnel({...scope,tenantId:'22222222-2222-4222-8222-222222222222'},row);
+  assert.equal(first.sourceKey,replay.sourceKey);
+  assert.notEqual(first.sourceKey,other.sourceKey);
+  assert.match(first.sourceKey,/^meta_ads:tenant:11111111-1111-4111-8111-111111111111:/);
+});
+
+test('conflicting omni and pixel purchase aliases fail closed even without generic purchase',()=>{
+  const x=normalizeMetaCampaignFunnel(scope,{...row,actions:[
+    {action_type:'omni_purchase',value:1},
+    {action_type:'offsite_conversion.fb_pixel_purchase',value:2}]});
+  assert.equal(x.actionAliasMismatch,true);
+  assert.equal(x.metaAttributedPurchases,null);
+  assert.equal(x.pixelPurchaseEvents,null);
+  assert.equal(x.hitpayPaidOrders,null);
+  assert.equal(x.verifiedCacMinor,null);
 });
