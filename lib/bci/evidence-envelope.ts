@@ -24,7 +24,7 @@ export function normalizeEvidenceEnvelope(input:unknown):EvidenceEnvelope {
      typeof input.providerRecordKey!=="string"||!input.providerRecordKey.trim()||input.providerRecordKey.length>256||
      typeof input.observedAt!=="string"||!UTC.test(input.observedAt)||
      !Number.isFinite(Date.parse(input.observedAt))||
-     new Date(input.observedAt).toISOString() !== input.observedAt.replace(/\.000Z$/, "Z")||
+     new Date(input.observedAt).toISOString().replace(/\.000Z$/, "Z") !== input.observedAt.replace(/\.000Z$/, "Z")||
      !["test","live","unknown"].includes(String(input.environment))||
      !["synthetic","provider_reported","provider_verified"].includes(String(input.provenance))||
      !object(input.metrics)||Object.keys(input.metrics).length>100) deny();
