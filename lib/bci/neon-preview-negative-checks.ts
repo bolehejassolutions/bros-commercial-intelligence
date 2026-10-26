@@ -45,10 +45,7 @@ export async function runNeonPreviewEmptyTenantIsolationSmoke(
       const raw = await response.text();
       if (raw.length > 65536) continue;
       const body: unknown = JSON.parse(raw);
-      if (body === null || typeof body !== "object" || Array.isArray(body) ||
-          Object.keys(body).length !== 2 || !("scope" in body) ||
-          body.scope !== "internal-development" || !("evidence" in body) ||
-          !Array.isArray(body.evidence) || body.evidence.length !== 0) continue;
+      if (!validEvidenceEnvelope(body, product, 0)) continue;
       passed++;
     } catch { /* Failure is counted, not logged. */ }
   }
@@ -58,6 +55,29 @@ export async function runNeonPreviewEmptyTenantIsolationSmoke(
 const safeHeaders = (response: Response) =>
   /no-store/i.test(response.headers.get("cache-control") ?? "") &&
   /Authorization/i.test(response.headers.get("vary") ?? "");
+
+/** A successful HTTP 200 is not evidence of a safe read if its payload carries
+ * unreviewed fields or malformed/foreign evidence. This is a browser-side
+ * attestation only; the server and restricted DB must enforce isolation too.
+ */
+const validEvidenceEnvelope = (body: unknown, product: "content" | "demand", maxRows: number): boolean => {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return false;
+  const envelope = body as Record<string, unknown>;
+  if (Object.keys(envelope).length !== 2 || envelope.scope !== "internal-development" ||
+      !Array.isArray(envelope.evidence) || envelope.evidence.length > maxRows) return false;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return envelope.evidence.every((value: unknown) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+    const row = value as Record<string, unknown>;
+    if (Object.keys(row).length !== 6 || typeof row.id !== "string" || !uuid.test(row.id) ||
+        typeof row.tenantId !== "string" || !uuid.test(row.tenantId) ||
+        row.product !== product || typeof row.provider !== "string" || !row.provider ||
+        typeof row.providerRecordKey !== "string" || !row.providerRecordKey ||
+        row.metrics === null || typeof row.metrics !== "object" || Array.isArray(row.metrics)) return false;
+    return Object.values(row.metrics).every(value => value === null ||
+      (typeof value === "number" && Number.isFinite(value)));
+  });
+};
 
 /** A denial is only a PASS if the response contains the exact generic envelope.
  * Merely returning the expected HTTP status must not conceal leaked private data.
@@ -88,11 +108,7 @@ export async function runNeonPreviewNegativeChecks(
       const raw = await response.text();
       if (raw.length > 65536) throw new Error();
       const body: unknown = JSON.parse(raw);
-      if (body === null || typeof body !== "object" || Array.isArray(body) ||
-          !("scope" in body) || body.scope !== "internal-development" ||
-          !("evidence" in body) || !Array.isArray(body.evidence) || body.evidence.length > 1 ||
-          !body.evidence.every((row: unknown) => row !== null && typeof row === "object" &&
-            !Array.isArray(row) && "product" in row && row.product === product)) throw new Error();
+      if (!validEvidenceEnvelope(body, product, 1)) throw new Error();
       authenticatedControlsPassed++;
     } catch {
       // Never retain response bodies, tokens, identifiers or raw provider errors.
