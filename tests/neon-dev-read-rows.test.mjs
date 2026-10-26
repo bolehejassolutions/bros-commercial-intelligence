@@ -36,8 +36,11 @@ function mock({
         rls_enabled: true, rls_forced: true, can_read_evidence: true,
         can_insert_evidence: false, can_update_evidence: false,
         can_delete_evidence: false, can_truncate_evidence: false,
+        can_reference_evidence: false, can_trigger_evidence: false,
         can_read_memberships: false, can_insert_memberships: false, can_update_memberships: false,
         can_delete_memberships: false, can_truncate_memberships: false,
+        can_reference_memberships: false, can_trigger_memberships: false,
+        lineage_tables_readonly: true,
         can_create_schema_objects: false, can_create_database_objects: false,
         ...safety,
       }] };
@@ -163,8 +166,11 @@ test("wrong database, missing RLS and privilege drift fail before scoped SQL", a
     { can_read_evidence: false },
     { can_insert_evidence: true },
     { can_update_evidence: true }, { can_delete_evidence: true }, { can_truncate_evidence: true },
+    { can_reference_evidence: true }, { can_trigger_evidence: true },
     { can_read_memberships: true }, { can_insert_memberships: true },
     { can_update_memberships: true }, { can_delete_memberships: true }, { can_truncate_memberships: true },
+    { can_reference_memberships: true }, { can_trigger_memberships: true },
+    { lineage_tables_readonly: false }, { lineage_tables_readonly: null },
     { can_create_schema_objects: true },
     { can_create_database_objects: true },
   ]) {
@@ -189,4 +195,17 @@ test("malformed provider metric keys and unbounded JSONB maps fail closed", asyn
     await assert.rejects(read(scope), /access denied/i);
     assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
   }
+});
+
+
+test("evidence reader requires RLS-forced read-only access to all three shared lineage tables", async () => {
+  const { calls, read } = mock({ safety: { lineage_tables_readonly: false } });
+  await assert.rejects(read(scope), /access denied/i);
+  const posture = calls.find(x => x.sql.includes("lineage_tables_readonly"));
+  assert.ok(posture, "the real posture SQL must verify lineage tables");
+  assert.match(posture.sql, /COUNT\(\*\) = 3/);
+  assert.match(posture.sql, /extra\.relforcerowsecurity/);
+  assert.match(posture.sql, /'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'/);
+  assert.equal(calls.some(x => x.sql.includes("set_config")), false);
+  assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
 });
