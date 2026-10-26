@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {projectBufferContentObservation as project,proposeContentNextStep as next} from "../lib/content/buffer-observation.mjs";
+import {projectBufferContentObservation as project,proposeContentNextStep as next,inspectContentSourceToSentReferences as inspect} from "../lib/content/buffer-observation.mjs";
 const scope={tenantId:"tenant-A",product:"content",instanceId:"sell-internal",contentId:"florist-001",channelService:"instagram",channelId:"ig123",expectedAssetCount:2};
 const post={id:"post123",status:"sent",channelService:"instagram",channelId:"ig123",sentAt:"2026-10-22T05:00:56.507Z",externalLink:"https://www.instagram.com/p/ABC/",assets:[{type:"image",source:"https://a.example/1.png"},{type:"image",source:"https://a.example/2.png"}],text:"Situasi rekaan / ilustrasi AI",metadata:{isAiGenerated:true},metricsUpdatedAt:"2026-10-25T15:34:40.061Z",metrics:[{type:"views",unit:"count",value:7},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:0}]};
 const make=(p={},s={})=>project({...post,...p},{...scope,...s});
@@ -136,4 +136,43 @@ test("review-required observations cannot become learning evidence",()=>{
   assert.equal(r.reason,"AI_DISCLOSURE_REVIEW");
   assert.equal(r.nextAction,"REVIEW_AI_DISCLOSURE");
   assert.deepEqual(r.evidence,[]);
+});
+
+
+// CONTENT_SOURCE_TO_SENT_REFERENCE_GATE_20261027_0250: synthetic PNG QA digest fixture + actual provider-shaped JPEG metadata.
+const sourceUrls=["https://drive.google.com/uc?id=source1&export=download","https://drive.google.com/uc?id=source2&export=download"];
+const sourceQa={status:"SOURCE_BYTES_STRUCTURALLY_VERIFIED",distinctFileHashes:true,distinctPixelHashes:true,
+  images:[
+    {format:"PNG",width:1080,height:1350,bytes:1751408,sha256:"a".repeat(64),pixelSha256:"b".repeat(64),structuralIntegrity:"CRC_AND_DEFLATE_VALID"},
+    {format:"PNG",width:1080,height:1350,bytes:1790827,sha256:"c".repeat(64),pixelSha256:"d".repeat(64),structuralIntegrity:"CRC_AND_DEFLATE_VALID"}
+  ]};
+const providerAssets=sourceUrls.map(source=>({type:"image",source,mimeType:"image/jpeg"}));
+test("actual Buffer-shaped JPEG metadata does not attest original PNG bytes",()=>{
+  const o=inspect({...post,assets:providerAssets},scope,sourceQa,sourceUrls);
+  assert.equal(o.status,"REVIEW_REQUIRED");
+  assert.ok(o.flags.includes("PROVIDER_MEDIA_FORMAT_NOT_SOURCE_PNG"));
+  assert.equal(o.providerByteIdentityVerified,false);
+  assert.equal(o.approvalVerified,false);
+  assert.equal(o.executionAllowed,false);
+  assert.deepEqual(o.sourceFileSha256,["a".repeat(64),"c".repeat(64)]);
+});
+test("matching PNG references are still untrusted, not approved or provider byte-attested",()=>{
+  const o=inspect({...post,assets:providerAssets.map(a=>({...a,mimeType:"image/png"}))},scope,sourceQa,sourceUrls);
+  assert.equal(o.status,"SOURCE_REFERENCES_MATCHED_UNATTESTED");
+  assert.equal(o.sourceBytesRevalidatedByModule,false);
+  assert.equal(o.providerAttestedByModule,false);
+  assert.equal(o.providerByteIdentityVerified,false);
+});
+test("swapped media references, missing assets and malformed QA fail closed",()=>{
+  const swapped=inspect({...post,assets:[providerAssets[1],providerAssets[0]]},scope,sourceQa,sourceUrls);
+  assert.equal(swapped.status,"REVIEW_REQUIRED");
+  assert.ok(swapped.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"));
+  const missing=inspect({...post,assets:[providerAssets[0]]},scope,sourceQa,sourceUrls);
+  assert.ok(missing.flags.includes("SOURCE_ASSET_COUNT_MISMATCH"));
+  assert.throws(()=>inspect(post,scope,{...sourceQa,images:[{...sourceQa.images[0],sha256:"not-a-hash"},sourceQa.images[1]]},sourceUrls),/INVALID_SOURCE_QA_EVIDENCE/);
+  assert.throws(()=>inspect(post,scope,sourceQa,["http://invalid.test",sourceUrls[1]]),/INVALID_SOURCE_REFERENCE_MANIFEST/);
+});
+test("scheduled media cannot become SENT through matching source references",()=>{
+  const o=inspect({...post,status:"scheduled",assets:providerAssets},scope,sourceQa,sourceUrls);
+  assert.equal(o.status,"NOT_SENT");
 });
