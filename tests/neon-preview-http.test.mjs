@@ -50,9 +50,12 @@ function database(kind, rows, calls, error) {
           can_read_memberships: kind === "membership", can_insert_memberships: false,
           can_update_memberships: false, can_delete_memberships: false,
           can_truncate_memberships: false,
+          can_reference_memberships: false, can_trigger_memberships: false,
           can_read_evidence: kind === "evidence", can_insert_evidence: false,
           can_update_evidence: false, can_delete_evidence: false,
           can_truncate_evidence: false,
+          can_reference_evidence: false, can_trigger_evidence: false,
+          lineage_tables_readonly: true,
           can_create_schema_objects: false, can_create_database_objects: false,
           other_bci_tables_denied: true,
         }] };
