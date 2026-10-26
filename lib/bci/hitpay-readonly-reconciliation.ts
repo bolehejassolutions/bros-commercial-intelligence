@@ -49,7 +49,26 @@ export type HitPayPaidPair = Readonly<{
 }>;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO = /^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$/;
+/** Validate the actual UTC-offset calendar instant, not Date.parse's rollover. */
+function validClosedAt(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = ISO.exec(value);
+  if (!match) return false;
+  const [, y, mo, d, h, mi, s, zone] = match;
+  const year = Number(y), month = Number(mo), day = Number(d);
+  const hour = Number(h), minute = Number(mi), second = Number(s);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [0, 31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > days[month] ||
+      hour > 23 || minute > 59 || second > 59) return false;
+  if (zone !== "Z") {
+    const [offsetHours, offsetMinutes] = zone.slice(1).split(":").map(Number);
+    if (offsetHours > 14 || offsetMinutes > 59 ||
+        (offsetHours === 14 && offsetMinutes !== 0)) return false;
+  }
+  return Number.isFinite(Date.parse(value));
+}
 const fail = (): never => { throw new Error("HitPay read-only reconciliation mismatch"); };
 const minor = (x: unknown): x is number =>
   typeof x === "number" && Number.isSafeInteger(x) && x > 0;
@@ -68,8 +87,7 @@ export function reconcileHitPayPaidPair(
       charge.currency.toUpperCase() !== "MYR" || order.currency.toUpperCase() !== "MYR" ||
       !minor(charge.amount) || !minor(order.amount) || charge.amount !== order.amount ||
       (charge.closed_at !== undefined && charge.closed_at !== null &&
-        (typeof charge.closed_at !== "string" || !ISO.test(charge.closed_at) ||
-         !Number.isFinite(Date.parse(charge.closed_at))))) fail();
+        !validClosedAt(charge.closed_at))) fail();
 
   const fulfilmentState = order.fulfilment_status === "completed" ? "completed" : "pending";
   return Object.freeze({
