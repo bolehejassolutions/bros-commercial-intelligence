@@ -17,3 +17,29 @@ test("native URL must be HTTPS on matching channel",()=>{assert.equal(make({exte
 test("learning rejects cross tenant and duplicate posts",()=>{const o=make();assert.throws(()=>next([o,{...o,tenantId:"tenant-B",postId:"post456"}]),/CROSS_SCOPE/);assert.throws(()=>next([o,o]),/DUPLICATE_POST/)});
 test("cross-platform views cannot be compared as a winner",()=>{const o=make();assert.equal(next([o,{...o,postId:"post456",channelService:"tiktok"}]).reason,"NO_SAME_CHANNEL_PAIR")});
 test("same channel candidate is nonexecuting and noncausal",()=>{const o=make();const r=next([o,{...o,postId:"post456"}]);assert.equal(r.reason,"SAME_CHANNEL_CANDIDATES");assert.equal(r.executionAllowed,false);assert.equal(r.causalLiftProven,false)});
+
+test("empty and unsupported metric snapshots remain unmeasured rather than zero",()=>{
+  for(const metrics of [[],[{type:"engagementRate",unit:"percentage",value:1}]]) {
+    const o=make({metrics});assert.equal(o.status,"SENT_UNMEASURED");assert.equal(o.metrics.views,null);
+  }
+});
+test("measurement age derives from SENT timestamp",()=>{
+  const o=make();assert.equal(o.measurementAgeSeconds,Math.floor((Date.parse(post.metricsUpdatedAt)-Date.parse(post.sentAt))/1000));
+});
+test("unequal cumulative measurement windows are not comparable",()=>{
+  const a=make(),b=make({id:"post456",metricsUpdatedAt:"2026-10-23T15:34:40.061Z"});
+  assert.equal(next([a,b]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+});
+test("different account or format cannot be compared",()=>{
+  const a=make();
+  assert.equal(next([a,{...make({id:"post456"}),channelId:"other-ig"}]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+  assert.equal(next([a,{...make({id:"post789"}),format:"video"}]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+});
+test("different measured metric types cannot be compared",()=>{
+  const a=make({metrics:[{type:"views",unit:"count",value:7}]}),b=make({id:"post456",metrics:[{type:"clicks",unit:"count",value:2}]});
+  assert.equal(next([a,b]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+});
+test("near-equal windows remain only nonexecuting candidates",()=>{
+  const a=make(),b=make({id:"post456",metricsUpdatedAt:"2026-10-25T16:20:40.061Z"});
+  const r=next([a,b]);assert.equal(r.reason,"SAME_CHANNEL_CANDIDATES");assert.equal(r.executionAllowed,false);assert.equal(r.causalLiftProven,false);
+});
