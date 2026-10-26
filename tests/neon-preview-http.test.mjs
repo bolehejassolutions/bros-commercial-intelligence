@@ -42,6 +42,8 @@ function database(kind, rows, calls, error) {
           role_name: kind === "membership" ? "bci_dev_membership_reader" : "bci_dev_private_reader",
           session_role_name: kind === "membership" ? "bci_dev_membership_reader" : "bci_dev_private_reader",
           bypass_rls: false, is_superuser: false, can_login: true,
+          can_create_database: false, can_manage_roles: false,
+          can_replicate: false, inherits_roles: false, parent_role_count: 0,
         }] };
         if (sql.includes("current_database() AS database_name")) return { rows: [{
           database_name: "bros_intelligence_dev", rls_enabled: true, rls_forced: true,
