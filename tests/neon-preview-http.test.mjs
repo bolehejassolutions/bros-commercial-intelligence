@@ -131,7 +131,8 @@ test("HTTP rejects tenant/principal spoofing, unknown keys and duplicate/invalid
 });
 
 test("HTTP rejects identity override headers and mutation methods before database work", async () => {
-  for (const header of ["x-tenant-id", "x-user-id", "x-principal-id", "x-bci-tenant-id"]) {
+  for (const header of ["x-tenant-id", "x-user-id", "x-principal-id", "x-bci-tenant-id",
+    "x-admin", "x-role", "x-product", "x-operator-id"]) {
     const f = harness();
     await denied(await f.handler(f.request("product=content", token(), {
       headers: { [header]: OTHER },
@@ -196,5 +197,17 @@ test("HTTP masks provider, membership and evidence failures and never returns pa
     const response = await f.handler(f.request());
     assert.ok(response.status >= 400);
     await denied(response, response.status);
+  }
+});
+
+test("HTTP direct handler reuse rejects wrong paths and encoded route lookalikes before auth", async () => {
+  for (const path of ["/api/internal/bci/evidence", "/api/internal/neon-evidence/",
+    "/api/internal/%6eon-evidence", "/api/public/neon-evidence"]) {
+    const f = harness();
+    const request = new Request(`https://preview.example.test${path}?product=content`, {
+      headers: { authorization: `Bearer ${token()}` },
+    });
+    await denied(await f.handler(request), 400);
+    assert.equal(f.calls.length, 0);
   }
 });
