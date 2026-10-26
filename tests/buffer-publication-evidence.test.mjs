@@ -4,8 +4,9 @@ import { reconcileBufferPublication } from '../lib/content/buffer-publication-ev
 const id='6add890e3d5b27036bb7b9c3';
 const sha='a'.repeat(64);
 const image={sha256:sha,detectedMime:'image/png',width:1080,height:1350,verification:'source_container_only',publishedBytesVerified:false};
-const review={attestation:image,fullDecodeVerified:true,approved:true};
-const post={id,channelService:'facebook',status:'sent',sentAt:'2026-10-25T13:00:49.633Z',externalLink:'https://www.facebook.com/post',assets:[{mimeType:'image/jpeg',image:{width:1080,height:1350}}],metrics:[{type:'impressions',value:1},{type:'clicks',value:0}],metricsUpdatedAt:'2026-10-25T17:43:10.476Z'};
+const source='https://drive.google.com/uc?export=download&id=trusted-image';
+const review={attestation:image,fullDecodeVerified:true,approved:true,providerAssetSource:source};
+const post={id,channelService:'facebook',status:'sent',sentAt:'2026-10-25T13:00:49.633Z',externalLink:'https://www.facebook.com/post',assets:[{source,mimeType:'image/jpeg',image:{width:1080,height:1350}}],metrics:[{type:'impressions',value:1},{type:'clicks',value:0}],metricsUpdatedAt:'2026-10-25T17:43:10.476Z'};
 const make=(changes={},reviews=[review])=>({expectedPostId:id,expectedChannel:'facebook',sourceReviews:reviews,bufferPost:{...post,...changes}});
 test('SENT plus source QA and provider metrics permits observational learning, never published-byte claim',()=>{
  const r=reconcileBufferPublication(make());
@@ -36,7 +37,7 @@ test('rejects mismatched post ID or channel',()=>{
  assert.throws(()=>reconcileBufferPublication(make({channelService:'tiktok'})));
 });
 test('TikTok AI disclosure mismatch is explicit, not rewritten',()=>{
- const t={...post,channelService:'tiktok',text:'Situasi rekaan. Ilustrasi AI.',metadata:{isAiGenerated:false},assets:[{mimeType:'image/png',image:{width:1080,height:1350}}]};
+ const t={...post,channelService:'tiktok',text:'Situasi rekaan. Ilustrasi AI.',metadata:{isAiGenerated:false},assets:[{source,mimeType:'image/png',image:{width:1080,height:1350}}]};
  const r=reconcileBufferPublication({expectedPostId:id,expectedChannel:'tiktok',sourceReviews:[review],bufferPost:t});
  assert.ok(r.warnings.includes('ai_disclosure_mismatch'));
  assert.equal(r.readyForObservationalLearning,false);
@@ -50,4 +51,20 @@ test('missing QA is not successful QA',()=>{
  const r=reconcileBufferPublication(make({},[]));
  assert.ok(r.warnings.includes('missing_source_qa'));
  assert.equal(r.readyForObservationalLearning,false);
+});
+
+test('identical dimensions and MIME cannot bind unapproved Buffer asset',()=>{
+ const noBinding=reconcileBufferPublication(make({},[{...review,providerAssetSource:undefined}]));
+ assert.equal(noBinding.readyForObservationalLearning,false);
+ assert.ok(noBinding.warnings.includes('asset_source_unbound'));
+ const substituted=reconcileBufferPublication(make({assets:[{...post.assets[0],source:'https://example.com/different.png'}]}));
+ assert.equal(substituted.readyForObservationalLearning,false);
+ assert.ok(substituted.warnings.includes('asset_source_mismatch'));
+});
+test('publisher source binding must be an exact safe HTTPS reference',()=>{
+ for(const bad of ['http://drive.google.com/uc','https://user:pass@example.com/a','https://example.com/a#fragment','not-a-url',42])
+   assert.throws(()=>reconcileBufferPublication(make({},[{...review,providerAssetSource:bad}])));
+ const changedQuery=reconcileBufferPublication(make({assets:[{...post.assets[0],source:'https://drive.google.com/uc?id=trusted-image&export=download'}]}));
+ assert.ok(changedQuery.warnings.includes('asset_source_mismatch'));
+ assert.equal(changedQuery.readyForObservationalLearning,false);
 });
