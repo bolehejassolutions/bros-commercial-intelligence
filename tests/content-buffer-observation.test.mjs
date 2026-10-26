@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {projectBufferContentObservation as project,proposeContentNextStep as next,inspectContentSourceToSentReferences as inspect,buildContentBciEvidenceHandoff as handoff} from "../lib/content/buffer-observation.mjs";
+import {projectBufferContentObservation as project,proposeContentNextStep as next,inspectContentSourceToSentReferences as inspect,buildContentBciEvidenceHandoff as handoff, classifyContentApprovalProvenance} from "../lib/content/buffer-observation.mjs";
 const scope={tenantId:"tenant-A",product:"content",instanceId:"sell-internal",contentId:"florist-001",channelService:"instagram",channelId:"ig123",expectedAssetCount:2};
 const post={id:"post123",status:"sent",channelService:"instagram",channelId:"ig123",sentAt:"2026-10-22T05:00:56.507Z",externalLink:"https://www.instagram.com/p/ABC/",assets:[{type:"image",source:"https://a.example/1.png"},{type:"image",source:"https://a.example/2.png"}],text:"Situasi rekaan / ilustrasi AI",metadata:{isAiGenerated:true},metricsUpdatedAt:"2026-10-25T15:34:40.061Z",metrics:[{type:"views",unit:"count",value:7},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:0}]};
 const make=(p={},s={})=>project({...post,...p},{...scope,...s});
@@ -224,4 +224,54 @@ test("BCI handoff preserves SENT but unmeasured as unknown, not a zero",()=>{
   assert.equal(e.provenance.windowEnd,null);
   assert.equal(e.metrics.views,null);
   assert.ok(e.unknowns.includes("MEASUREMENT_UNAVAILABLE"));
+});
+
+
+// CONTENT_APPROVAL_BINDING_CANDIDATE_20261027_0748: synthetic, non-authorizing contract tests.
+const approvalScope={product:"content",tenantId:"tenant-A",instanceId:"pilot-A",
+  contentId:"content-A",contentVersionId:"version-1",channelId:"channel-A",
+  asOf:"2026-10-27T00:00:00.000Z"};
+const approvalManifest={contentSha256:"a".repeat(64),assetSha256:["b".repeat(64),"c".repeat(64)]};
+const approvalEvent={schemaVersion:1,authorityType:"content_specific",
+  eventId:"approval-event-001",decision:"approved",reviewerPrincipalId:"reviewer-001",
+  tenantId:"tenant-A",instanceId:"pilot-A",contentId:"content-A",
+  contentVersionId:"version-1",channelId:"channel-A",
+  contentSha256:"a".repeat(64),assetSha256:["b".repeat(64),"c".repeat(64)],
+  approvedAt:"2026-10-26T10:00:00.000Z",recordedAt:"2026-10-26T10:01:00.000Z",
+  auditRef:"audit-001"};
+test("conditional owner policy and missing event are never content approval",()=>{
+  const p=classifyContentApprovalProvenance({authorityType:"owner_conditional_policy",
+    policyRef:"22Oct2026"},approvalScope,approvalManifest);
+  assert.equal(p.status,"POLICY_ONLY");
+  assert.equal(p.approvalVerified,false);
+  assert.equal(p.executionAllowed,false);
+  assert.equal(classifyContentApprovalProvenance(null,approvalScope,approvalManifest).status,"NO_APPROVAL_EVENT");
+});
+test("content-bound candidate is deterministic but never authenticated or executable",()=>{
+  const a=classifyContentApprovalProvenance(approvalEvent,approvalScope,approvalManifest);
+  const b=classifyContentApprovalProvenance({...approvalEvent},approvalScope,approvalManifest);
+  assert.equal(a.status,"CONTENT_BOUND_CANDIDATE_UNATTESTED");
+  assert.equal(a.candidateId,b.candidateId);
+  assert.equal(a.approvalVerified,false);
+  assert.equal(a.executionAllowed,false);
+  assert.equal(a.providerAttested,false);
+});
+test("cross-tenant/version/channel and swapped or changed media fail closed",()=>{
+  for(const k of ["tenantId","instanceId","contentId","contentVersionId","channelId"])
+    assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,[k]:"other"},
+      approvalScope,approvalManifest),/SCOPE_MISMATCH/);
+  for(const assetSha256 of [["c".repeat(64),"b".repeat(64)],["b".repeat(64),"d".repeat(64)]])
+    assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,assetSha256},
+      approvalScope,approvalManifest),/INVALID_CONTENT_APPROVAL_RECORD/);
+  assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,contentSha256:"f".repeat(64)},
+    approvalScope,approvalManifest),/INVALID_CONTENT_APPROVAL_RECORD/);
+});
+test("forged trust claims, invalid time and duplicate manifest are rejected",()=>{
+  for(const extra of [{approvalVerified:true},{authenticated:true},{accessToken:"secret"}])
+    assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,...extra},
+      approvalScope,approvalManifest),/INVALID_CONTENT_APPROVAL_RECORD/);
+  assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,approvedAt:"2026-10-28T00:00:00.000Z"},
+    approvalScope,approvalManifest),/INVALID_CONTENT_APPROVAL_TIMELINE/);
+  assert.throws(()=>classifyContentApprovalProvenance(approvalEvent,approvalScope,
+    {...approvalManifest,assetSha256:["b".repeat(64),"b".repeat(64)]}),/INVALID_CONTENT_APPROVAL_BINDING_SCOPE/);
 });
