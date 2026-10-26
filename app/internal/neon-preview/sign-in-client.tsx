@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
 import { requestNeonPreviewToken, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
-import { runNeonPreviewNegativeChecks } from "@/lib/bci/neon-preview-negative-checks";
+import { runNeonPreviewNegativeChecks, runNeonPreviewEmptyTenantIsolationSmoke } from "@/lib/bci/neon-preview-negative-checks";
 
 const operatorEmail = "rasymokh@gmail.com";
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
@@ -150,6 +150,20 @@ export default function NeonPreviewSignIn() {
     } finally { setBusy(false); }
   }
 
+  async function checkEmptyTenantIsolation() {
+    if (busy) return;
+    setBusy(true);
+    setMessage("Checking the empty internal tenant against populated synthetic tenant data…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const report = await runNeonPreviewEmptyTenantIsolationSmoke(token);
+      setMessage(`Empty-tenant isolation smoke: ${report.passed}/${report.total} passed. This check is valid only while the internal operator tenant has zero evidence; it does not certify revocation, admin impersonation, or full cross-tenant security.`);
+    } catch {
+      setMessage("Empty-tenant isolation smoke could not complete. No isolation gate has been certified.");
+    } finally { setBusy(false); }
+  }
+
   async function signOut() {
     if (busy) return;
     setBusy(true);
@@ -202,6 +216,7 @@ export default function NeonPreviewSignIn() {
             </label>
             <button type="button" disabled={busy} onClick={checkAccess}>Check protected access</button>
             <button type="button" disabled={busy} onClick={checkNegativeAccess}>Run HTTP rejection checks</button>
+            <button type="button" disabled={busy} onClick={checkEmptyTenantIsolation}>Check empty-tenant isolation (DEV)</button>
             <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
           </div>
         ) : null}
