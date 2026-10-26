@@ -104,7 +104,17 @@ export default function NeonPreviewSignIn() {
         headers: { Authorization: `Bearer ${data.token}` }, cache: "no-store", redirect: "error",
       });
       if (!response.ok) {
-        setMessage("You are signed in, but protected access was denied. The development access gate remains closed.");
+        // Only fixed, non-sensitive stage labels are displayed. Never render
+        // raw provider/database errors, tokens, request URLs or user identifiers.
+        let stage = "unclassified";
+        if (response.status === 403) {
+          const body: unknown = await response.json().catch(() => null);
+          if (body !== null && typeof body === "object" && "stage" in body &&
+              (body.stage === "identity" || body.stage === "membership" || body.stage === "evidence")) {
+            stage = body.stage;
+          }
+        }
+        setMessage(`Protected access denied (HTTP ${response.status}; stage: ${stage}). No access has been granted.`);
         return;
       }
       const result: unknown = await response.json();
