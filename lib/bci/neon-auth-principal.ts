@@ -53,7 +53,13 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
        maxOperatorLifetime < 1 || maxOperatorLifetime > 900)) deny();
   let endpoint: URL;
   try { endpoint = new URL(config.jwksUrl); } catch { return deny(); }
-  if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password ||
+  // A misconfigured cross-origin JWKS could let an unrelated key authority
+  // sign tokens claiming the trusted issuer. Pin both to the same HTTPS origin.
+  let issuerUrl: URL;
+  try { issuerUrl = new URL(config.issuer); } catch { return deny(); }
+  if (issuerUrl.protocol !== "https:" || issuerUrl.username || issuerUrl.password ||
+      issuerUrl.search || issuerUrl.hash || issuerUrl.origin !== endpoint.origin ||
+      endpoint.protocol !== "https:" || endpoint.username || endpoint.password ||
       endpoint.search || endpoint.hash || !endpoint.pathname.endsWith("/.well-known/jwks.json")) deny();
   const load = config.fetchJwks ?? (async (url: string) => {
     const response = await fetch(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(3000) });
