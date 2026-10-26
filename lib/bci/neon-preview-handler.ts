@@ -40,9 +40,13 @@ export function createNeonPreviewHandler(deps: Dependencies) {
         request.headers.has("transfer-encoding")) return denied(400);
     let url: URL;
     try { url = new URL(request.url); } catch { return denied(400); }
-    if ([...url.searchParams.keys()].some(key => key !== "product" && key !== "limit") ||
+    // Route identity is fixed by the server, not caller-provided path or role hints.
+    // Check here as well as in Next.js routing so direct handler reuse fails closed.
+    if (url.pathname !== "/api/internal/neon-evidence" ||
+        [...url.searchParams.keys()].some(key => key !== "product" && key !== "limit") ||
         url.searchParams.getAll("product").length !== 1 || url.searchParams.getAll("limit").length > 1 ||
-        ["x-tenant-id", "x-user-id", "x-principal-id", "x-bci-tenant-id"].some(key => request.headers.has(key))) {
+        ["x-tenant-id", "x-user-id", "x-principal-id", "x-bci-tenant-id",
+         "x-admin", "x-role", "x-product", "x-operator-id"].some(key => request.headers.has(key))) {
       return denied(400);
     }
     const product = url.searchParams.get("product");
