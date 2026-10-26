@@ -48,7 +48,7 @@ export function evaluateContentEvidence(tenantId: string, contentId: string, row
   const qa = verified.get("media_qa"), approval = verified.get("approval");
   const sent = verified.get("provider_sent"), measurement = verified.get("measurement");
   const ordered = (a?: ContentEvidence, b?: ContentEvidence) =>
-    !b || (!!a && Date.parse(a.at) <= Date.parse(b.at));
+    !a || !b || Date.parse(a.at) <= Date.parse(b.at);
   if (!ordered(qa, approval) || !ordered(approval, sent) || !ordered(sent, measurement)) fail();
   return Object.freeze({
     mediaQa: !!qa,
