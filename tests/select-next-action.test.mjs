@@ -17,7 +17,7 @@ test('filters different tenant, product and instance',()=>{
  assert.equal(result.primary.actionId,'four');
 });
 test('fails closed on absent/stale/invalid evidence freshness',()=>{
- const r=selectNextActions({scope,candidates:[mk('empty',{evidence:[]}),mk('stale',{evidence:[{status:'OBSERVED',collectedAt:'2026-10-25T00:00:00Z'}]}),mk('unknown',{evidence:[{status:'UNKNOWN',collectedAt:'2026-10-26T07:55:00Z'}]}),mk('noTTL',{freshnessBudgetMs:undefined})],now});
+ const r=selectNextActions({scope,candidates:[mk('empty',{evidence:[]}),mk('stale',{evidence:[{...fresh,status:'OBSERVED',observedAt:'2026-10-25T00:00:00Z',collectedAt:'2026-10-25T00:00:00Z'}]}),mk('unknown',{evidence:[{...fresh,status:'UNKNOWN',observedAt:'2026-10-26T07:55:00Z',collectedAt:'2026-10-26T07:55:00Z'}]}),mk('noTTL',{freshnessBudgetMs:undefined})],now});
  assert.equal(r.considered,4);
  assert.ok([r.primary,...r.secondary].every(x=>x.executionAllowed===false));
  assert.equal(r.primary.state,'NEEDS_EVIDENCE');
