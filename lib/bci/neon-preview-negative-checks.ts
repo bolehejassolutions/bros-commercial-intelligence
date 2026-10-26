@@ -32,7 +32,7 @@ const controlProducts = ["content", "demand"] as const;
 export async function runNeonPreviewEmptyTenantIsolationSmoke(
   token: string, request: typeof fetch = fetch,
 ): Promise<Readonly<{ passed: number; total: 2 }>> {
-  if (typeof token !== "string" || !/^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(token) ||
+  if (typeof token !== "string" || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token) ||
       token.length > 16000) throw new Error("Invalid preview token");
   let passed = 0;
   for (const product of controlProducts) {
