@@ -58,7 +58,8 @@ test("rejects duplicate kid, wrong key algorithm and JWKS retrieval failures", a
   await assert.rejects(verifier({ fetchJwks: async () => { throw new Error("offline"); } })(jwt()), denied);
 });
 test("rejects unsafe JWKS source before fetching", () => {
-  for (const url of ["http://auth.example.test/auth/.well-known/jwks.json", "https://user:pass@auth.example.test/.well-known/jwks.json", "https://auth.example.test/other"]) {
+  for (const url of ["http://auth.example.test/auth/.well-known/jwks.json", "https://user:pass@auth.example.test/.well-known/jwks.json", "https://auth.example.test/other",
+    "https://attacker.example.test/auth/.well-known/jwks.json"]) {
     assert.throws(() => verifier({ jwksUrl: url }), denied);
   }
 });
@@ -112,5 +113,13 @@ test("approved operator policy rejects widened or malformed server policy", () =
     { ...approvedOperator, maxTokenLifetimeSeconds: 0 },
     { ...approvedOperator, maxTokenLifetimeSeconds: 1.5 }]) {
     assert.throws(() => verifier({ approvedOperator: policy }), denied);
+  }
+});
+
+// A trusted issuer must never be paired with a different JWKS signing authority.
+test("rejects malformed or insecure JWT issuer configuration", () => {
+  for (const issuer of ["http://auth.example.test/auth", "https://user:pass@auth.example.test/auth",
+    "https://auth.example.test/auth?redirect=1", "not a URL"]) {
+    assert.throws(() => verifier({ issuer }), denied);
   }
 });
