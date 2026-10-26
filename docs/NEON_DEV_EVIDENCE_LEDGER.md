@@ -1,5 +1,16 @@
 # Neon BCI development ledger — internal-only prototype
 
+## BCI_HITPAY_TIMESTAMP_CALENDAR_GUARD_20261026
+
+**26 Oct 2026 — VERIFIED DRAFT PR SOURCE + REGRESSION + CI SUCCESS; NOT LIVE HITPAY SETTLEMENT OR INTERNAL V1.** The read-only HitPay list-row paid-pair reconciler previously accepted calendar-invalid `closed_at` values because `Date.parse` can normalize impossible dates. It now validates leap years, month/day bounds, 24-hour clock, seconds/minutes and realistic signed timezone offsets before accepting the provider timestamp. The provider's actual observed timestamp format remains accepted. Rejected input cannot be promoted into even the provisional provider-reported paid pair.
+
+Source commits `f5ed9875ad6713e0f750c074fa6b785c2938bc80`, corrected regex `1cd6eed46100fa3e944cc3e77d690cc0053953d2`; tests `1f6fb9d355c676c6d7ba80dfc22c6d21016c9dcc`. The initial CI run `40300238845` FAILED due to escaped regex; the defect was corrected and exact final [GitHub Actions 40300361453](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40300361453) completed **SUCCESS** (Node tests, TypeScript and build). Readback confirmed final source/test contents.
+
+Fresh read-only HitPay 1–26 Oct: one MYR50 store order completed/paid/fulfilled with matching succeeded charge, MYR1.70 fee, MYR48.30 net collected, zero refunds, and charge detail `payout:null`; product aggregate reports one BROS SELL unit at MYR50, but the individual order-to-product mapping, live/test attestation, charge-to-payout link, Web OS entitlement and acquisition attribution remain **UNVERIFIED**. This is historical provider observation, **not** a verified settled BROS SELL sale or current RM100 price change. No customer PII, raw charge IDs or card details are retained in this ledger.
+
+Remaining gates: signed-in hosted HTTP negative matrix; trusted CONTENT approval/media→SENT→measurement→learning; DEMAND real controlled experiment/outcome; BCI shared provider-backed audit; HitPay environment, product/order, payout/settlement and entitlement linkage. No Production, Meta spend/writes, publishing, credentials, permissions, schedules, pricing or BROS LABS changes.
+
+
 
 ## BCI_PREVIEW_OWNER_NEGATIVE_PROBES_20261026
 
