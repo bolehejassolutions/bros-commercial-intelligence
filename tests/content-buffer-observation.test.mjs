@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {projectBufferContentObservation as project,proposeContentNextStep as next,inspectContentSourceToSentReferences as inspect} from "../lib/content/buffer-observation.mjs";
+import {projectBufferContentObservation as project,proposeContentNextStep as next,inspectContentSourceToSentReferences as inspect,buildContentBciEvidenceHandoff as handoff} from "../lib/content/buffer-observation.mjs";
 const scope={tenantId:"tenant-A",product:"content",instanceId:"sell-internal",contentId:"florist-001",channelService:"instagram",channelId:"ig123",expectedAssetCount:2};
 const post={id:"post123",status:"sent",channelService:"instagram",channelId:"ig123",sentAt:"2026-10-22T05:00:56.507Z",externalLink:"https://www.instagram.com/p/ABC/",assets:[{type:"image",source:"https://a.example/1.png"},{type:"image",source:"https://a.example/2.png"}],text:"Situasi rekaan / ilustrasi AI",metadata:{isAiGenerated:true},metricsUpdatedAt:"2026-10-25T15:34:40.061Z",metrics:[{type:"views",unit:"count",value:7},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:0}]};
 const make=(p={},s={})=>project({...post,...p},{...scope,...s});
@@ -175,4 +175,47 @@ test("swapped media references, missing assets and malformed QA fail closed",()=
 test("scheduled media cannot become SENT through matching source references",()=>{
   const o=inspect({...post,status:"scheduled",assets:providerAssets},scope,sourceQa,sourceUrls);
   assert.equal(o.status,"NOT_SENT");
+});
+
+
+// CONTENT_BCI_HANDOFF_V1_20261027: product adapter contract only, no provider or BCI authentication.
+test("BCI handoff keeps provider projection unverified, null distinct from zero",()=>{
+  const e=handoff(make(),scope,"2026-10-26T17:00:00.000Z");
+  assert.equal(e.product,"content");
+  assert.equal(e.provenance.provider,"buffer");
+  assert.equal(e.provenance.completeness,"unverified");
+  assert.equal(e.metrics.reactions,0);
+  assert.equal(e.metrics.clicks,null);
+  assert.ok(e.unknowns.includes("SHARED_BCI_AUDIT_NOT_WRITTEN"));
+  assert.ok(e.evidenceId.startsWith("content-buffer-"));
+});
+test("BCI handoff snapshot IDs are exact-replay deterministic, revision sensitive",()=>{
+  const time="2026-10-26T17:00:00.000Z",o=make();
+  const a=handoff(o,scope,time);
+  assert.equal(handoff(o,scope,time).evidenceId,a.evidenceId);
+  assert.notEqual(handoff(o,scope,"2026-10-26T17:01:00.000Z").evidenceId,a.evidenceId);
+  assert.notEqual(handoff(make({metrics:[{type:"views",unit:"count",value:8},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:0}]}),scope,time).evidenceId,a.evidenceId);
+  assert.notEqual(handoff(make({metrics:[{type:"views",unit:"count",value:7},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:1}]}),scope,time).evidenceId,a.evidenceId);
+});
+test("BCI handoff fails closed on cross-tenant, cross-product, spoofed attestation and review",()=>{
+  const time="2026-10-26T17:00:00.000Z",o=make();
+  assert.throws(()=>handoff(o,{...scope,tenantId:"other"},time),/SCOPE/);
+  assert.throws(()=>handoff(o,{...scope,product:"demand"},time),/SCOPE/);
+  assert.throws(()=>handoff({...o,providerAttestedByModule:true},scope,time),/SCOPE/);
+  assert.throws(()=>handoff(make({status:"scheduled"}),scope,time),/SCOPE/);
+  assert.throws(()=>handoff(make({metadata:{isAiGenerated:false}}),scope,time),/SCOPE|METRICS/);
+});
+test("BCI handoff rejects forged freshness, native URL, metric values and age",()=>{
+  const time="2026-10-26T17:00:00.000Z",o=make();
+  assert.throws(()=>handoff(o,scope,"2026-10-21T00:00:00.000Z"),/PROVENANCE/);
+  assert.throws(()=>handoff({...o,nativeUrl:"https://fake.instagram.com/p/ABC/"},scope,time),/PROVENANCE/);
+  assert.throws(()=>handoff({...o,metrics:{...o.metrics,views:-1}},scope,time),/METRICS/);
+  assert.throws(()=>handoff({...o,measurementAgeSeconds:0},scope,time),/STATUS/);
+});
+test("BCI handoff preserves SENT but unmeasured as unknown, not a zero",()=>{
+  const o=make({metricsUpdatedAt:null,metrics:null});
+  const e=handoff(o,scope,"2026-10-26T17:00:00.000Z");
+  assert.equal(e.provenance.windowEnd,null);
+  assert.equal(e.metrics.views,null);
+  assert.ok(e.unknowns.includes("MEASUREMENT_UNAVAILABLE"));
 });
