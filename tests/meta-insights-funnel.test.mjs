@@ -122,3 +122,35 @@ test('MYT calendar boundary accepts valid local midnight and rejects future loca
   const futureRow={...row,date_stop:'2026-10-27'};
   assert.throws(()=>normalizeMetaCampaignFunnel({...scope,until:'2026-10-27'},futureRow),invalid);
 });
+
+
+// DEMAND_META_REVISED_SNAPSHOT_KEY_20261027_0304: stable grouping versus immutable report snapshot identity.
+test('revised Meta snapshots do not overwrite campaign/window evidence candidates',()=>{
+  const first=normalizeMetaCampaignFunnel(scope,row);
+  const replay=normalizeMetaCampaignFunnel(scope,{...row});
+  const later=normalizeMetaCampaignFunnel({...scope,collectedAt:'2026-10-26T10:00:00Z'},row);
+  const revisedSpend=normalizeMetaCampaignFunnel(scope,{...row,spend:125.93});
+  const revisedLpv=normalizeMetaCampaignFunnel(scope,{...row,actions:row.actions.map(a=>
+    a.action_type==='landing_page_view'?{...a,value:34}:a)});
+  const missing=normalizeMetaCampaignFunnel(scope,{...row,spend:undefined});
+  const zero=normalizeMetaCampaignFunnel(scope,{...row,spend:0});
+  const otherTenant=normalizeMetaCampaignFunnel({...scope,tenantId:'22222222-2222-4222-8222-222222222222'},row);
+  for(const x of [later,revisedSpend,revisedLpv,missing,zero]){
+    assert.equal(x.sourceKey,first.sourceKey);
+    assert.notEqual(x.snapshotKey,first.snapshotKey);
+    assert.equal(x.hitpaySettledOrders,null);
+    assert.equal(x.verifiedCacMinor,null);
+  }
+  assert.equal(first.snapshotKey,replay.snapshotKey);
+  assert.notEqual(first.snapshotKey,otherTenant.snapshotKey);
+  assert.notEqual(missing.snapshotKey,zero.snapshotKey);
+  assert.equal(first.product,'demand');
+});
+test('Meta snapshot identity normalizes equivalent provider number encodings',()=>{
+  const first=normalizeMetaCampaignFunnel(scope,row);
+  const equivalent=normalizeMetaCampaignFunnel(scope,{
+    ...row,spend:'124.93',impressions:3194,reach:2041,clicks:84,
+    inline_link_clicks:63,actions:row.actions.map(a=>({...a,value:String(a.value)}))
+  });
+  assert.equal(first.snapshotKey,equivalent.snapshotKey);
+});
