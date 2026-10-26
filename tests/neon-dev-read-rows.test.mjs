@@ -41,7 +41,7 @@ function mock({
         can_delete_memberships: false, can_truncate_memberships: false,
         can_reference_memberships: false, can_trigger_memberships: false,
         lineage_tables_readonly: true,
-        can_create_schema_objects: false, can_create_database_objects: false,
+        can_create_schema_objects: false, can_create_database_objects: false, no_definer_exec: true,
         ...safety,
       }] };
       if (sql.includes("set_config")) return { rows: [{ scope: params[0] }] };
@@ -173,6 +173,7 @@ test("wrong database, missing RLS and privilege drift fail before scoped SQL", a
     { lineage_tables_readonly: false }, { lineage_tables_readonly: null },
     { can_create_schema_objects: true },
     { can_create_database_objects: true },
+    { no_definer_exec: false }, { no_definer_exec: null },
   ]) {
     const { calls, read } = mock({ safety });
     await assert.rejects(read(scope), /access denied/i);
@@ -207,5 +208,17 @@ test("evidence reader requires RLS-forced read-only access to all three shared l
   assert.match(posture.sql, /extra\.relforcerowsecurity/);
   assert.match(posture.sql, /'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'/);
   assert.equal(calls.some(x => x.sql.includes("set_config")), false);
+  assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+});
+
+
+test("evidence reader fails closed on executable BCI SECURITY DEFINER privilege drift", async () => {
+  const { calls, read } = mock({ safety: { no_definer_exec: false } });
+  await assert.rejects(read(scope), /access denied/i);
+  const posture = calls.find(c => c.sql?.includes("current_database() AS database_name"));
+  assert.match(posture.sql, /pg_proc/);
+  assert.match(posture.sql, /prosecdef/);
+  assert.match(posture.sql, /has_function_privilege\(current_user, proc\.oid, 'EXECUTE'\)/);
+  assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
   assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
 });
