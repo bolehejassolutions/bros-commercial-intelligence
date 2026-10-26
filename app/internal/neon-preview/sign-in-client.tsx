@@ -95,11 +95,14 @@ export default function NeonPreviewSignIn() {
     if (busy) return;
     setBusy(true);
     setMessage("Checking your protected development access…");
+    let phase: "session" | "token" | "request" | "response" = "session";
     try {
       if (!await hasVerifiedOperatorSession()) throw new Error();
+      phase = "token";
       // The short-lived token stays in this call and is never displayed, persisted or logged.
       const { data, error } = await auth().token();
       if (error || typeof data?.token !== "string") throw new Error();
+      phase = "request";
       const response = await fetch(`/api/internal/neon-evidence?product=${product}&limit=1`, {
         headers: { Authorization: `Bearer ${data.token}` }, cache: "no-store", redirect: "error",
       });
@@ -117,6 +120,7 @@ export default function NeonPreviewSignIn() {
         setMessage(`Protected access denied (HTTP ${response.status}; stage: ${stage}). No access has been granted.`);
         return;
       }
+      phase = "response";
       const result: unknown = await response.json();
       if (result === null || typeof result !== "object" || !("evidence" in result) ||
           !Array.isArray(result.evidence)) throw new Error();
@@ -124,7 +128,7 @@ export default function NeonPreviewSignIn() {
         ? "No development evidence is available in this scope."
         : "One development evidence record was returned."}`);
     } catch {
-      setMessage("Protected access could not be verified. Your session or the development service may need attention.");
+      setMessage(`Protected access check failed before completion (phase: ${phase}). No access has been granted.`);
     } finally { setBusy(false); }
   }
 
