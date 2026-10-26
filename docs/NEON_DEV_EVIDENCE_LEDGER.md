@@ -344,4 +344,7 @@ Read-only projection consumes independently authorized `reconcileBufferPublicati
 
 Code commit `962616d4308b6742b3211c91e8d70cddeaadaa41`; test commit `b144a21dfb9ea61139fb23a9f59fe8b56c46ab3b`. Readback confirmed both files; GitHub Actions dry-run-safety [#40253970804](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40253970804) completed SUCCESS on test commit. This proves repository checks and synthetic negative tests, not a genuine Neon Auth provider JWT or hosted cross-tenant negative matrix.
 
+
+**Hosted deployment comparison:** Vercel read-only get_deployment for the protected Preview URL returned READY on older commit `2eca48789e688b02acc4b21fc9963c89f36f3169`, not this guard's test commit `b144a21dfb9ea61139fb23a9f59fe8b56c46ab3b`. Thus the new route/header guard is **CI-verified source only, not verified deployed**. No deployment was initiated.
+
 Fresh Neon read-only: `neon_auth.user` 1 user / 0 emailVerified; `bci_dev.tenant_memberships` 1 active CONTENT + 1 active DEMAND; restricted role passwords present. The Neon connector is pinned to role `BROS`, so this run cannot independently log in as restricted roles through that connector; prior direct-login proof recorded in Issue #11 remains separate. Owner email OTP, authenticated hosted tests, CONTENT provider integration, DEMAND verified experiment, shared BCI live reuse, and HitPay settlement/entitlement remain OPEN. No production, spend, publishing, permission, price, task or BROS LABS changes.
