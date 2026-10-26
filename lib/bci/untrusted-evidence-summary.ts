@@ -14,7 +14,7 @@ export function summarizeUntrustedEvidence(inputs: readonly unknown[]): Untruste
   const seen = new Set<string>();
   for (const input of inputs) {
     const row: EvidenceEnvelope = normalizeUntrustedEvidence(input);
-    const key = [row.tenantId,row.product,row.provider,row.providerRecordKey].join(":");
+    const key = JSON.stringify([row.tenantId,row.product,row.provider,row.providerRecordKey]);
     if (seen.has(key)) throw new Error("Duplicate evidence identity");
     seen.add(key);
     if (row.provenance === "synthetic") synthetic++;
