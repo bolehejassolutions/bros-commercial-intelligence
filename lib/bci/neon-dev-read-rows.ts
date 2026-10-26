@@ -76,6 +76,11 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'TRIGGER') AS can_trigger_memberships,
                 has_schema_privilege(current_user, 'bci_dev', 'CREATE') AS can_create_schema_objects,
                 has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects,
+                (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_proc proc JOIN pg_namespace proc_ns ON proc_ns.oid = proc.pronamespace
+                    WHERE proc_ns.nspname = 'bci_dev' AND proc.prosecdef
+                      AND has_function_privilege(current_user, proc.oid, 'EXECUTE')
+                )) AS no_definer_exec,
                 (SELECT COUNT(*) = 3 AND bool_and(
                     extra.relrowsecurity AND extra.relforcerowsecurity AND
                     has_table_privilege(current_user, extra.oid, 'SELECT') AND
@@ -109,6 +114,7 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
           posture.rows[0].can_trigger_memberships !== false ||
           posture.rows[0].can_create_schema_objects !== false ||
           posture.rows[0].can_create_database_objects !== false ||
+          posture.rows[0].no_definer_exec !== true ||
           posture.rows[0].lineage_tables_readonly !== true) deny();
 
       // Scope is derived upstream from trusted membership, not request data.
