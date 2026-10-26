@@ -10,8 +10,10 @@ type TokenClient = Readonly<{
  * The SDK removes this control header before making the provider request.
  */
 export class NeonPreviewTokenUnavailable extends Error {
-  constructor(public readonly category: "provider" | "response" | "exception") {
+  readonly category: "provider" | "response" | "exception";
+  constructor(category: "provider" | "response" | "exception") {
     super("Neon Preview token unavailable.");
+    this.category = category;
   }
 }
 
