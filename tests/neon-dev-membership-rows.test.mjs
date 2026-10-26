@@ -21,7 +21,10 @@ function fixture({ role = "bci_dev_membership_reader", sessionRole = role,
       if (sql.includes("current_database() AS database_name")) return { rows: [{
         database_name: "bros_intelligence_dev", rls_enabled: true, rls_forced: true,
         can_read_memberships: true, can_insert_memberships: false,
-        can_read_evidence: false, can_create_schema_objects: false,
+        can_update_memberships: false, can_delete_memberships: false,
+        can_truncate_memberships: false, can_read_evidence: false,
+        can_update_evidence: false, can_delete_evidence: false,
+        can_truncate_evidence: false, can_create_schema_objects: false,
         can_create_database_objects: false, ...posture }] };
       if (sql.includes("set_config")) return { rows: [{ principal_scope: params[0] }] };
       return { rows };
@@ -71,7 +74,10 @@ test("rejects admin session SET ROLE impersonation and any privileged role", asy
 test("rejects wrong database, RLS drift and excessive membership privileges", async () => {
   for (const posture of [{ database_name: "neondb" }, { rls_enabled: false },
     { rls_forced: false }, { can_read_memberships: false },
-    { can_insert_memberships: true }, { can_read_evidence: true },
+    { can_insert_memberships: true },
+    { can_update_memberships: true }, { can_delete_memberships: true }, { can_truncate_memberships: true },
+    { can_read_evidence: true },
+    { can_update_evidence: true }, { can_delete_evidence: true }, { can_truncate_evidence: true },
     { can_create_schema_objects: true }, { can_create_database_objects: true }]) {
     const { calls, lookup } = fixture({ posture });
     await assert.rejects(lookup(USER, "content"), NeonMembershipAccessDenied);
