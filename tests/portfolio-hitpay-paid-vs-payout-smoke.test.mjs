@@ -180,3 +180,51 @@ test("a test PAID order cannot be promoted by a live SETTLED row for the same pr
     untrustedPaid, claimedSettlement,
   ]), /Invalid or inconsistent BCI growth evidence/);
 });
+
+
+/**
+ * PORTFOLIO_REPLAY_SCOPE_ISOLATION_GATE_20261027_0323
+ * Offline integration regressions only. Trusted ingestion must independently
+ * authenticate all provider and tenant evidence; these tests do not do so.
+ */
+test("same paid provider order replay is idempotent; conflicting replay fails closed", () => {
+  const original = evidence("live", "verified");
+  const replay = { ...original, evidenceId: "portfolio-smoke:paid-order-replayed" };
+  const once = summarizeGrowthEvidence(scope, [original]);
+  const twice = summarizeGrowthEvidence(scope, [original, replay, { ...replay }]);
+  assert.equal(twice.paidOrders, once.paidOrders);
+  assert.equal(twice.grossPaidRevenueMinor, once.grossPaidRevenueMinor);
+  assert.equal(twice.distinctEvidenceRecords, 1);
+  assert.throws(() => summarizeGrowthEvidence(scope, [
+    original, { ...replay, amountMinor: 5100 },
+  ]), /Invalid or inconsistent BCI growth evidence/);
+});
+
+test("portfolio readiness rejects foreign-tenant CONTENT and DEMAND evidence even with asserted external flags", async () => {
+  const { assessInternalReadiness } = await import("../lib/bci/internal-readiness.ts");
+  const foreignTenantId = "55555555-5555-4555-8555-555555555555";
+  const contentId = "synthetic-foreign-content";
+  const experimentId = "synthetic-foreign-experiment";
+  const contentEvidence = ["media_qa", "approval", "provider_sent", "measurement"].map((stage, i) => ({
+    tenantId: foreignTenantId, product: "content", contentId, stage,
+    sourceKey: `synthetic:foreign:content:${stage}`, verified: true,
+    at: new Date(Date.UTC(2026, 9, 26, 1, i)).toISOString(),
+    ...(stage === "provider_sent" ? { providerPostId: "synthetic-post" } : {}),
+  }));
+  const demandEvidence = ["diagnosis", "decision", "action", "outcome", "learning"].map((stage, i) => ({
+    tenantId: foreignTenantId, product: "demand", experimentId, stage,
+    sourceKey: `synthetic:foreign:demand:${stage}`, verified: true,
+    observedAt: new Date(Date.UTC(2026, 9, 26, 2, i)).toISOString(),
+    ...(stage === "outcome" ? { outcomeClass: "provider_verified" } : {}),
+  }));
+  const external = {
+    neonNegativeTestsVerified: true, sharedBciAuditVerified: true,
+    hitpayReconciliationVerified: true,
+  };
+  assert.throws(() => assessInternalReadiness({
+    tenantId, contentId, contentEvidence, experimentId, demandEvidence: [], ...external,
+  }), /Invalid CONTENT evidence/);
+  assert.throws(() => assessInternalReadiness({
+    tenantId, contentId, contentEvidence: [], experimentId, demandEvidence, ...external,
+  }), /Invalid DEMAND experiment evidence/);
+});
