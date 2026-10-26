@@ -35,10 +35,10 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
 
     return transaction(async (query) => {
       const role = await query(
-        "SELECT current_user AS role_name, session_user AS session_role_name, rolbypassrls AS bypass_rls, rolsuper AS is_superuser, rolcanlogin AS can_login,
+        `SELECT current_user AS role_name, session_user AS session_role_name, rolbypassrls AS bypass_rls, rolsuper AS is_superuser, rolcanlogin AS can_login,
                 rolcreatedb AS can_create_database, rolcreaterole AS can_manage_roles,
                 rolreplication AS can_replicate, rolinherit AS inherits_roles,
-                (SELECT COUNT(*)::integer FROM pg_auth_members m WHERE m.member = pg_roles.oid) AS parent_role_count FROM pg_roles WHERE rolname = current_user",
+                (SELECT COUNT(*)::integer FROM pg_auth_members m WHERE m.member = pg_roles.oid) AS parent_role_count FROM pg_roles WHERE rolname = current_user`,
         []
       );
       if (role.rows.length !== 1 || !isObject(role.rows[0]) ||
