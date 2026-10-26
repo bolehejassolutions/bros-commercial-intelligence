@@ -228,3 +228,50 @@ test("portfolio readiness rejects foreign-tenant CONTENT and DEMAND evidence eve
     tenantId, contentId, contentEvidence: [], experimentId, demandEvidence, ...external,
   }), /Invalid DEMAND experiment evidence/);
 });
+
+
+/**
+ * PORTFOLIO_PRODUCT_COMPLETE_EXTERNAL_GATES_20261027_0420
+ * Cross-product readiness contract. A complete product-stage sequence is
+ * not equivalent to authenticated Neon, persisted BCI audit, or reconciled
+ * HitPay evidence. All records and external flags below are SYNTHETIC.
+ */
+test("complete synthetic CONTENT/DEMAND flows still require independent external gates", async () => {
+  const { assessInternalReadiness } = await import("../lib/bci/internal-readiness.ts");
+  const contentId = "synthetic-content-full";
+  const experimentId = "synthetic-experiment-full";
+  const contentEvidence = ["media_qa", "approval", "provider_sent", "measurement"].map((stage, i) => ({
+    tenantId, product: "content", contentId, stage,
+    sourceKey: `synthetic:content:full:${stage}`, verified: true,
+    at: new Date(Date.UTC(2026, 9, 26, 1, i)).toISOString(),
+    ...(stage === "provider_sent" ? { providerPostId: "synthetic-buffer-post" } : {}),
+  }));
+  const demandEvidence = ["diagnosis", "decision", "action", "outcome", "learning"].map((stage, i) => ({
+    tenantId, product: "demand", experimentId, stage,
+    sourceKey: `synthetic:demand:full:${stage}`, verified: true,
+    observedAt: new Date(Date.UTC(2026, 9, 26, 2, i)).toISOString(),
+    ...(stage === "outcome" ? { outcomeClass: "provider_verified" } : {}),
+  }));
+  const input = { tenantId, contentId, contentEvidence, experimentId, demandEvidence };
+  const withoutAttestation = assessInternalReadiness(input);
+  assert.equal(withoutAttestation.contentEvidenceComplete, true);
+  assert.equal(withoutAttestation.demandEvidenceComplete, true);
+  assert.equal(withoutAttestation.internalV1Ready, false);
+  assert.deepEqual(withoutAttestation.pending, [
+    "neonNegativeTestsVerified", "sharedBciAuditVerified", "hitpayReconciliationVerified",
+  ]);
+  // Positive control is ONLY a contract fixture. These booleans cannot be
+  // accepted from client input as real provider/security attestation.
+  const simulated = assessInternalReadiness({
+    ...input, neonNegativeTestsVerified: true, sharedBciAuditVerified: true,
+    hitpayReconciliationVerified: true,
+  });
+  assert.equal(simulated.internalV1Ready, true);
+  assert.deepEqual(simulated.pending, []);
+  assert.throws(() => assessInternalReadiness({
+    ...input, contentId: "different-content-id",
+  }), /Invalid CONTENT evidence/);
+  assert.throws(() => assessInternalReadiness({
+    ...input, experimentId: "different-experiment-id",
+  }), /Invalid DEMAND experiment evidence/);
+});
