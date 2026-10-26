@@ -27,6 +27,7 @@ export function normalizeEvidenceEnvelope(input:unknown):EvidenceEnvelope {
      !["test","live","unknown"].includes(String(input.environment))||
      !["synthetic","provider_reported","provider_verified"].includes(String(input.provenance))||
      !object(input.metrics)||Object.keys(input.metrics).length>100) deny();
+  if (!object(input)) deny();
   // A synthetic fixture can never be labelled as live provider evidence.
   if(input.provenance==="synthetic"&&input.environment==="live") deny();
   const metrics:Record<string,number|null>={};
