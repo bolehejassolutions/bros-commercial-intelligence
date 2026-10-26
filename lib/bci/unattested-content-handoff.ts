@@ -45,17 +45,20 @@ export function projectUnattestedContentHandoff(
   // Narrow unknown input independently; TypeScript cannot preserve the guard
   // when it is interleaved with unrelated short-circuit scope checks.
   if (!exact(input, handoffKeys)) deny();
+  // Explicitly retain the runtime-validated record type across strict TS
+  // control-flow checks (no assertion before the shape check).
+  const handoff = input as Record<string, unknown>;
   if (!exact(serverDerivedScope, ["tenantId", "product"]) ||
       typeof serverDerivedScope.tenantId !== "string" ||
       !UUID.test(serverDerivedScope.tenantId) ||
       serverDerivedScope.product !== "content" ||
-      input.schemaVersion !== 1 || input.product !== "content" ||
-      input.tenantId !== serverDerivedScope.tenantId ||
-      input.category !== "content_post_observation" ||
-      typeof input.evidenceId !== "string" || !SNAPSHOT.test(input.evidenceId) ||
-      !exact(input.provenance, provenanceKeys) ||
-      !exact(input.metrics, metricNames)) deny();
-  const provenance = input.provenance as Record<string, unknown>;
+      handoff.schemaVersion !== 1 || handoff.product !== "content" ||
+      handoff.tenantId !== serverDerivedScope.tenantId ||
+      handoff.category !== "content_post_observation" ||
+      typeof handoff.evidenceId !== "string" || !SNAPSHOT.test(handoff.evidenceId) ||
+      !exact(handoff.provenance, provenanceKeys) ||
+      !exact(handoff.metrics, metricNames)) deny();
+  const provenance = handoff.provenance as Record<string, unknown>;
   if (provenance.provider !== "buffer" ||
       provenance.completeness !== "unverified" ||
       typeof provenance.providerObjectId !== "string" ||
@@ -76,13 +79,15 @@ export function projectUnattestedContentHandoff(
           "tiktok.com", "www.tiktok.com"].includes(link.hostname) ||
         link.pathname === "/") deny();
   } catch { deny(); }
-  if (!Array.isArray(input.unknowns) ||
-      new Set(input.unknowns).size !== input.unknowns.length ||
-      input.unknowns.some(flag => typeof flag !== "string" || !allowedUnknowns.has(flag)) ||
-      requiredUnknowns.some(flag => !input.unknowns.includes(flag)) ||
-      !Array.isArray(input.observedFacts) || input.observedFacts.length !== 2 ||
-      input.observedFacts.some(fact => typeof fact !== "string" || fact.length > 300)) deny();
-  const metrics = input.metrics as Record<string, unknown>;
+  if (!Array.isArray(handoff.unknowns) || !Array.isArray(handoff.observedFacts)) deny();
+  const unknowns = handoff.unknowns as unknown[];
+  const observedFacts = handoff.observedFacts as unknown[];
+  if (new Set(unknowns).size !== unknowns.length ||
+      unknowns.some(flag => typeof flag !== "string" || !allowedUnknowns.has(flag)) ||
+      requiredUnknowns.some(flag => !unknowns.includes(flag)) ||
+      observedFacts.length !== 2 ||
+      observedFacts.some(fact => typeof fact !== "string" || fact.length > 300)) deny();
+  const metrics = handoff.metrics as Record<string, unknown>;
   if (metricNames.some(key => metrics[key] !== null &&
       (typeof metrics[key] !== "number" || !Number.isSafeInteger(metrics[key]) ||
        (metrics[key] as number) < 0))) deny();
@@ -90,7 +95,7 @@ export function projectUnattestedContentHandoff(
   // accept that shape with measured counts, nor promote missing metrics to 0.
   // The optional flag and the provider metric window must agree exactly.
   const measured = metricNames.some(key => metrics[key] !== null);
-  const unavailable = input.unknowns.includes("MEASUREMENT_UNAVAILABLE");
+  const unavailable = unknowns.includes("MEASUREMENT_UNAVAILABLE");
   if (measured === unavailable ||
       (provenance.windowEnd === null) !== !measured ||
       (!measured && provenance.observedAt !== provenance.windowStart)) deny();
@@ -102,7 +107,7 @@ export function projectUnattestedContentHandoff(
     tenantId: serverDerivedScope.tenantId,
     product: "content",
     provider: "buffer",
-    providerRecordKey: input.evidenceId,
+    providerRecordKey: handoff.evidenceId,
     observedAt: provenance.observedAt,
     environment: "unknown",
     provenance: "synthetic",
