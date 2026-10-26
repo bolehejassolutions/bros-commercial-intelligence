@@ -81,6 +81,16 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
                     WHERE proc_ns.nspname = 'bci_dev' AND proc.prosecdef
                       AND has_function_privilege(current_user, proc.oid, 'EXECUTE')
                 )) AS no_definer_exec,
+                (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_class outside_table
+                    JOIN pg_namespace outside_ns ON outside_ns.oid = outside_table.relnamespace
+                    WHERE outside_ns.nspname <> 'bci_dev'
+                      AND outside_ns.nspname <> 'information_schema'
+                      AND LEFT(outside_ns.nspname, 3) <> 'pg_'
+                      AND outside_table.relkind IN ('r','p','v','m','f')
+                      AND has_table_privilege(current_user, outside_table.oid,
+                        'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+                )) AS no_external_table_access,
                 (SELECT COUNT(*) = 3 AND bool_and(
                     extra.relrowsecurity AND extra.relforcerowsecurity AND
                     has_table_privilege(current_user, extra.oid, 'SELECT') AND
@@ -115,6 +125,7 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
           posture.rows[0].can_create_schema_objects !== false ||
           posture.rows[0].can_create_database_objects !== false ||
           posture.rows[0].no_definer_exec !== true ||
+          posture.rows[0].no_external_table_access !== true ||
           posture.rows[0].lineage_tables_readonly !== true) deny();
 
       // Scope is derived upstream from trusted membership, not request data.
