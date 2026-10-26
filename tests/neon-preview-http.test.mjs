@@ -57,7 +57,7 @@ function database(kind, rows, calls, error) {
           can_reference_evidence: false, can_trigger_evidence: false,
           lineage_tables_readonly: true,
           can_create_schema_objects: false, can_create_database_objects: false,
-          no_definer_exec: true,
+          no_definer_exec: true, no_external_table_access: true,
           other_bci_tables_denied: true,
         }] };
         if (sql.includes("set_config")) return { rows: [] };
