@@ -159,9 +159,16 @@ export function normalizeMetaCampaignFunnel(
     .update(JSON.stringify([...actions.entries()].sort(([a], [b]) =>
       a < b ? -1 : a > b ? 1 : 0)))
     .digest("hex");
-  const snapshotKey = sourceKey + ":snapshot:" + scope.collectedAt + ":" +
-    snapshotFields.map(v => v === null ? "null" : String(v)).join(":") +
-    ":actions-sha256:" + normalizedActionDigest;
+  // DEMAND_META_BOUNDED_SNAPSHOT_KEY_20261027: immutable evidence identity
+  // is content-addressed, not collection-time-addressed. A provider report
+  // reread unchanged must not create a second BCI audit candidate. Hashing
+  // sourceKey keeps tenant/account/campaign/window separation, while all
+  // normalized metrics and actions retain revision sensitivity (null != 0).
+  // This bounded 80-character key fits BCI's 256-char parser and Neon DEV's
+  // 250-char provider_record_key constraint; it is NOT provider attestation.
+  const snapshotKey = "meta_ads:sha256:" + createHash("sha256")
+    .update(JSON.stringify({ sourceKey, snapshotFields, normalizedActionDigest }))
+    .digest("hex");
   return Object.freeze({
     sourceKey, snapshotKey,
     tenantId: scope.tenantId, product: "demand" as const, provider: "meta_ads" as const,
