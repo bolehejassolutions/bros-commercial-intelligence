@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { proposeDemandConcurrentControl } from "./concurrent-control-protocol.ts";
 import type { DemandConcurrentControlProposal } from "./concurrent-control-protocol.ts";
 
 /**
@@ -55,6 +56,25 @@ export function auditDemandConcurrentExposureCandidates(
       proposal.experimentDesign !== "CONCURRENT_RANDOMIZED_HOLDOUT_PLAN_UNVERIFIED" ||
       !/^demand:concurrent-control:sha256:[a-f0-9]{64}$/.test(proposal.candidateId) ||
       !Array.isArray(events) || events.length > 10000) fail();
+  // A syntactically plausible candidate ID is NOT a preregistered protocol.
+  // Recompute the immutable plan from its complete fields: a forged scope,
+  // treatment, KPI, window or candidate ID cannot be laundered into a clean
+  // exposure review. This replay is still NOT authenticated preregistration.
+  let replay: DemandConcurrentControlProposal;
+  try { replay = proposeDemandConcurrentControl(proposal); }
+  catch { fail(); }
+  if (replay.candidateId !== proposal.candidateId ||
+      proposal.allocation?.controlPercent !== 50 ||
+      proposal.allocation?.treatmentPercent !== 50 ||
+      proposal.actionApproved !== false || proposal.actionExecuted !== false ||
+      proposal.tenantAuthorizationVerified !== false ||
+      proposal.preRegistrationAttested !== false ||
+      proposal.assignmentAndExposureVerified !== false ||
+      proposal.providerEvidenceAttested !== false ||
+      proposal.outcomeVerified !== false || proposal.learningVerified !== false ||
+      proposal.executionAllowed !== false || proposal.causalInferenceEligible !== false ||
+      proposal.verifiedPaidOrders !== null || proposal.verifiedCacMinor !== null ||
+      proposal.causalLift !== null) fail();
   const start = Date.parse(proposal.plannedStart + "T00:00:00+08:00");
   const endExclusive = Date.parse(proposal.plannedEnd + "T00:00:00+08:00") + 86400000;
   if (!Number.isFinite(start) || !Number.isFinite(endExclusive) || start >= endExclusive) fail();
