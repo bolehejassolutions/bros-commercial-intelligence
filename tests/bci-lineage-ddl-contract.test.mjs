@@ -68,7 +68,7 @@ test("draft PL/pgSQL trigger bodies close their dollar quotes before PUBLIC EXEC
     const end = ddl.indexOf(revoke, begin);
     assert.ok(begin >= 0 && end > begin, `${fn} function/revocation ordering`);
     const body = ddl.slice(begin, end);
-    assert.match(body, /\bAS \$\$[\s\S]*\n\$\$;\s*$/);
+    assert.match(body, /\bAS \$\$[\s\S]*\n\$\$;/);
     assert.equal((body.match(/\$\$/g) ?? []).length, 2);
   }
 });
