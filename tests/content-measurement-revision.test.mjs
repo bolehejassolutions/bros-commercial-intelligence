@@ -15,3 +15,37 @@ test('unknown-to-known is not counted as growth',()=>{const a=propose({...previo
 test('no overlapping metrics cannot claim learning',()=>{const a=propose({...previous,metrics:metrics(null,4)},{...current,metrics:metrics(8,null)},scope);assert.equal(a.status,'REVIEW_REQUIRED');assert.equal(a.reason,'LOSS_OF_METRIC_COVERAGE');});
 test('scheduled, review, fake provider attestations and future timestamps fail closed',()=>{for(const patch of [{status:'NOT_SENT'},{status:'REVIEW_REQUIRED'},{providerAttestedByModule:true},{metricsUpdatedAt:'2026-10-28T00:00:00.000Z'}])assert.throws(()=>propose(previous,{...current,...patch},scope),/INVALID_MEASURED_OBSERVATION|INVALID_MEASUREMENT_TIMELINE/);});
 test('source lineage changes cannot be treated as same-post measurement',()=>{for(const patch of [{sentAt:'2026-10-25T01:00:00.000Z',measurementAgeSeconds:140400},{nativeUrl:'https://www.instagram.com/p/XYZ/'},{format:'video'}])assert.throws(()=>propose(previous,{...current,...patch},scope),/LINEAGE_MISMATCH/);});
+
+
+// CONTENT_NATIVE_MEASUREMENT_PERMALINK_PARITY_20261027: provider-shaped only, not authenticated.
+test('measurement lineage rejects profile/login pages, shortlinks and noncanonical post URLs',()=>{
+  const invalid=[
+    'https://www.instagram.com/accounts/login/',
+    'https://www.instagram.com/bros.sell/',
+    'https://www.instagram.com/p/ABC/?utm_source=buffer',
+    'https://www.instagram.com/p/ABC/#fragment',
+    'https://evil.instagram.com/p/ABC/',
+    'https://www.facebook.com/1234567890/posts/123456789012345/',
+    'https://www.tiktok.com/@bros.sell/video/1234567890123456789'
+  ];
+  for(const nativeUrl of invalid)
+    assert.throws(()=>propose({...previous,nativeUrl},{...current,nativeUrl},scope),
+      /INVALID_NATIVE_POST_REFERENCE/,nativeUrl);
+});
+test('measurement lineage accepts only canonical supported FB, IG and TikTok post links',()=>{
+  const valid=[
+    ['instagram','https://www.instagram.com/p/ABC/'],
+    ['facebook','https://www.facebook.com/1234567890/posts/123456789012345/'],
+    ['tiktok','https://www.tiktok.com/@bros.sell/video/1234567890123456789']
+  ];
+  for(const [channelService,nativeUrl] of valid){
+    const s={...scope,channelService};
+    const a={...previous,channelService,nativeUrl};
+    const b={...current,channelService,nativeUrl};
+    const result=propose(a,b,s);
+    assert.equal(result.status,'CANDIDATE_UNATTESTED');
+    assert.equal(result.providerAttested,false);
+    assert.equal(result.learningVerified,false);
+    assert.equal(result.executionAllowed,false);
+  }
+});
