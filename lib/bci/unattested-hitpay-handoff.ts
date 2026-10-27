@@ -8,8 +8,9 @@ import { normalizeEvidenceEnvelope } from "./evidence-envelope.ts";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CANDIDATE=/^demand:hitpay-candidate:sha256:[0-9a-f]{64}$/;
+const ORDER_IDENTITY=/^[0-9a-f]{64}$/;
 const fields=[
-  "candidateKey","status","orderId","chargeId","grossMinor","feeMinor",
+  "candidateKey","orderIdentityDigest","status","orderId","chargeId","grossMinor","feeMinor",
   "netMinor","refundedMinor","orderPaymentStatus","orderFulfilmentStatus",
   "providerOrderChargeLinkMatched","providerAuthenticationVerified",
   "tenantMembershipVerified","paymentEnvironmentVerified","productVerified",
@@ -42,6 +43,11 @@ export function projectUnattestedDemandHitPayHandoff(
      serverDerivedScope.product!=="demand"||typeof observedAt!=="string"||
      typeof candidate.candidateKey!=="string"||!CANDIDATE.test(candidate.candidateKey)||
      typeof candidate.orderId!=="string"||!UUID.test(candidate.orderId)||
+     typeof candidate.orderIdentityDigest!=="string"||
+     !ORDER_IDENTITY.test(candidate.orderIdentityDigest)||
+     candidate.orderIdentityDigest!==createHash("sha256")
+       .update("bros-demand:hitpay-order-identity:v1:"+candidate.orderId.toLowerCase())
+       .digest("hex")||
      typeof candidate.chargeId!=="string"||!UUID.test(candidate.chargeId)||
      !["PROVIDER_REPORTED_PAID","REFUND_OBSERVED","NOT_PAID"].includes(String(candidate.status))||
      !["paid","awaiting_payment","refunded","partially_refunded","canceled"].includes(String(candidate.orderPaymentStatus))||
@@ -75,6 +81,8 @@ export function projectUnattestedDemandHitPayHandoff(
   });
   return Object.freeze({
     envelope,sourceProvider:"hitpay" as const,sourceCandidateKey:candidate.candidateKey,
+    // Stable pseudonymous identity for cross-revision deduplication; NOT paid-order attestation.
+    sourceOrderIdentityDigest:candidate.orderIdentityDigest,
     sourceStatus:candidate.status as "PROVIDER_REPORTED_PAID"|"REFUND_OBSERVED"|"NOT_PAID",
     authenticated:false as const,providerAttested:false as const,
     paymentEnvironmentVerified:false as const,settlementVerified:false as const,
