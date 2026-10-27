@@ -53,7 +53,13 @@ export function proposeDemandMetaNextBestAction(
     rationale = "Meta purchase aliases disagree; do not count them as distinct orders.";
     evidence = ["authenticated_meta_action_breakdown", "provider_attribution_window"];
   } else if ((observation.metaAttributedPurchases ?? 0) > 0 ||
-             (observation.pixelPurchaseEvents ?? 0) > 0) {
+             (observation.pixelPurchaseEvents ?? 0) > 0 ||
+             // Meta can report omni_purchase without generic/Pixel aliases.
+             // The normalizer validates all raw action values, but projects
+             // only generic and Pixel counts. An omni-only positive signal
+             // still requires HitPay reconciliation, never sale verification.
+             (row.actions ?? []).some(a =>
+               a.action_type === "omni_purchase" && Number(a.value) > 0)) {
     diagnosis = "UNJOINED_PURCHASE_SIGNAL";
     action = "RECONCILE_PURCHASE_TO_HITPAY";
     priority = "P1";
