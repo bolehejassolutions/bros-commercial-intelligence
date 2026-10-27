@@ -60,9 +60,10 @@ export function auditDemandConcurrentExposureCandidates(
   // Recompute the immutable plan from its complete fields: a forged scope,
   // treatment, KPI, window or candidate ID cannot be laundered into a clean
   // exposure review. This replay is still NOT authenticated preregistration.
-  let replay: DemandConcurrentControlProposal;
-  try { replay = proposeDemandConcurrentControl(proposal); }
-  catch { fail(); }
+  const replay = (() => {
+    try { return proposeDemandConcurrentControl(proposal); }
+    catch { return fail(); }
+  })();
   if (replay.candidateId !== proposal.candidateId ||
       proposal.allocation?.controlPercent !== 50 ||
       proposal.allocation?.treatmentPercent !== 50 ||
