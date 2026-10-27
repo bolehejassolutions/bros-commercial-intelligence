@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createPrivateEvidenceHttpHandler } from '../lib/bci/private-evidence-http.ts';
 import { NEON_PREVIEW_BRANCH } from '../lib/bci/neon-preview-handler.ts';
 
@@ -76,4 +77,12 @@ test('cross-tenant evidence, cross-product evidence and replay fail entire respo
 test('database failures do not leak internal errors and are never cached',async()=>{
  const f=fixture({failDb:true});const r=await f.request();assert.equal(r.status,403);
  assert.equal(JSON.stringify(await r.json()).includes('secret DB error'),false);assert.match(r.headers.get('cache-control'),/no-store/);
+});
+
+test('server-only composition point shares the exact branch-pinned Preview gate (source-level guard)',()=>{
+ const source=readFileSync(new URL('../lib/bci/private-evidence-server.ts',import.meta.url),'utf8');
+ assert.match(source,/import \{ isNeonPreviewEnabled \} from ["']\.\/neon-preview-handler["']/);
+ assert.match(source,/if \(!isNeonPreviewEnabled\(process\.env\)\)/);
+ // The HTTP handler tests above exercise other Preview branches and production.
+ // This static guard does not establish authenticated hosted access.
 });
