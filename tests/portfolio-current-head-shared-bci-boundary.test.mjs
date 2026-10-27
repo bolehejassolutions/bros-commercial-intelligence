@@ -18,8 +18,6 @@ const pins={
   bci:'f7b4c05283c11a0228864544557fd5f7feee0976',
 };
 const files=[
-  [pins.content,'lib/content/measurement-revision.mjs'],
-  [pins.demand,'lib/demand/concurrent-order-candidate-audit.ts'],
   [pins.content,'lib/content/jpeg-source-qa.mjs'],
   [pins.demand,'lib/demand/concurrent-control-protocol.ts'],
   [pins.demand,'lib/demand/concurrent-exposure-audit.ts'],
@@ -28,6 +26,8 @@ const files=[
   [pins.content,'lib/content/png-source-qa.mjs'],
   [pins.content,'lib/content/buffer-observation.mjs'],
   [pins.content,'lib/content/source-byte-provider-bridge.mjs'],
+  [pins.content,'lib/content/measurement-revision.mjs'],
+  [pins.demand,'lib/demand/concurrent-order-candidate-audit.ts'],
 ];
 const tenantId='33333333-3333-4333-8333-333333333333';
 const stages=['evidence','signal','case','diagnosis','decision','action','outcome','learning'];
