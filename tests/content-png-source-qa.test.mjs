@@ -91,3 +91,20 @@ test('transparent-pixel canonicalization preserves PNG Up-filter predictor state
   assert.equal(verify(plain,opts).pixelSha256,verify(changedHiddenUp,opts).pixelSha256);
   assert.throws(()=>set([plain,changedHiddenUp],opts),/DUPLICATE_PIXELS/);
 });
+
+// CONTENT_SINGLE_IMAGE_SOURCE_QA_20261027_1453: one-asset jobs must not bypass real PNG-byte validation.
+test('single-image content passes structural byte QA without claiming editorial or provider verification',()=>{
+  const r=set([png(30)],opts);
+  assert.equal(r.images.length,1);
+  assert.equal(r.images[0].structuralIntegrity,'CRC_AND_DEFLATE_VALID');
+  assert.equal(r.distinctFileHashes,true);
+  assert.equal(r.distinctPixelHashes,true);
+  assert.equal(r.visualDistinctnessVerified,false);
+  assert.equal(r.approvalVerified,false);
+  assert.equal(r.publishedVerified,false);
+});
+test('empty asset sets and corrupted singleton bytes fail closed',()=>{
+  assert.throws(()=>set([],opts),/INVALID_ASSET_SET/);
+  const damaged=Buffer.from(png(30));damaged[29]^=1;
+  assert.throws(()=>set([damaged],opts),/BAD_CRC/);
+});
