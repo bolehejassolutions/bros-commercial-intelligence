@@ -133,6 +133,6 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       assert.throws(()=>planUntrustedBciAuditAppend(
         {tenantId:'44444444-4444-4444-8444-444444444444',product:'content'},
         [],content),/Invalid BCI evidence lineage/);
-    }finally{rmSync(dir,{recursive:true,force:true});}
+    }finally{rmSync(dir,{recursive:true,force:true,maxRetries:8,retryDelay:150});}
   });
 }
