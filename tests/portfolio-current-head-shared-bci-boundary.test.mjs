@@ -15,7 +15,7 @@ import {pathToFileURL} from 'node:url';
 const pins={
   content:'d2d8c4dc16a5de9431503101eeefc0ec1d5588ca',
   demand:'e171c98835ffde3815ccbe2604ec44b284e3cfd2',
-  bci:'653ed2b9eaf1ed59923413fc392eb815645c938e',
+  bci:'6adef2b1ccfc868dd383d4103b37dce2ff31c551',
 };
 const files=[
   [pins.content,'lib/content/jpeg-source-qa.mjs'],
