@@ -13,8 +13,8 @@ import {deflateSync} from 'node:zlib';
 import {pathToFileURL} from 'node:url';
 
 const pins={
-  content:'87d7a9bceab75e04319891d65e532fa39d679267',
-  demand:'907d726c5095a8a35b1e83a5574fb1e5c86683f2',
+  content:'af8723b0be936ed4a176b2473f63ec4d87ea6e11',
+  demand:'6ee183bbbad617958e8922e8659cb9d811c2e5f0',
   bci:'cdde7b2810273fd713dca23cfd12dab12f80fd4d',
 };
 const files=[
@@ -97,7 +97,7 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       }
       const load=async p=>import(pathToFileURL(join(dir,p)).href);
       const {inspectContentFetchedSourceBytes}=await load('lib/content/source-byte-provider-bridge.mjs');
-      const {projectBufferContentObservation,buildContentBciEvidenceHandoff}=
+      const {projectBufferContentObservation,reconcileBufferListAndDetail,buildContentBciEvidenceHandoff}=
         await load('lib/content/buffer-observation.mjs');
       const {planUntrustedBciAuditAppend}=await load('lib/bci/audit-append-plan.ts');
       const scope={tenantId,product:'content',instanceId:'sell-internal',
@@ -122,7 +122,18 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       assert.notEqual(byteQa.sourcePixelSha256[0],byteQa.sourcePixelSha256[1]);
       for(const k of ['providerByteIdentityVerified','approvalVerified',
         'providerAttestedByModule','executionAllowed'])assert.equal(byteQa[k],false,k);
-      const observation=projectBufferContentObservation(post,scope);
+      // PORTFOLIO_CURRENT_WORKER_NEGATIVE_RECONCILIATION_20261027_V1
+      // Same provider revision but conflicting list/detail counts cannot
+      // become a CONTENT BCI observation, even with genuine PNG source QA.
+      assert.throws(()=>reconcileBufferListAndDetail({...post,
+        metrics:[{type:'views',unit:'count',value:0}]},post,scope),
+        /BUFFER_LIST_DETAIL_METRIC_CONFLICT/);
+      const reconciled=reconcileBufferListAndDetail({...post,
+        metrics:[{type:'views',unit:'count',value:6}]},post,scope);
+      assert.equal(reconciled.status,'MEASURED');
+      assert.equal(reconciled.providerAttestedByModule,false);
+      assert.equal(reconciled.approvalVerified,false);
+      const observation=reconciled.observation;
       assert.equal(observation.status,'MEASURED');
       assert.equal(observation.providerAttestedByModule,false);
       const h1=buildContentBciEvidenceHandoff(observation,scope,'2026-10-27T11:30:00Z');
@@ -213,6 +224,26 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       assert.equal(exposure.status,'UNATTESTED_STRUCTURAL_REVIEW');
       assert.equal(exposure.candidateId,
         auditDemandConcurrentExposureCandidates(proposal,[...events].reverse()).candidateId);
+      // Latest DEMAND duplicate-visitor replay canonicalization must preserve
+      // BCI evidence identity and findings independent of provider page order.
+      const repeated={...events[0],eventId:'assign:a:repeat',
+        observedAt:'2026-10-29T04:00:01Z'};
+      const duplicated=[...events,repeated];
+      const dupForward=auditDemandConcurrentExposureCandidates(proposal,duplicated);
+      const dupReverse=auditDemandConcurrentExposureCandidates(proposal,
+        [...duplicated].reverse());
+      assert.equal(dupForward.candidateId,dupReverse.candidateId);
+      assert.deepEqual(dupForward.findings,dupReverse.findings);
+      assert.equal(dupForward.structuralConsistency,false);
+      assert.ok(dupForward.findings.includes('DUPLICATE_VISITOR_ASSIGNMENT'));
+      assert.equal(dupForward.verifiedPaidOrders,null);
+      assert.equal(dupForward.outcomeVerified,false);
+      const dupChain=chain('demand',dupForward.candidateId);
+      const dupPlan=planUntrustedBciAuditAppend(
+        {tenantId,product:'demand'},[],dupChain);
+      assert.equal(dupPlan.toInsert.length,8);
+      assert.equal(dupPlan.providerAttested,false);
+      assert.equal(dupPlan.persisted,false);
       for(const key of ['ownerApprovalVerified','providerEvidenceAttested',
         'experimentExecutedVerified','outcomeVerified','learningVerified',
         'causalInferenceEligible','executionAllowed'])
