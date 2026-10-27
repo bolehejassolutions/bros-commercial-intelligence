@@ -15,13 +15,15 @@ export type EvidenceEnvelope = Readonly<{
 }>;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UTC=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+// Match the existing Neon DEV bci_dev.evidence provider CHECK; no DB change.
+const EVIDENCE_PROVIDERS=new Set(["meta_ads","ga4","buffer","manual","other"]);
 const deny=():never=>{throw new Error("Invalid evidence envelope");};
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==="object"&&!Array.isArray(v);
 export function normalizeEvidenceEnvelope(input:unknown):EvidenceEnvelope {
   if(!object(input)||typeof input.tenantId!=="string"||!UUID.test(input.tenantId)||
      (input.product!=="content"&&input.product!=="demand")||
-     typeof input.provider!=="string"||!input.provider.trim()||input.provider.length>80||
-     typeof input.providerRecordKey!=="string"||!input.providerRecordKey.trim()||input.providerRecordKey.length>256||
+     typeof input.provider!=="string"||!EVIDENCE_PROVIDERS.has(input.provider)||
+     typeof input.providerRecordKey!=="string"||!input.providerRecordKey.trim()||input.providerRecordKey.length>250||
      typeof input.observedAt!=="string"||!UTC.test(input.observedAt)||
      !Number.isFinite(Date.parse(input.observedAt))||
      new Date(input.observedAt).toISOString().replace(/\.000Z$/, "Z") !== input.observedAt.replace(/\.000Z$/, "Z")||
