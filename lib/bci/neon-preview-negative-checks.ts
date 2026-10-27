@@ -17,6 +17,11 @@ const probes: readonly Probe[] = [
   { id: "tenant_override", path: "?product=content&tenantId=11111111-1111-4111-8111-111111111111", expected: 400, bearer: true },
   { id: "principal_override", path: "?product=content&userId=11111111-1111-4111-8111-111111111111", expected: 400, bearer: true },
   { id: "duplicate_product", path: "?product=content&product=demand", expected: 400, bearer: true },
+  // Authenticated header spoofing must be rejected before identity/membership lookup.
+  { id: "tenant_header", path: "?product=content", expected: 400, bearer: true, extraHeader: ["x-tenant-id","11111111-1111-4111-8111-111111111111"] },
+  { id: "bci_tenant_header", path: "?product=content", expected: 400, bearer: true, extraHeader: ["x-bci-tenant-id","11111111-1111-4111-8111-111111111111"] },
+  { id: "principal_header", path: "?product=content", expected: 400, bearer: true, extraHeader: ["x-principal-id","11111111-1111-4111-8111-111111111111"] },
+  { id: "admin_impersonation_header", path: "?product=content", expected: 400, bearer: true, extraHeader: ["x-admin","true"] },
   { id: "admin_header", path: "?product=content", expected: 400, bearer: true, extraHeader: ["x-role","BROS"] },
   { id: "product_header", path: "?product=content", expected: 400, bearer: true, extraHeader: ["x-product","demand"] },
   { id: "write_method", path: "?product=content", expected: 405, bearer: true, method: "POST" },
