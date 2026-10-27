@@ -118,7 +118,7 @@ test("portfolio gate remains OPEN with provider-shaped paid/Meta observations ev
     hitpayReconciliationVerified: true,
   });
   assert.equal(readiness.internalV1Ready, false);
-  assert.deepEqual(readiness.pending, ["contentEvidenceComplete", "demandEvidenceComplete"]);
+  assert.deepEqual(readiness.pending, ["contentEvidenceComplete", "demandEvidenceComplete", "authenticatedEndToEndAttestation"]);
 });
 
 test("portfolio gate does not promote SENT-only or Meta-attributed outcome to completed CONTENT/DEMAND", async () => {
@@ -145,7 +145,7 @@ test("portfolio gate does not promote SENT-only or Meta-attributed outcome to co
   assert.equal(readiness.contentEvidenceComplete, false);
   assert.equal(readiness.demandEvidenceComplete, false);
   assert.equal(readiness.internalV1Ready, false);
-  assert.deepEqual(readiness.pending, ["contentEvidenceComplete", "demandEvidenceComplete"]);
+  assert.deepEqual(readiness.pending, ["contentEvidenceComplete", "demandEvidenceComplete", "authenticatedEndToEndAttestation"]);
 });
 
 
@@ -240,11 +240,12 @@ test("complete synthetic CONTENT/DEMAND flows still require independent external
   const { assessInternalReadiness } = await import("../lib/bci/internal-readiness.ts");
   const contentId = "synthetic-content-full";
   const experimentId = "synthetic-experiment-full";
-  const contentEvidence = ["media_qa", "approval", "provider_sent", "measurement"].map((stage, i) => ({
+  const contentEvidence = ["media_qa", "approval", "provider_sent", "measurement", "learning"].map((stage, i) => ({
     tenantId, product: "content", contentId, stage,
     sourceKey: `synthetic:content:full:${stage}`, verified: true,
     at: new Date(Date.UTC(2026, 9, 26, 1, i)).toISOString(),
     ...(stage === "provider_sent" ? { providerPostId: "synthetic-buffer-post" } : {}),
+    ...(stage === "learning" ? { measurementSourceKey: "synthetic:content:full:measurement" } : {}),
   }));
   const demandEvidence = ["diagnosis", "decision", "action", "outcome", "learning"].map((stage, i) => ({
     tenantId, product: "demand", experimentId, stage,
@@ -259,6 +260,7 @@ test("complete synthetic CONTENT/DEMAND flows still require independent external
   assert.equal(withoutAttestation.internalV1Ready, false);
   assert.deepEqual(withoutAttestation.pending, [
     "neonNegativeTestsVerified", "sharedBciAuditVerified", "hitpayReconciliationVerified",
+    "authenticatedEndToEndAttestation",
   ]);
   // Positive control is ONLY a contract fixture. These booleans cannot be
   // accepted from client input as real provider/security attestation.
@@ -266,8 +268,9 @@ test("complete synthetic CONTENT/DEMAND flows still require independent external
     ...input, neonNegativeTestsVerified: true, sharedBciAuditVerified: true,
     hitpayReconciliationVerified: true,
   });
-  assert.equal(simulated.internalV1Ready, true);
-  assert.deepEqual(simulated.pending, []);
+  assert.equal(simulated.unattestedCandidateComplete, true);
+  assert.equal(simulated.internalV1Ready, false);
+  assert.deepEqual(simulated.pending, ["authenticatedEndToEndAttestation"]);
   assert.throws(() => assessInternalReadiness({
     ...input, contentId: "different-content-id",
   }), /Invalid CONTENT evidence/);
