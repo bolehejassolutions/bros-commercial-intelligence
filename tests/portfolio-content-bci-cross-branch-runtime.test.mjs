@@ -41,11 +41,17 @@ if(process.env.GITHUB_ACTIONS!=='true'){
   test('actual CONTENT observation → handoff → shared BCI envelope remains unverified',async()=>{
     const dir=mkdtempSync(join(tmpdir(),'bros-content-bci-'));
     try{
+      // Isolate Git's shallow metadata from concurrent Node test files.
+      // The earlier CI failure came from simultaneous fetches in checkout's .git.
+      execFileSync('git',['init','--quiet',dir],{stdio:'pipe',timeout:15000});
+      execFileSync('git',['-C',dir,'remote','add','origin',
+        'https://github.com/bolehejassolutions/bros-commercial-intelligence.git'],
+        {stdio:'pipe',timeout:15000});
       for(const ref of [contentRef,bciRef])
-        execFileSync('git',['fetch','--no-tags','--depth=1','origin',ref],
+        execFileSync('git',['-C',dir,'fetch','--no-tags','--depth=1','origin',ref],
           {stdio:'pipe',timeout:60000,maxBuffer:2097152});
       for(const [ref,path] of sources){
-        const src=execFileSync('git',['show',ref+':'+path],
+        const src=execFileSync('git',['-C',dir,'show',ref+':'+path],
           {encoding:'utf8',timeout:15000,maxBuffer:2097152});
         const file=join(dir,path);
         mkdirSync(dirname(file),{recursive:true});
