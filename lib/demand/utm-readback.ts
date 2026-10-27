@@ -9,6 +9,7 @@
  * must never be persisted as such before server-verified tenant scoping.
  */
 import { createHash } from "node:crypto";
+import { proposeDemandPilotUtm } from "./utm-experiment.ts";
 import type { DemandUtmProposal } from "./utm-experiment.ts";
 
 export type DemandGa4UtmRow = Readonly<{
@@ -64,25 +65,26 @@ export function assessDemandUtmReadback(
   proposal: DemandUtmProposal,
   row: DemandGa4UtmRow | null,
 ): DemandUtmReadback {
-  // Never accept a caller-supplied proposal ID independently of its
-  // immutable channel/variant/campaign identity. Otherwise two different
-  // proposals could collide in downstream idempotency or evidence correlation.
-  if (!proposal || proposal.status !== "PROPOSED" ||
-      typeof proposal.experimentId !== "string" ||
-      !/^[a-z][a-z0-9_]{2,63}$/.test(proposal.experimentId) ||
-      !["facebook", "instagram", "tiktok", "whatsapp"].includes(proposal.channel) ||
-      (proposal.variant !== "a" && proposal.variant !== "b") ||
-      proposal.proposalId !==
-        `demand:utm:${proposal.experimentId}:${proposal.channel}:${proposal.variant}` ||
-      typeof proposal.taggedUrl !== "string") fail();
-  let url: URL;
-  try { url = new URL(proposal.taggedUrl); } catch { return fail(); }
-  if (url.origin !== "https://bros.bolehejas.com" || url.pathname !== "/" ||
-      url.username || url.password || url.hash || url.searchParams.size !== 4 ||
-      url.searchParams.get("utm_source") !== proposal.channel ||
-      url.searchParams.get("utm_medium") !== "organic_social" ||
-      url.searchParams.get("utm_campaign") !== proposal.experimentId ||
-      url.searchParams.get("utm_content") !== proposal.variant) fail();
+  // DEMAND-only fail-closed proposal integrity boundary. The report
+  // correlation must never accept caller-forged approval, verified outcome,
+  // pricing/attribution or other extra proposal fields, even when its UTM
+  // link and proposalId look plausible. Reconstruct the sole allowed
+  // canonical, unlaunched proposal; this is NOT provider authentication.
+  if (!proposal || typeof proposal !== "object" || Array.isArray(proposal)) fail();
+  const canonical = (() => {
+    try {
+      return proposeDemandPilotUtm({
+        experimentId: proposal.experimentId, channel: proposal.channel,
+        variant: proposal.variant, landingUrl: "https://bros.bolehejas.com/",
+      });
+    } catch { return fail(); }
+  })();
+  const expected = canonical as unknown as Record<string, unknown>;
+  const received = proposal as unknown as Record<string, unknown>;
+  if (Object.keys(received).length !== Object.keys(expected).length ||
+      Object.keys(expected).some(key =>
+        !Object.prototype.hasOwnProperty.call(received, key) ||
+        received[key] !== expected[key])) fail();
   const result = (status: DemandUtmReadback["status"], evidenceId: string | null,
     sessions: number | null, engaged: number | null): DemandUtmReadback => Object.freeze({
     proposalId: proposal.proposalId,
