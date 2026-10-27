@@ -152,3 +152,18 @@ test('genuinely changed RGB/RGBA pixels remain distinct without editorial claims
   assert.equal(result.approvalVerified,false);
   assert.equal(result.publishedVerified,false);
 });
+
+
+// CONTENT_PNG_ANCILLARY_RENDERING_ALLOWLIST_20261028
+// CRC-valid unknown ancillary data is not guaranteed display-neutral.
+// In particular pHYs can alter pixel aspect ratio while RGB bytes stay fixed.
+test('rejects unreviewed ancillary chunks that may alter rendering',()=>{
+  const base=png(30),afterIhdr=8+12+13;
+  const aspect=Buffer.alloc(9);aspect.writeUInt32BE(2,0);aspect.writeUInt32BE(1,4);aspect[8]=0;
+  for(const [type,bytes] of [['pHYs',aspect],['vpAg',Buffer.from([1,2,3])]]){
+    const altered=Buffer.concat([base.subarray(0,afterIhdr),chunk(type,bytes),base.subarray(afterIhdr)]);
+    assert.throws(()=>verify(altered,opts),/UNSUPPORTED_ANCILLARY_CHUNK/,type);
+  }
+  const safeTime=Buffer.concat([base.subarray(0,afterIhdr),chunk('tIME',Buffer.from([7,234,10,28,5,50,0])),base.subarray(afterIhdr)]);
+  assert.equal(verify(safeTime,opts).renderedRgbaSha256,verify(base,opts).renderedRgbaSha256);
+});
