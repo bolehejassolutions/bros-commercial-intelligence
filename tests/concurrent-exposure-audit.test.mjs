@@ -35,6 +35,13 @@ test('cross-arm contamination and missing assignment are explicitly detected',()
   assert.ok(x.findings.includes('BOTH_ARMS_NOT_OBSERVED'));
 });
 
+test('exposure before assignment cannot pass chronological review',()=>{
+  const x=audit(proposal,[ev('assign:a',a,'assignment','control',
+    {observedAt:'2026-10-29T05:00:00Z'}),valid[1],valid[2],valid[3]]);
+  assert.equal(x.structuralConsistency,false);
+  assert.ok(x.findings.includes('EXPOSURE_BEFORE_ASSIGNMENT'));
+});
+
 test('no consent, duplicate visitors, missing exposure and out-of-window events fail structural review',()=>{
   const x=audit(proposal,[valid[0],valid[2],ev('assign:other',a,'assignment','control'),
     ev('expose:b',b,'exposure','treatment',{consentRecorded:false,
