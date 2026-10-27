@@ -108,3 +108,35 @@ test('empty asset sets and corrupted singleton bytes fail closed',()=>{
   const damaged=Buffer.from(png(30));damaged[29]^=1;
   assert.throws(()=>set([damaged],opts),/BAD_CRC/);
 });
+
+
+// CONTENT_RGB_RGBA_RENDERED_DUPLICATE_GATE_20261028
+// A fully opaque RGBA image and RGB image can render identically while their
+// byte hashes and legacy channel-specific pixel hashes differ.
+function opaqueRgbaPng(pixel=30){
+  const w=2,h=2,header=Buffer.alloc(13);
+  header.writeUInt32BE(w,0);header.writeUInt32BE(h,4);
+  header[8]=8;header[9]=6;
+  const rows=Buffer.alloc(h*(1+w*4),pixel);
+  for(let y=0;y<h;y++){
+    const start=y*(1+w*4);
+    rows[start]=0;
+    for(let x=0;x<w;x++)rows[start+1+x*4+3]=255;
+  }
+  return Buffer.concat([sig,chunk('IHDR',header),chunk('IDAT',deflateSync(rows)),chunk('IEND',Buffer.alloc(0))]);
+}
+test('opaque RGB and RGBA copies cannot masquerade as independent slides',()=>{
+  const rgb=verify(png(30),opts),rgba=verify(opaqueRgbaPng(30),opts);
+  assert.notEqual(rgb.sha256,rgba.sha256);
+  assert.notEqual(rgb.pixelSha256,rgba.pixelSha256);
+  assert.equal(rgb.renderedRgbaSha256,rgba.renderedRgbaSha256);
+  assert.throws(()=>set([png(30),opaqueRgbaPng(30)],opts),/DUPLICATE_RENDERED_PIXELS/);
+});
+test('genuinely changed RGB/RGBA pixels remain distinct without editorial claims',()=>{
+  const result=set([png(30),opaqueRgbaPng(31)],opts);
+  assert.notEqual(result.images[0].renderedRgbaSha256,result.images[1].renderedRgbaSha256);
+  assert.equal(result.distinctPixelHashes,true);
+  assert.equal(result.visualDistinctnessVerified,false);
+  assert.equal(result.approvalVerified,false);
+  assert.equal(result.publishedVerified,false);
+});
