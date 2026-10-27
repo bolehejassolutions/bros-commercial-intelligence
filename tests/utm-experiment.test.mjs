@@ -59,6 +59,22 @@ test('rejects invalid experiment, channel and variant tokens',()=>{
     {variant:'c'}, {variant:'A'}
   ]) assert.throws(()=>proposeDemandPilotUtm({...base,...patch}),invalid);
 });
+test('untrusted experiment identity rejects array-to-string coercion before creating proposal keys',()=>{
+  const baseline=proposeDemandPilotUtm(base);
+  // RegExp.test([validId]) passes through JS implicit toString; the proposal
+  // would otherwise contain an array experimentId but a string proposalId.
+  for(const experimentId of [[base.experimentId],
+    {toString:()=>base.experimentId}, null, 123]) {
+    assert.throws(()=>proposeDemandPilotUtm({...base,experimentId}),invalid);
+  }
+  assert.deepEqual(proposeDemandPilotUtm({...base}),baseline);
+  assert.equal(typeof baseline.experimentId,'string');
+  assert.equal(baseline.utmCaptureVerified,false);
+  assert.equal(baseline.checkoutAttributionVerified,false);
+  assert.equal(baseline.settledOrders,null);
+  assert.equal(baseline.verifiedCacMinor,null);
+});
+
 test('does not require platform clickable-post support or assert checkout tracing',()=>{
   const x=proposeDemandPilotUtm({...base,channel:'tiktok'});
   assert.equal(x.channel,'tiktok');
