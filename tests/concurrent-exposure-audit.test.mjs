@@ -88,5 +88,21 @@ test('rejects plausible-looking forged protocol IDs, scope, design and caller tr
     {actionApproved:true},{actionExecuted:true},{outcomeVerified:true},
     {learningVerified:true},{tenantAuthorizationVerified:true},
     {verifiedPaidOrders:1},{causalLift:0.5},
+    {concurrentControlVerified:true},{controlledExperimentVerified:true},
+    {requiresOwnerApproval:false},{noPricingChanges:false},
+    {noPublisherChanges:false},{maxIncrementalSpendMinor:100},
+    {acceptanceEvidence:[]},{acceptanceEvidence:[...proposal.acceptanceEvidence].reverse()},
+    {evidenceCandidateIds:[]},{unexpectedVerificationFlag:true},
   ]) assert.throws(()=>audit({...proposal,...patch},valid),invalid);
+});
+
+test('complete protocol guard also blocks forged downstream order-join readiness',async()=>{
+  const {auditDemandOrderExposureCandidates:orderAudit}=
+    await import('../lib/demand/concurrent-order-candidate-audit.ts');
+  const invalid=/Invalid BROS DEMAND order exposure candidates/;
+  for(const patch of [{concurrentControlVerified:true},{controlledExperimentVerified:true},
+    {requiresOwnerApproval:false},{noPricingChanges:false},
+    {noPublisherChanges:false},{acceptanceEvidence:[]},
+    {maxIncrementalSpendMinor:1},{unexpectedVerificationFlag:true}])
+    assert.throws(()=>orderAudit({...proposal,...patch},valid,[]),invalid);
 });
