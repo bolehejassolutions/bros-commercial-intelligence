@@ -12,6 +12,7 @@
 -- Restricted app roles receive NO access from this proposal.
 --
 -- REVIEW BEFORE ANY DEV APPLY: transactional migration, rollback/backup plan,
+-- finite timestamps, canonical source labels and trigger-function EXECUTE ACLs,
 -- direct restricted LOGIN negative tests, concurrent inserts, and trusted writer.
 
 CREATE TABLE bci_dev.lineage_nodes (
@@ -22,9 +23,15 @@ CREATE TABLE bci_dev.lineage_nodes (
     'evidence', 'signal', 'case', 'diagnosis',
     'decision', 'action', 'outcome', 'learning'
   )),
-  source_system text NOT NULL CHECK (length(source_system) BETWEEN 1 AND 160),
-  source_record_key text NOT NULL CHECK (length(source_record_key) BETWEEN 1 AND 160),
-  recorded_at timestamptz NOT NULL,
+  source_system text NOT NULL CHECK (
+    length(source_system) BETWEEN 1 AND 160
+    AND source_system = btrim(source_system)
+  ),
+  source_record_key text NOT NULL CHECK (
+    length(source_record_key) BETWEEN 1 AND 160
+    AND source_record_key = btrim(source_record_key)
+  ),
+  recorded_at timestamptz NOT NULL CHECK (isfinite(recorded_at)),
   parent_ids uuid[] NOT NULL DEFAULT '{}'::uuid[],
   -- Caller data can NEVER upgrade itself to provider-reported or verified.
   assertion_status text NOT NULL DEFAULT 'unverified'
@@ -62,7 +69,11 @@ BEGIN
   RAISE EXCEPTION 'BCI lineage is append-only'
     USING ERRCODE = '55000';
 END;
-$$;
+$;
+
+-- PostgreSQL grants EXECUTE on new functions to PUBLIC by default. Keep
+-- both trigger functions inaccessible as callable application entry points.
+REVOKE ALL ON FUNCTION bci_dev.reject_lineage_mutation() FROM PUBLIC;
 
 -- Statement triggers also reject TRUNCATE (row triggers do not).
 CREATE TRIGGER lineage_nodes_immutable
@@ -134,7 +145,9 @@ BEGIN
   END IF;
   RETURN NULL;
 END;
-$$;
+$;
+
+REVOKE ALL ON FUNCTION bci_dev.check_lineage_integrity() FROM PUBLIC;
 
 CREATE CONSTRAINT TRIGGER lineage_nodes_parent_set
   AFTER INSERT ON bci_dev.lineage_nodes
