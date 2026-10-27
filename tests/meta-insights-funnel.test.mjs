@@ -135,7 +135,9 @@ test('revised Meta snapshots do not overwrite campaign/window evidence candidate
   const missing=normalizeMetaCampaignFunnel(scope,{...row,spend:undefined});
   const zero=normalizeMetaCampaignFunnel(scope,{...row,spend:0});
   const otherTenant=normalizeMetaCampaignFunnel({...scope,tenantId:'22222222-2222-4222-8222-222222222222'},row);
-  for(const x of [later,revisedSpend,revisedLpv,missing,zero]){
+  // A later read of identical provider metrics must not duplicate evidence.
+  assert.equal(later.snapshotKey,first.snapshotKey);
+  for(const x of [revisedSpend,revisedLpv,missing,zero]){
     assert.equal(x.sourceKey,first.sourceKey);
     assert.notEqual(x.snapshotKey,first.snapshotKey);
     assert.equal(x.hitpaySettledOrders,null);
@@ -185,5 +187,31 @@ test('Meta action order, exact duplicates and equivalent number encodings preser
     ...row.actions.slice().reverse().map(a=>({...a,value:String(a.value)})),
     {action_type:'purchase',value:'1'}]});
   assert.equal(base.snapshotKey,shuffled.snapshotKey);
-  assert.match(base.snapshotKey,/:actions-sha256:[a-f0-9]{64}$/);
+  assert.match(base.snapshotKey,/^meta_ads:sha256:[a-f0-9]{64}$/);
+});
+
+
+// DEMAND_META_BOUNDED_SNAPSHOT_KEY_20261027: contract with shared BCI/Neon.
+test('Meta snapshot IDs are bounded for BCI, collection-time independent, and revision-sensitive',()=>{
+  const first=normalizeMetaCampaignFunnel(scope,row);
+  const reread=normalizeMetaCampaignFunnel(
+    {...scope,collectedAt:'2026-10-27T00:30:00Z'},row);
+  const changed=normalizeMetaCampaignFunnel(scope,{...row,spend:125.93});
+  const missing=normalizeMetaCampaignFunnel(scope,{...row,spend:undefined});
+  const zero=normalizeMetaCampaignFunnel(scope,{...row,spend:0});
+  const otherWindowScope={...scope,since:'2026-10-09'};
+  const otherWindowRow={...row,date_start:'2026-10-09'};
+  const otherWindow=normalizeMetaCampaignFunnel(otherWindowScope,otherWindowRow);
+  assert.equal(first.snapshotKey,reread.snapshotKey);
+  assert.notEqual(first.collectedAt,reread.collectedAt);
+  assert.match(first.snapshotKey,/^meta_ads:sha256:[a-f0-9]{64}$/);
+  assert.equal(first.snapshotKey.length,80);
+  assert.ok(first.snapshotKey.length<=250);
+  assert.notEqual(first.snapshotKey,changed.snapshotKey);
+  assert.notEqual(missing.snapshotKey,zero.snapshotKey);
+  assert.notEqual(first.snapshotKey,otherWindow.snapshotKey);
+  assert.equal(first.hitpayPaidOrders,null);
+  assert.equal(first.hitpaySettledOrders,null);
+  assert.equal(first.verifiedCacMinor,null);
+  assert.equal(first.causalLift,null);
 });
