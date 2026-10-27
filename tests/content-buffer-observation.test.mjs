@@ -553,3 +553,39 @@ test("equivalent UTC metric timestamps cannot bypass list/detail conflict guard"
   assert.equal(observed.approvalVerified,false);
   assert.equal(observed.executionAllowed,false);
 });
+
+
+// CONTENT_DRIVE_SOURCE_REFERENCE_EQUIVALENCE_20261028
+// Actual Buffer sources use both ?id=...&export=download and the reverse order.
+// The same Drive file must not count as two independent carousel images.
+test("Drive download query-order variants are duplicate media references",()=>{
+  const id="1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM";
+  const a="https://drive.google.com/uc?id="+id+"&export=download";
+  const b="https://drive.google.com/uc?export=download&id="+id;
+  const o=make({assets:[{type:"image",source:a},{type:"image",source:b}]});
+  assert.equal(o.status,"REVIEW_REQUIRED");
+  assert.ok(o.flags.includes("DUPLICATE_ASSET_SOURCE"));
+  assert.throws(()=>handoff(o,scope,"2026-10-26T17:00:00.000Z"),
+    /INVALID_CONTENT_EVIDENCE_SCOPE/);
+});
+test("Drive source-to-SENT reference parity ignores only approved query ordering",()=>{
+  const a="https://drive.google.com/uc?id=1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM&export=download";
+  const b="https://drive.google.com/uc?export=download&id=1WZY8YTFz-bOStIixu6uuTgLeCNQ-nJ4d";
+  const swapped="https://drive.google.com/uc?export=download&id=1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM";
+  const assets=[{type:"image",source:swapped,mimeType:"image/png"},
+    {type:"image",source:b,mimeType:"image/png"}];
+  const matched=inspect({...post,assets},scope,sourceQa,[a,b]);
+  assert.equal(matched.status,"SOURCE_REFERENCES_MATCHED_UNATTESTED");
+  assert.deepEqual(matched.flags,[]);
+  assert.equal(matched.providerByteIdentityVerified,false);
+  assert.equal(matched.approvalVerified,false);
+  assert.equal(matched.executionAllowed,false);
+  assert.throws(()=>inspect({...post,assets},scope,sourceQa,[a,swapped]),
+    /INVALID_SOURCE_REFERENCE_MANIFEST/,
+    "query-order aliases of one file are not independent manifest assets");
+  const extra={...assets[0],source:swapped+"&unreviewed=1"};
+  const held=inspect({...post,assets:[extra,assets[1]]},scope,sourceQa,[a,b]);
+  assert.equal(held.status,"REVIEW_REQUIRED");
+  assert.ok(held.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"),
+    "unreviewed query parameters must not be silently accepted");
+});
