@@ -34,6 +34,15 @@ const stages: readonly BciLineageStage[] = [
 ];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const scopeFields = new Set(["tenantId", "product"]);
+const recordFields = new Set([
+  "id", "tenantId", "product", "stage", "sourceSystem",
+  "sourceRecordKey", "recordedAt", "parentIds", "verification",
+]);
+const exactFields = (value: object, fields: ReadonlySet<string>): boolean => {
+  const keys = Object.keys(value);
+  return keys.length === fields.size && keys.every(key => fields.has(key));
+};
 const deny = (): never => { throw new Error("Invalid BCI evidence lineage"); };
 const validTime = (x: unknown): x is string =>
   typeof x === "string" && UTC.test(x) && Number.isFinite(Date.parse(x)) &&
@@ -49,13 +58,17 @@ export function validateBciLineage(
   scope: BciLineageScope,
   records: readonly BciLineageRecord[],
 ): BciLineageResult {
-  if (!scope || typeof scope.tenantId !== "string" || !UUID.test(scope.tenantId) ||
+  if (!scope || typeof scope !== "object" || Array.isArray(scope) ||
+      !exactFields(scope, scopeFields) ||
+      typeof scope.tenantId !== "string" || !UUID.test(scope.tenantId) ||
       (scope.product !== "content" && scope.product !== "demand") ||
       !Array.isArray(records) || records.length > 1000) deny();
   const byId = new Map<string, BciLineageRecord>();
   const bySource = new Map<string, string>();
   for (const record of records) {
-    if (!record || typeof record.id !== "string" || !UUID.test(record.id) ||
+    if (!record || typeof record !== "object" || Array.isArray(record) ||
+        !exactFields(record, recordFields) ||
+        typeof record.id !== "string" || !UUID.test(record.id) ||
         typeof record.tenantId !== "string" || record.tenantId !== scope.tenantId ||
         record.product !== scope.product || !stages.includes(record.stage) ||
         !validLabel(record.sourceSystem) || !validLabel(record.sourceRecordKey) ||
