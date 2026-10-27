@@ -64,3 +64,30 @@ test('harmless text metadata preserves decoded-pixel identity, not source-byte i
   assert.equal(verify(base,opts).pixelSha256,verify(annotated,opts).pixelSha256);
   assert.throws(()=>set([base,annotated],opts),/DUPLICATE_PIXELS/);
 });
+
+
+// CONTENT_RGBA_TRANSPARENT_RGB_DUPLICATE_GATE_20261027_1050
+// The two source files may have different byte hashes yet render identically:
+// transparent RGB differences must not masquerade as a distinct slide.
+function rgbaPng(hiddenRgb=10,{up=false,opaqueRgb=50}={}){
+  const header=Buffer.alloc(13);header.writeUInt32BE(2,0);header.writeUInt32BE(2,4);
+  header[8]=8;header[9]=6;
+  const first=Buffer.from([hiddenRgb,hiddenRgb+1,hiddenRgb+2,0,opaqueRgb,60,70,255]);
+  const second=Buffer.from([80,90,100,255,110,120,130,255]);
+  const encodedSecond=up?Buffer.from(second.map((v,i)=>(v-first[i]+256)&255)):second;
+  const rows=Buffer.concat([Buffer.from([0]),first,Buffer.from([up?2:0]),encodedSecond]);
+  return Buffer.concat([sig,chunk('IHDR',header),chunk('IDAT',deflateSync(rows)),chunk('IEND',Buffer.alloc(0))]);
+}
+test('fully transparent RGB differences are not distinct rendered slides',()=>{
+  const a=rgbaPng(10),b=rgbaPng(20);
+  assert.notEqual(verify(a,opts).sha256,verify(b,opts).sha256);
+  assert.equal(verify(a,opts).pixelSha256,verify(b,opts).pixelSha256);
+  assert.throws(()=>set([a,b],opts),/DUPLICATE_PIXELS/);
+  assert.notEqual(verify(a,opts).pixelSha256,verify(rgbaPng(10,{opaqueRgb:51}),opts).pixelSha256);
+});
+test('transparent-pixel canonicalization preserves PNG Up-filter predictor state',()=>{
+  const plain=rgbaPng(10),up=rgbaPng(10,{up:true}),changedHiddenUp=rgbaPng(20,{up:true});
+  assert.equal(verify(plain,opts).pixelSha256,verify(up,opts).pixelSha256);
+  assert.equal(verify(plain,opts).pixelSha256,verify(changedHiddenUp,opts).pixelSha256);
+  assert.throws(()=>set([plain,changedHiddenUp],opts),/DUPLICATE_PIXELS/);
+});
