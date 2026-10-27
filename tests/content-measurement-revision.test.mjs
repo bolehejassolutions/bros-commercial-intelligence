@@ -9,6 +9,23 @@ const current={...previous,metricsUpdatedAt:'2026-10-26T16:00:00.000Z',measureme
 test('same-post later observation proposes noncausal learning candidate, never execution',()=>{const x=propose(previous,current,scope);assert.equal(x.status,'CANDIDATE_UNATTESTED');assert.equal(x.observedDeltas.views,2);assert.equal(x.observedDeltas.reactions,0);assert.equal(x.observedDeltas.clicks,null);assert.equal(x.causalLiftProven,false);assert.equal(x.learningVerified,false);assert.equal(x.executionAllowed,false);});
 test('same provider snapshot repeated is stable and no new learning',()=>{const a=propose(previous,current,scope);assert.equal(propose(previous,{...current,metrics:{...current.metrics}},scope).candidateId,a.candidateId);const b=propose(current,{...current},scope);assert.equal(b.status,'NO_NEW_SNAPSHOT');assert.equal(b.reason,'IDENTICAL_PROVIDER_SNAPSHOT');});
 test('cross-tenant, channel, content and post spoofing fail closed',()=>{for(const key of ['tenantId','instanceId','contentId','postId','channelId','channelService'])assert.throws(()=>propose(previous,{...current,[key]:'other'},scope),/CROSS_SCOPE/);});
+// CONTENT_EQUIVALENT_UTC_REVISION_IDEMPOTENCY_20261027: provider timestamp precision is not a new snapshot.
+test('equivalent UTC timestamp precision does not fabricate a new measurement revision',()=>{
+  const equivalent={...current,sentAt:'2026-10-26T01:00:00Z',metricsUpdatedAt:'2026-10-26T16:00:00Z'};
+  const replay=propose(current,equivalent,scope);
+  assert.equal(replay.status,'NO_NEW_SNAPSHOT');
+  assert.equal(replay.reason,'IDENTICAL_PROVIDER_SNAPSHOT');
+  assert.equal(replay.candidateId,propose(current,current,scope).candidateId);
+  assert.equal(propose(previous,equivalent,scope).candidateId,propose(previous,current,scope).candidateId);
+  const oldEquivalent={...previous,sentAt:'2026-10-26T01:00:00Z',metricsUpdatedAt:'2026-10-26T14:00:00Z'};
+  assert.equal(propose(oldEquivalent,current,scope).candidateId,propose(previous,current,scope).candidateId);
+  assert.equal(replay.executionAllowed,false);
+  assert.equal(replay.learningVerified,false);
+});
+test('equivalent UTC instant with changed counts still fails closed',()=>{
+  const conflicting={...previous,metricsUpdatedAt:'2026-10-26T14:00:00Z',metrics:metrics(99,4)};
+  assert.throws(()=>propose(previous,conflicting,scope),/CONFLICTING_PROVIDER_SNAPSHOT/);
+});
 test('same timestamp conflicting metrics and out-of-order snapshots fail',()=>{assert.throws(()=>propose(previous,{...previous,metrics:metrics(9,4)},scope),/CONFLICTING_PROVIDER_SNAPSHOT/);assert.throws(()=>propose(current,previous,scope),/OUT_OF_ORDER_MEASUREMENT/);});
 test('counter regression or lost coverage requires review, never positive growth',()=>{const a=propose(previous,{...current,metrics:metrics(5,4)},scope);assert.equal(a.status,'REVIEW_REQUIRED');assert.equal(a.reason,'COUNTER_REGRESSION_REVIEW');const b=propose(previous,{...current,metrics:metrics(null,4)},scope);assert.equal(b.status,'REVIEW_REQUIRED');assert.equal(b.reason,'LOSS_OF_METRIC_COVERAGE');});
 test('unknown-to-known is not counted as growth',()=>{const a=propose({...previous,metrics:metrics(null,4)},current,scope);assert.equal(a.observedDeltas.views,null);assert.equal(a.observedDeltas.reach,1);});
