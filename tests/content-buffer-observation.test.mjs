@@ -275,3 +275,59 @@ test("forged trust claims, invalid time and duplicate manifest are rejected",()=
   assert.throws(()=>classifyContentApprovalProvenance(approvalEvent,approvalScope,
     {...approvalManifest,assetSha256:["b".repeat(64),"b".repeat(64)]}),/INVALID_CONTENT_APPROVAL_BINDING_SCOPE/);
 });
+
+
+// CONTENT_BUFFER_LIST_DETAIL_HYDRATION_GATE_20261027_1200: provider-shape regression, not authenticated provider evidence.
+const hydrate=(await import("../lib/content/buffer-observation.mjs")).reconcileBufferListAndDetail;
+const detailedPost={...post,dueAt:"2026-10-22T05:00:00.000Z",
+  assets:post.assets.map((a,i)=>({...a,id:"asset-"+i,mimeType:"image/jpeg"}))};
+const listSummary={...detailedPost};
+delete listSummary.externalLink;
+delete listSummary.metricsUpdatedAt;
+delete listSummary.metrics;
+delete listSummary.metadata;
+test("Buffer list without permalink/metrics needs matching get_post detail",()=>{
+  const r=hydrate(listSummary,detailedPost,scope);
+  assert.equal(r.status,"MEASURED");
+  assert.equal(r.observation.nativeUrl,detailedPost.externalLink);
+  assert.equal(r.observation.metrics.views,7);
+  assert.equal(r.listOnlySufficient,false);
+  assert.equal(r.providerAttestedByModule,false);
+  assert.equal(r.approvalVerified,false);
+  assert.equal(r.executionAllowed,false);
+});
+test("detail missing native permalink or stale pre-SENT metrics cannot be promoted",()=>{
+  assert.equal(hydrate(listSummary,{...detailedPost,externalLink:null},scope).status,"REVIEW_REQUIRED");
+  const stale={...detailedPost,metricsUpdatedAt:"2026-10-21T00:00:00.000Z"};
+  const r=hydrate({...listSummary,metricsUpdatedAt:detailedPost.metricsUpdatedAt},stale,scope);
+  assert.equal(r.status,"REVIEW_REQUIRED");
+  assert.equal(r.observation.metrics.views,null);
+});
+test("list/detail identity and content drift fail closed",()=>{
+  for(const field of ["id","channelId","channelService","status","sentAt","dueAt"])
+    assert.throws(()=>hydrate(listSummary,{...detailedPost,[field]:"changed"},scope),/IDENTITY_DRIFT/);
+  assert.throws(()=>hydrate(listSummary,{...detailedPost,text:"changed"},scope),/CONTENT_DRIFT/);
+  assert.throws(()=>hydrate({...listSummary,externalLink:"https://www.instagram.com/p/DEF/"},detailedPost,scope),/PERMALINK_DRIFT/);
+});
+test("list/detail ordered asset IDs, URLs and media types must agree",()=>{
+  assert.throws(()=>hydrate(listSummary,{...detailedPost,assets:[...detailedPost.assets].reverse()},scope),/ASSET_DRIFT/);
+  assert.throws(()=>hydrate(listSummary,{...detailedPost,assets:[{...detailedPost.assets[0],source:"https://other.example/media"},detailedPost.assets[1]]},scope),/ASSET_DRIFT/);
+  assert.throws(()=>hydrate(listSummary,{...detailedPost,assets:[{...detailedPost.assets[0],mimeType:"image/png"},detailedPost.assets[1]]},scope),/ASSET_DRIFT/);
+});
+test("stale list metric values and AI flags never override fresh detailed post",()=>{
+  const summary={...listSummary,metricsUpdatedAt:"2026-10-21T00:00:00.000Z",
+    metrics:[{type:"views",unit:"count",value:0}],metadata:{isAiGenerated:false}};
+  const r=hydrate(summary,detailedPost,scope);
+  assert.equal(r.status,"MEASURED");
+  assert.equal(r.observation.metrics.views,7);
+  assert.deepEqual(r.observation.flags,[]);
+  const disclosure=hydrate(listSummary,{...detailedPost,metadata:{isAiGenerated:false}},scope);
+  assert.equal(disclosure.status,"REVIEW_REQUIRED");
+  assert.ok(disclosure.observation.flags.includes("AI_DISCLOSURE_MISMATCH"));
+});
+test("matching list/detail scheduled status remains NOT_SENT",()=>{
+  const summary={...listSummary,status:"scheduled"},detail={...detailedPost,status:"scheduled"};
+  const r=hydrate(summary,detail,scope);
+  assert.equal(r.status,"NOT_SENT");
+  assert.equal(r.executionAllowed,false);
+});
