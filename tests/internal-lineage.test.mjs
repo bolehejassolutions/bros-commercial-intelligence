@@ -87,3 +87,17 @@ test('shared lineage rejects unreviewed scope and record fields rather than refl
   ]), denied);
   assert.equal(validateBciLineage(scope, [chain[0]]).records.length, 1);
 });
+
+
+test('shared lineage rejects symbol and non-enumerable own metadata', () => {
+  const hidden = Object.defineProperty({ ...chain[0] }, 'hiddenCredential', {
+    value: 'must-not-leak', enumerable: false,
+  });
+  const symbol = Symbol('providerCredential');
+  const symbolRecord = { ...chain[0], [symbol]: 'must-not-leak' };
+  const symbolScope = { ...scope, [symbol]: 'must-not-leak' };
+  assert.throws(() => validateBciLineage(scope, [hidden]), denied);
+  assert.throws(() => validateBciLineage(scope, [symbolRecord]), denied);
+  assert.throws(() => validateBciLineage(symbolScope, [chain[0]]), denied);
+  assert.equal(validateBciLineage(scope, [chain[0]]).counts.evidence, 1);
+});
