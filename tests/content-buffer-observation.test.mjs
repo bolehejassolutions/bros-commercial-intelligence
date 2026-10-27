@@ -589,3 +589,43 @@ test("Drive source-to-SENT reference parity ignores only approved query ordering
   assert.ok(held.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"),
     "unreviewed query parameters must not be silently accepted");
 });
+
+// CONTENT_DRIVE_VIEW_DOWNLOAD_ALIAS_GATE_20261028
+// A Drive file view/preview/open link and its download link are one source,
+// not independent carousel slides. Unreviewed query parameters are not ignored.
+test("strict Drive view, preview, open and download aliases cannot fake independent slides",()=>{
+  const id="1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM";
+  const download="https://drive.google.com/uc?export=download&id="+id;
+  const variants=[
+    "https://drive.google.com/file/d/"+id+"/view",
+    "https://drive.google.com/file/d/"+id+"/preview/",
+    "https://drive.google.com/open?id="+id
+  ];
+  for(const variant of variants){
+    const observation=make({assets:[
+      {type:"image",source:download},{type:"image",source:variant}
+    ]});
+    assert.equal(observation.status,"REVIEW_REQUIRED");
+    assert.ok(observation.flags.includes("DUPLICATE_ASSET_SOURCE"));
+    assert.throws(()=>inspect({...post,assets:[
+      {type:"image",source:download,mimeType:"image/png"},
+      {type:"image",source:variant,mimeType:"image/png"}
+    ]},scope,sourceQa,[download,variant]),/INVALID_SOURCE_REFERENCE_MANIFEST/);
+  }
+});
+test("Drive view/download reference parity remains unverified and query additions require review",()=>{
+  const a="https://drive.google.com/uc?id=1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM&export=download";
+  const b="https://drive.google.com/uc?id=1WZY8YTFz-bOStIixu6uuTgLeCNQ-nJ4d&export=download";
+  const view="https://drive.google.com/file/d/1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM/view";
+  const assets=[{type:"image",source:view,mimeType:"image/png"},
+    {type:"image",source:b,mimeType:"image/png"}];
+  const matched=inspect({...post,assets},scope,sourceQa,[a,b]);
+  assert.equal(matched.status,"SOURCE_REFERENCES_MATCHED_UNATTESTED");
+  assert.equal(matched.providerByteIdentityVerified,false);
+  assert.equal(matched.approvalVerified,false);
+  assert.equal(matched.executionAllowed,false);
+  const unreviewed={...assets[0],source:view+"?usp=sharing"};
+  const held=inspect({...post,assets:[unreviewed,assets[1]]},scope,sourceQa,[a,b]);
+  assert.equal(held.status,"REVIEW_REQUIRED");
+  assert.ok(held.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"));
+});
