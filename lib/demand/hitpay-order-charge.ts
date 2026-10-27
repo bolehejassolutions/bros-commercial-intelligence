@@ -52,6 +52,12 @@ export function reconcileDemandHitPayOrderCharge(
   detail: HitPayChargeDetailObservation,
 ): DemandHitPayReconciliation {
   if (!order || !charge || !detail ||
+      // RegExp.test coerces arrays and custom objects to strings. A forged
+      // order/charge ID could otherwise pass linkage checks before causing an
+      // unmasked TypeError during canonical digest construction. Never call
+      // user-defined toString while validating provider identity.
+      typeof order.id !== "string" || typeof charge.id !== "string" ||
+      typeof detail.id !== "string" ||
       !UUID.test(order.id) || !UUID.test(charge.id) ||
       !Number.isSafeInteger(order.order_display_number) || order.order_display_number <= 0 ||
       !minor(order.amount) || !minor(charge.amount) ||
