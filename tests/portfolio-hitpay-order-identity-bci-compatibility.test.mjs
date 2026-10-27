@@ -15,7 +15,7 @@ import {pathToFileURL} from 'node:url';
 
 const pins=Object.freeze({
   demand:'8ea48f08b5057a46fb5107d98cfbc83a8ea80ffd',
-  bci:'128f0605e1598ff07328da47ac734b7a68b67610',
+  bci:'cdde7b2810273fd713dca23cfd12dab12f80fd4d',
 });
 const sources=[
   [pins.demand,'lib/demand/hitpay-order-charge.ts'],
@@ -30,7 +30,7 @@ const tenantId='33333333-3333-4333-8333-333333333333';
 if(process.env.GITHUB_ACTIONS!=='true'){
   test.skip('pinned worker-source integration executes only in GitHub Actions');
 }else{
-  test('revised HitPay identity stays one untrusted order; current BCI handoff incompatibility is explicit',async()=>{
+  test('revised HitPay identity stays one untrusted order; repaired BCI handoff accepts stable identity without attestation',async()=>{
     const dir=mkdtempSync(join(tmpdir(),'bros-portfolio-hitpay-identity-'));
     try{
       execFileSync('git',['init','--quiet',dir],{stdio:'pipe',timeout:15000});
@@ -113,31 +113,36 @@ if(process.env.GITHUB_ACTIONS!=='true'){
         'attributionVerified','hitpaySettlementVerified','executionAllowed'])
         assert.equal(auditResult[key],false,key);
 
-      // The NEW DEMAND record adds orderIdentityDigest, but BCI's exact
-      // strict allowlist has not yet adopted that field. This is a genuine
-      // cross-worker compatibility gap, not a payment/provider failure.
+      // Current BCI accepts the identity-aware DEMAND contract but never
+      // promotes a provider observation into authenticated paid evidence.
       const scope={tenantId,product:'demand'};
       const observedAt='2026-10-27T12:20:00Z';
-      assert.throws(()=>project(first,scope,observedAt),
+      const mappedFirst=project(first,scope,observedAt);
+      const mappedRevised=project(revised,scope,observedAt);
+      assert.equal(mappedFirst.sourceOrderIdentityDigest,first.orderIdentityDigest);
+      assert.equal(mappedRevised.sourceOrderIdentityDigest,first.orderIdentityDigest);
+      assert.equal(mappedFirst.envelope.provider,'other');
+      assert.equal(mappedFirst.sourceProvider,'hitpay');
+      assert.notEqual(mappedFirst.envelope.providerRecordKey,
+        mappedRevised.envelope.providerRecordKey);
+      for(const mapped of [mappedFirst,mappedRevised]){
+        assert.equal(mapped.envelope.environment,'unknown');
+        assert.equal(mapped.envelope.provenance,'synthetic');
+        assert.equal(mapped.envelope.metrics.settled_orders,null);
+        assert.equal(mapped.envelope.metrics.verified_cac_minor,null);
+        for(const key of ['authenticated','providerAttested',
+          'paymentEnvironmentVerified','settlementVerified',
+          'entitlementVerified','attributionVerified','persisted'])
+          assert.equal(mapped[key],false,key);
+      }
+      assert.throws(()=>project({...first,orderIdentityDigest:'0'.repeat(64)},
+        scope,observedAt),/Invalid unattested HitPay handoff/);
+      assert.throws(()=>project(first,{tenantId,product:'content'},observedAt),
         /Invalid unattested HitPay handoff/);
-      assert.throws(()=>project(revised,scope,observedAt),
+      assert.throws(()=>project({...first,settledOrders:1},scope,observedAt),
         /Invalid unattested HitPay handoff/);
-
-      // Legacy-shaped projection demonstrates the narrow schema mismatch,
-      // NOT a recommended production workaround: it drops stable identity.
-      const {orderIdentityDigest:ignored,...legacy}=first;
-      assert.equal(ignored,first.orderIdentityDigest);
-      const old=project(legacy,scope,observedAt);
-      assert.equal(old.envelope.environment,'unknown');
-      assert.equal(old.envelope.provenance,'synthetic');
-      assert.equal(old.envelope.metrics.settled_orders,null);
-      assert.equal(old.envelope.metrics.verified_cac_minor,null);
-      assert.equal(old.authenticated,false);
-      assert.equal(old.persisted,false);
-      assert.throws(()=>project(legacy,{tenantId,product:'content'},observedAt),
-        /Invalid unattested HitPay handoff/);
-      assert.throws(()=>project({...legacy,settledOrders:1},scope,observedAt),
-        /Invalid unattested HitPay handoff/);
+      assert.throws(()=>project({...first,providerAuthenticationVerified:true},
+        scope,observedAt),/Invalid unattested HitPay handoff/);
     }finally{rmSync(dir,{recursive:true,force:true});}
   });
 }
