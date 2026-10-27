@@ -135,8 +135,14 @@ export function auditDemandConcurrentExposureCandidates(
     if (t < start || t >= endExclusive) findings.add("EVENT_OUTSIDE_PREREGISTERED_WINDOW");
     if (!event.consentRecorded) findings.add("CONSENT_NOT_RECORDED");
     const group = event.kind === "assignment" ? assignments : exposures;
-    if (group.has(event.visitorDigest)) findings.add("DUPLICATE_VISITOR_" + event.kind.toUpperCase());
-    else {
+    if (group.has(event.visitorDigest)) {
+      findings.add("DUPLICATE_VISITOR_" + event.kind.toUpperCase());
+      // A later opposite-arm event is evidence of a broken sticky assignment
+      // or exposure contract, even if the canonical first event matches the
+      // other kind. Never silently reduce contradictory events to a count.
+      if (group.get(event.visitorDigest) !== event.arm)
+        findings.add("CONFLICTING_VISITOR_" + event.kind.toUpperCase() + "_ARMS");
+    } else {
       group.set(event.visitorDigest, event.arm);
       (event.kind === "assignment" ? assignmentTimes : exposureTimes)
         .set(event.visitorDigest, t);
