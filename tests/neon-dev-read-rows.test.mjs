@@ -41,7 +41,7 @@ function mock({
         can_delete_memberships: false, can_truncate_memberships: false,
         can_reference_memberships: false, can_trigger_memberships: false,
         lineage_tables_readonly: true,
-        can_create_schema_objects: false, can_create_database_objects: false, no_definer_exec: true, no_external_table_access: true,
+        can_create_schema_objects: false, can_create_database_objects: false, no_definer_exec: true, no_external_definer_exec: true, no_external_table_access: true,
         ...safety,
       }] };
       if (sql.includes("set_config")) return { rows: [{ scope: params[0] }] };
@@ -233,4 +233,19 @@ test("restricted LOGIN rejects accidental non-BCI table grants before setting sc
   assert.match(posture.sql, /outside_ns\.nspname <> 'bci_dev'/);
   assert.match(posture.sql, /has_table_privilege\(current_user, outside_table\.oid/);
   assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
+});
+
+
+test("evidence restricted LOGIN rejects external SECURITY DEFINER execute drift before tenant scope", async () => {
+  for (const flag of [false, null]) {
+    const { calls, read } = mock({ safety: { no_external_definer_exec: flag } });
+    await assert.rejects(read(scope), /access denied/i);
+    const posture = calls.find(c => c.sql?.includes("no_external_definer_exec"));
+    assert.ok(posture);
+    assert.match(posture.sql, /external_ns\.nspname <> 'bci_dev'/);
+    assert.match(posture.sql, /external_proc\.prosecdef/);
+    assert.match(posture.sql, /has_function_privilege\(current_user, external_proc\.oid, 'EXECUTE'\)/);
+    assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
+    assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+  }
 });
