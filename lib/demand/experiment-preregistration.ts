@@ -41,6 +41,10 @@ export type DemandExperimentProposal = Readonly<{
   experimentEnd: string;
   preRegisteredAt: string;
   evidenceCandidateIds: readonly string[];
+  /** Historical baseline and later test window alone are NOT a controlled trial. */
+  experimentDesign: "SEQUENTIAL_BASELINE_NOT_CONTROLLED";
+  controlledExperimentVerified: false;
+  causalInferenceEligible: false;
   providerEvidenceAttested: false;
   tenantAuthorizationVerified: false;
   actionApproved: false;
@@ -119,6 +123,11 @@ export function preregisterDemandExperiment(
     baselineStart: input.baselineStart, baselineEnd: input.baselineEnd,
     experimentStart: input.experimentStart, experimentEnd: input.experimentEnd,
     preRegisteredAt: input.preRegisteredAt, evidenceCandidateIds,
+    // A sequential baseline is observational. No concurrent randomized/holdout
+    // group, assignment audit, or counterfactual has been verified here.
+    experimentDesign: "SEQUENTIAL_BASELINE_NOT_CONTROLLED" as const,
+    controlledExperimentVerified: false as const,
+    causalInferenceEligible: false as const,
     providerEvidenceAttested: false as const,
     tenantAuthorizationVerified: false as const,
     actionApproved: false as const, actionExecuted: false as const,
