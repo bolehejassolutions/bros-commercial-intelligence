@@ -202,7 +202,7 @@ test("HTTP refreshes membership on every read and denies after revocation withou
   grants.splice(0);
   await denied(await f.handler(f.request()), 403);
   assert.equal(f.calls.filter(c => c.kind === "evidence" && c.step === "begin").length, 1);
-  assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 2);
+  assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 3); // two for successful read, one for post-revocation rejection
 });
 
 test("HTTP masks provider, membership and evidence failures and never returns partial data", async () => {
