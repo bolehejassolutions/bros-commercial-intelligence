@@ -44,6 +44,37 @@ test("unjoined Meta purchase is never promoted to a paid or settled order",()=>{
   assert.equal(x.causalLift,null);
 });
 
+test("omni-only positive purchase signal requires reconciliation, never a verified order",()=>{
+  const x=propose(scope,{...base,actions:[{action_type:"omni_purchase",value:"1"}]});
+  assert.equal(x.diagnosis,"UNJOINED_PURCHASE_SIGNAL");
+  assert.equal(x.action,"RECONCILE_PURCHASE_TO_HITPAY");
+  assert.equal(x.priority,"P1");
+  assert.equal(x.verifiedPaidOrders,null);
+  assert.equal(x.verifiedSettledOrders,null);
+  assert.equal(x.verifiedCacMinor,null);
+  assert.equal(x.outcomeVerified,false);
+  assert.equal(x.executionAllowed,false);
+  assert.equal(x.candidateId,propose(scope,{...base,
+    actions:[{action_type:"omni_purchase",value:1}]}).candidateId);
+});
+
+test("omni-only zero is not an observed purchase and does not fabricate acquisition",()=>{
+  const x=propose(scope,{...base,inline_link_clicks:undefined,
+    actions:[{action_type:"omni_purchase",value:0}]});
+  assert.equal(x.diagnosis,"FUNNEL_BASELINE_INCOMPLETE");
+  assert.equal(x.verifiedPaidOrders,null);
+  assert.equal(x.verifiedCacMinor,null);
+});
+
+test("omni-vs-Pixel conflict still outranks positive omni reconciliation",()=>{
+  const x=propose(scope,{...base,actions:[
+    {action_type:"omni_purchase",value:2},
+    {action_type:"offsite_conversion.fb_pixel_purchase",value:1}]});
+  assert.equal(x.diagnosis,"AMBIGUOUS_PURCHASE_ACTIONS");
+  assert.equal(x.action,"AUDIT_META_ACTION_ALIASES");
+  assert.equal(x.verifiedPaidOrders,null);
+});
+
 test("conflicting aliases outrank purchase join and require alias reconciliation",()=>{
   const x=propose(scope,{...base,actions:[{action_type:"purchase",value:1},
     {action_type:"omni_purchase",value:2}]});
