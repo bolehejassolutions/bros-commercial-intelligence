@@ -13,11 +13,13 @@ import {deflateSync} from 'node:zlib';
 import {pathToFileURL} from 'node:url';
 
 const pins={
-  content:'d2d8c4dc16a5de9431503101eeefc0ec1d5588ca',
-  demand:'e171c98835ffde3815ccbe2604ec44b284e3cfd2',
-  bci:'6adef2b1ccfc868dd383d4103b37dce2ff31c551',
+  content:'6ec10e66074c226e968673c8cee381142b4fa1b5',
+  demand:'a5538c2f7a3ddc4a7886bb287a351e3008009c34',
+  bci:'f7b4c05283c11a0228864544557fd5f7feee0976',
 };
 const files=[
+  [pins.content,'lib/content/measurement-revision.mjs'],
+  [pins.demand,'lib/demand/concurrent-order-candidate-audit.ts'],
   [pins.content,'lib/content/jpeg-source-qa.mjs'],
   [pins.demand,'lib/demand/concurrent-control-protocol.ts'],
   [pins.demand,'lib/demand/concurrent-exposure-audit.ts'],
@@ -192,6 +194,11 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       const {proposeDemandConcurrentControl}=await load(files[1][1]);
       const {auditDemandConcurrentExposureCandidates}=await load(files[2][1]);
       const {planUntrustedBciAuditAppend}=await load(files[4][1]);
+      // PORTFOLIO_CURRENT_HEAD_CONTENT_DEMAND_TO_SHARED_BCI_20261028_V1
+      // New worker-owned measurement/order contracts are exercised together with
+      // the unchanged shared BCI append planner. All evidence remains untrusted.
+      const {proposeContentMeasurementRevision}=await load('lib/content/measurement-revision.mjs');
+      const {auditDemandOrderExposureCandidates}=await load('lib/demand/concurrent-order-candidate-audit.ts');
       const media=verifyDistinctJpegSources([jpeg()],{expectedWidth:2,expectedHeight:2});
       assert.equal(media.status,'JPEG_SOURCE_STRUCTURE_VERIFIED_ONLY');
       assert.equal(media.images[0].decodedPixelIntegrityVerified,false);
@@ -249,6 +256,69 @@ if(process.env.GITHUB_ACTIONS!=='true'){
         'causalInferenceEligible','executionAllowed'])
         assert.equal(exposure[key],false,key);
       assert.equal(exposure.verifiedCacMinor,null);
+
+      // Same UTC measurement instant with alternate precision must not create
+      // a second CONTENT learning identity or verified BCI evidence.
+      const measurementScope={tenantId,product:'content',instanceId:'sell-internal',
+        contentId:'seller-lesson-001',postId:'buffer-post-123',
+        channelService:'instagram',channelId:'ig123',asOf:'2026-10-27T12:00:00Z'};
+      const metrics=(views,reach)=>({
+        impressions:null,reach,views,reactions:0,comments:null,shares:null,
+        clicks:null,saves:null,follows:null});
+      const measuredBase={schemaVersion:1,...measurementScope,status:'MEASURED',
+        providerAttestedByModule:false,flags:[],format:'image',assetCount:2,
+        nativeUrl:'https://www.instagram.com/p/ABC123/',
+        sentAt:'2026-10-27T10:00:00.000Z'};
+      delete measuredBase.asOf;
+      const prior={...measuredBase,metricsUpdatedAt:'2026-10-27T10:30:00.000Z',
+        measurementAgeSeconds:1800,metrics:metrics(6,4)};
+      const later={...measuredBase,metricsUpdatedAt:'2026-10-27T11:00:00.000Z',
+        measurementAgeSeconds:3600,metrics:metrics(7,5)};
+      const measuredCandidate=proposeContentMeasurementRevision(prior,later,measurementScope);
+      assert.equal(measuredCandidate.status,'CANDIDATE_UNATTESTED');
+      assert.equal(measuredCandidate.learningVerified,false);
+      assert.equal(measuredCandidate.executionAllowed,false);
+      const equivalent={...later,sentAt:'2026-10-27T10:00:00Z',
+        metricsUpdatedAt:'2026-10-27T11:00:00Z'};
+      assert.equal(proposeContentMeasurementRevision(prior,equivalent,measurementScope).candidateId,
+        measuredCandidate.candidateId);
+      assert.equal(proposeContentMeasurementRevision(later,equivalent,measurementScope).status,
+        'NO_NEW_SNAPSHOT');
+      assert.throws(()=>proposeContentMeasurementRevision(later,
+        {...equivalent,metrics:metrics(99,5)},measurementScope),
+        /CONFLICTING_PROVIDER_SNAPSHOT/);
+      const measuredPlan=planUntrustedBciAuditAppend({tenantId,product:'content'},[],
+        chain('content',measuredCandidate.candidateId));
+      assert.equal(measuredPlan.toInsert.length,8);
+      assert.equal(measuredPlan.providerAttested,false);
+      assert.equal(measuredPlan.persisted,false);
+
+      // Coercible order identity/event values cannot create a valid DEMAND
+      // order→exposure candidate or an authenticated BCI learning.
+      const order={eventId:'checkout:a',experimentCandidateId:proposal.candidateId,
+        tenantId,product:'demand',pilotProduct:'bros_sell',visitorDigest:a,
+        orderCandidateKey:'demand:hitpay-candidate:sha256:'+'c'.repeat(64),
+        orderIdentityDigest:'e'.repeat(64),arm:'control',
+        observedAt:'2026-10-29T06:00:00Z'};
+      const orderAudit=auditDemandOrderExposureCandidates(proposal,events,[order]);
+      assert.equal(orderAudit.status,'UNATTESTED_ORDER_EXPOSURE_JOIN');
+      assert.equal(orderAudit.structuralConsistency,true);
+      assert.equal(orderAudit.verifiedPaidOrders,null);
+      assert.equal(orderAudit.hitpaySettlementVerified,false);
+      assert.equal(orderAudit.attributionVerified,false);
+      assert.equal(orderAudit.learningVerified,false);
+      assert.throws(()=>auditDemandOrderExposureCandidates(proposal,events,
+        [{...order,orderIdentityDigest:['e'.repeat(64)]}]),
+        /Invalid BROS DEMAND order exposure candidates/);
+      assert.throws(()=>auditDemandOrderExposureCandidates(proposal,events,
+        [{...order,eventId:['checkout:a']}]),
+        /Invalid BROS DEMAND order exposure candidates/);
+      const orderPlan=planUntrustedBciAuditAppend({tenantId,product:'demand'},[],
+        chain('demand',orderAudit.candidateId));
+      assert.equal(orderPlan.toInsert.length,8);
+      assert.equal(orderPlan.providerAttested,false);
+      assert.equal(orderPlan.persisted,false);
+
       assert.equal(exposure.causalLift,null);
       const content=chain('content','content:jpeg:sha256:'+media.images[0].sha256);
       const demand=chain('demand',exposure.candidateId);
