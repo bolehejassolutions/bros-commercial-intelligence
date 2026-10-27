@@ -62,6 +62,8 @@ export function auditDemandConcurrentExposureCandidates(
   const ids = new Set<string>();
   const assignments = new Map<string, "control" | "treatment">();
   const exposures = new Map<string, "control" | "treatment">();
+  const assignmentTimes = new Map<string, number>();
+  const exposureTimes = new Map<string, number>();
   const findings = new Set<string>();
   const normalized: string[] = [];
   for (const event of events) {
@@ -81,7 +83,11 @@ export function auditDemandConcurrentExposureCandidates(
     if (!event.consentRecorded) findings.add("CONSENT_NOT_RECORDED");
     const group = event.kind === "assignment" ? assignments : exposures;
     if (group.has(event.visitorDigest)) findings.add("DUPLICATE_VISITOR_" + event.kind.toUpperCase());
-    else group.set(event.visitorDigest, event.arm);
+    else {
+      group.set(event.visitorDigest, event.arm);
+      (event.kind === "assignment" ? assignmentTimes : exposureTimes)
+        .set(event.visitorDigest, t);
+    }
     normalized.push(JSON.stringify([event.eventId, event.experimentCandidateId,
       event.tenantId, event.product, event.visitorDigest, event.kind,
       event.arm, event.observedAt, event.consentRecorded]));
@@ -89,6 +95,8 @@ export function auditDemandConcurrentExposureCandidates(
   for (const [visitor, arm] of exposures) {
     if (!assignments.has(visitor)) findings.add("EXPOSURE_WITHOUT_ASSIGNMENT");
     else if (assignments.get(visitor) !== arm) findings.add("CROSS_ARM_CONTAMINATION");
+    if (assignmentTimes.has(visitor) && exposureTimes.get(visitor)! < assignmentTimes.get(visitor)!)
+      findings.add("EXPOSURE_BEFORE_ASSIGNMENT");
   }
   const assignedWithoutExposure = [...assignments.keys()].filter(v => !exposures.has(v)).length;
   if (!assignments.size) findings.add("NO_ASSIGNMENTS_OBSERVED");
