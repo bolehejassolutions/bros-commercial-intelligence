@@ -40,8 +40,11 @@ const recordFields = new Set([
   "sourceRecordKey", "recordedAt", "parentIds", "verification",
 ]);
 const exactFields = (value: object, fields: ReadonlySet<string>): boolean => {
-  const keys = Object.keys(value);
-  return keys.length === fields.size && keys.every(key => fields.has(key));
+  // Object.keys ignores symbol and non-enumerable own keys; object spread
+  // can otherwise reflect unreviewed symbol metadata into the result.
+  const keys = Reflect.ownKeys(value);
+  return keys.length === fields.size &&
+    keys.every(key => typeof key === "string" && fields.has(key));
 };
 const deny = (): never => { throw new Error("Invalid BCI evidence lineage"); };
 const validTime = (x: unknown): x is string =>
