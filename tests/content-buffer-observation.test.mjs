@@ -309,6 +309,24 @@ test("forged trust claims, invalid time and duplicate manifest are rejected",()=
 });
 
 
+// CONTENT_APPROVAL_EQUIVALENT_UTC_EVENT_IDEMPOTENCY_20261028: synthetic-only.
+test("equivalent UTC approval timestamps produce the same nonauthorizing candidate ID",()=>{
+  const base=classifyContentApprovalProvenance(approvalEvent,approvalScope,approvalManifest);
+  const same=classifyContentApprovalProvenance({...approvalEvent,
+    approvedAt:"2026-10-26T10:00:00Z",recordedAt:"2026-10-26T10:01:00Z"},
+    approvalScope,approvalManifest);
+  assert.equal(same.candidateId,base.candidateId);
+  assert.equal(same.approvalVerified,false);
+  assert.equal(same.executionAllowed,false);
+  assert.equal(same.providerAttested,false);
+  const changed=classifyContentApprovalProvenance({...approvalEvent,
+    recordedAt:"2026-10-26T10:01:01Z"},approvalScope,approvalManifest);
+  assert.notEqual(changed.candidateId,base.candidateId);
+  assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,
+    approvedAt:"2026-10-26T10:02:00Z"},approvalScope,approvalManifest),
+    /INVALID_CONTENT_APPROVAL_TIMELINE/);
+});
+
 // CONTENT_BUFFER_LIST_DETAIL_HYDRATION_GATE_20261027_1200: provider-shape regression, not authenticated provider evidence.
 const hydrate=(await import("../lib/content/buffer-observation.mjs")).reconcileBufferListAndDetail;
 const detailedPost={...post,dueAt:"2026-10-22T05:00:00.000Z",
