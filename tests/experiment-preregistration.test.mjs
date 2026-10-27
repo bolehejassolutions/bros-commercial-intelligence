@@ -67,3 +67,23 @@ test("no caller-supplied attestation or approval fields can upgrade proposal sta
   assert.equal(x.verifiedPaidOrders,null);
   assert.equal(x.causalLift,null);
 });
+
+test("MYT midnight preregistration cutoff accepts only before the local experiment starts", () => {
+  // Experiment starts 28 Oct 00:00 MYT = 27 Oct 16:00 UTC.
+  const before = preregister({...valid,preRegisteredAt:"2026-10-27T15:59:59Z"});
+  assert.equal(before.status,"PROPOSED_NOT_AUTHORIZED");
+  assert.equal(before.actionApproved,false);
+  for(const preRegisteredAt of [
+    "2026-10-27T16:00:00Z", // exact start
+    "2026-10-27T16:05:00Z", // UTC still previous day; MYT already started
+    "2026-10-28T00:01:00Z",
+  ]) assert.throws(()=>preregister({...valid,preRegisteredAt}),invalid);
+});
+
+test("MYT year-rollover preregistration cutoff does not use UTC calendar date", () => {
+  const nextYear={...valid,baselineStart:"2026-12-20",baselineEnd:"2026-12-30",
+    experimentStart:"2027-01-01",experimentEnd:"2027-01-07",
+    preRegisteredAt:"2026-12-31T15:59:59Z"};
+  assert.equal(preregister(nextYear).status,"PROPOSED_NOT_AUTHORIZED");
+  assert.throws(()=>preregister({...nextYear,preRegisteredAt:"2026-12-31T16:00:00Z"}),invalid);
+});
