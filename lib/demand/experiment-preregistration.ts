@@ -29,8 +29,17 @@ export type DemandExperimentProposal = Readonly<{
   tenantId: string;
   product: "demand";
   pilotProduct: "bros_sell";
+  metaAccountId: string;
   campaignId: string;
+  /** Immutable proposal details for reviewer replay; caller-supplied, NOT attested. */
+  hypothesis: string;
+  action: DemandExperimentProposalInput["action"];
   primaryKpi: DemandExperimentProposalInput["primaryKpi"];
+  baselineStart: string;
+  baselineEnd: string;
+  experimentStart: string;
+  experimentEnd: string;
+  preRegisteredAt: string;
   evidenceCandidateIds: readonly string[];
   providerEvidenceAttested: false;
   tenantAuthorizationVerified: false;
@@ -103,8 +112,13 @@ export function preregisterDemandExperiment(
   return Object.freeze({
     candidateId, status: "PROPOSED_NOT_AUTHORIZED" as const,
     tenantId: input.tenantId.toLowerCase(), product: "demand" as const,
-    pilotProduct: "bros_sell" as const, campaignId: input.campaignId,
-    primaryKpi: input.primaryKpi, evidenceCandidateIds,
+    pilotProduct: "bros_sell" as const,
+    metaAccountId: input.metaAccountId, campaignId: input.campaignId,
+    hypothesis: input.hypothesis.trim(), action: input.action,
+    primaryKpi: input.primaryKpi,
+    baselineStart: input.baselineStart, baselineEnd: input.baselineEnd,
+    experimentStart: input.experimentStart, experimentEnd: input.experimentEnd,
+    preRegisteredAt: input.preRegisteredAt, evidenceCandidateIds,
     providerEvidenceAttested: false as const,
     tenantAuthorizationVerified: false as const,
     actionApproved: false as const, actionExecuted: false as const,
