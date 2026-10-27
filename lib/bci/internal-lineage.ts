@@ -49,20 +49,21 @@ export function validateBciLineage(
   scope: BciLineageScope,
   records: readonly BciLineageRecord[],
 ): BciLineageResult {
-  if (!scope || !UUID.test(scope.tenantId) ||
+  if (!scope || typeof scope.tenantId !== "string" || !UUID.test(scope.tenantId) ||
       (scope.product !== "content" && scope.product !== "demand") ||
       !Array.isArray(records) || records.length > 1000) deny();
   const byId = new Map<string, BciLineageRecord>();
   const bySource = new Map<string, string>();
   for (const record of records) {
-    if (!record || !UUID.test(record.id) || record.tenantId !== scope.tenantId ||
+    if (!record || typeof record.id !== "string" || !UUID.test(record.id) ||
+        typeof record.tenantId !== "string" || record.tenantId !== scope.tenantId ||
         record.product !== scope.product || !stages.includes(record.stage) ||
         !validLabel(record.sourceSystem) || !validLabel(record.sourceRecordKey) ||
         !validTime(record.recordedAt) || !Array.isArray(record.parentIds) ||
         record.parentIds.length > 100 ||
         !["unverified", "provider_reported", "verified"].includes(record.verification) ||
         (record.stage === "evidence" ? record.parentIds.length !== 0 : record.parentIds.length === 0) ||
-        record.parentIds.some(p => !UUID.test(p)) ||
+        record.parentIds.some(p => typeof p !== "string" || !UUID.test(p)) ||
         new Set(record.parentIds).size !== record.parentIds.length) deny();
     const fingerprint = JSON.stringify([
       record.tenantId, record.product, record.stage, record.sourceSystem,
