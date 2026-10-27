@@ -331,3 +331,36 @@ test("matching list/detail scheduled status remains NOT_SENT",()=>{
   assert.equal(r.status,"NOT_SENT");
   assert.equal(r.executionAllowed,false);
 });
+
+
+// CONTENT_MEASURED_NEXT_STEP_PROVENANCE_GUARD_20261027_1350
+// Synthetic negative regressions: a caller cannot label malformed or flagged
+// evidence MEASURED and obtain a comparable-post recommendation.
+test("next-step refuses forged MEASURED status, flags, native link, metrics and timeline",()=>{
+  const good=make(),second=make({id:"post456"});
+  const bad=[
+    {flags:["AI_DISCLOSURE_MISMATCH"]},
+    {providerAttestedByModule:true},
+    {nativeUrl:"https://www.instagram.com/accounts/login/"},
+    {measurementAgeSeconds:0},
+    {metricsUpdatedAt:"2026-10-21T00:00:00.000Z"},
+    {metrics:{...second.metrics,views:-1}},
+    {metrics:Object.fromEntries(Object.keys(second.metrics).map(k=>[k,null]))}
+  ];
+  for(const patch of bad)
+    assert.throws(()=>next([good,{...second,...patch}]),
+      /INVALID_MEASURED_NEXT_STEP_EVIDENCE/,JSON.stringify(patch));
+});
+test("valid measured snapshots still yield only nonexecuting advisory comparison",()=>{
+  const a=make(),b=make({id:"post456"});
+  const r=next([a,b]);
+  assert.equal(r.reason,"SAME_CHANNEL_CANDIDATES");
+  assert.equal(r.evidenceStatus,"UNATTESTED_PROVIDER_PROJECTION");
+  assert.equal(r.executionAllowed,false);
+  assert.equal(r.causalLiftProven,false);
+  assert.equal(r.evidence.length,2);
+});
+test("next-step requires concrete tenant, instance and post identities",()=>{
+  assert.throws(()=>next([{...make(),tenantId:undefined}]),/INVALID_NEXT_STEP_SCOPE/);
+  assert.throws(()=>next([{...make(),postId:undefined}]),/INVALID_NEXT_STEP_POST_ID/);
+});
