@@ -34,9 +34,10 @@ export type DemandHitPayReconciliation = Readonly<{
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const fail = (): never => { throw new Error("Invalid BROS DEMAND HitPay order-charge evidence"); };
 function majorToMinor(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 ||
+  if (typeof value !== "number") return fail();
+  if (!Number.isFinite(value) || value < 0 ||
       !Number.isSafeInteger(Math.round(value * 100)) ||
-      Math.abs(value * 100 - Math.round(value * 100)) > 0.000001) fail();
+      Math.abs(value * 100 - Math.round(value * 100)) > 0.000001) return fail();
   return Math.round(value * 100);
 }
 function minor(value: unknown): value is number {
