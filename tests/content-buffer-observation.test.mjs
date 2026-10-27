@@ -451,3 +451,33 @@ test("newer list metric revision cannot be silently replaced by stale detail",()
   const olderList={...listSummary,metricsUpdatedAt:earlier};
   assert.equal(hydrate(olderList,current,scope).status,"MEASURED");
 });
+
+
+// CONTENT_BUFFER_SAME_REVISION_METRIC_CONSISTENCY_20261027_V1
+// Synthetic list/detail disagreement is not a trustworthy measured observation.
+test("same-revision list/detail metric disagreement fails closed without inventing zero",()=>{
+  const current={...listSummary,metricsUpdatedAt:detailedPost.metricsUpdatedAt,
+    metrics:[{type:"views",unit:"count",value:7}]};
+  assert.equal(hydrate(current,detailedPost,scope).status,"MEASURED",
+    "a partial matching list revision is acceptable");
+  assert.throws(()=>hydrate({...current,metrics:[{type:"views",unit:"count",value:0}]},
+    detailedPost,scope),/BUFFER_LIST_DETAIL_METRIC_CONFLICT/,
+    "zero and seven are contradictory at the same provider revision");
+  assert.throws(()=>hydrate({...current,metrics:[{type:"shares",unit:"count",value:0}]},
+    detailedPost,scope),/BUFFER_LIST_DETAIL_METRIC_CONFLICT/,
+    "a missing detail metric is unknown, not observed zero");
+  assert.throws(()=>hydrate({...current,metrics:[
+    {type:"views",unit:"count",value:7},{type:"views",unit:"count",value:7}]},
+    detailedPost,scope),/BUFFER_LIST_METRIC_CONFLICT/);
+  assert.throws(()=>hydrate({...current,metrics:[{type:"views",unit:"count",value:-1}]},
+    detailedPost,scope),/BUFFER_LIST_METRIC_CONFLICT/);
+  assert.throws(()=>hydrate(current,{...detailedPost,metrics:[
+    {type:"views",unit:"count",value:7},{type:"views",unit:"count",value:7}]},scope),
+    /BUFFER_DETAIL_METRIC_CONFLICT/);
+  const older={...current,metricsUpdatedAt:"2026-10-21T00:00:00.000Z",
+    metrics:[{type:"views",unit:"count",value:0}]};
+  assert.equal(hydrate(older,detailedPost,scope).observation.metrics.views,7,
+    "an older list snapshot cannot override newer detail metrics");
+  assert.equal(hydrate({...current,metrics:undefined},detailedPost,scope).status,"MEASURED",
+    "an omitted list metrics array is unknown, not conflicting");
+});
