@@ -49,6 +49,14 @@ const fail = (): never => { throw new Error("Invalid BROS DEMAND UTM readback");
 const validDate = (value: string): boolean =>
   DATE.test(value) && !Number.isNaN(Date.parse(value + "T00:00:00Z")) &&
   new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
+const validUtc = (value: unknown): value is string => {
+  if (typeof value !== "string" || !ISO.test(value)) return false;
+  const parsed = Date.parse(value);
+  // Date.parse may normalize impossible dates (Feb 30) or 24:00 to another
+  // day. Never accept such timestamps as a trustworthy report chronology.
+  return Number.isFinite(parsed) &&
+    new Date(parsed).toISOString().slice(0, 19) === value.slice(0, 19);
+};
 const count = (n: number | null): boolean =>
   n === null || (typeof n === "number" && Number.isSafeInteger(n) && n >= 0);
 
@@ -92,9 +100,11 @@ export function assessDemandUtmReadback(
     causalLift: null,
   });
   if (row === null) return result("NO_READBACK", null, null, null);
-  if (!row || !ID.test(row.reportId) || !/^properties\/[1-9]\d{0,19}$/.test(row.propertyId) ||
-      typeof row.retrievedAt !== "string" || !ISO.test(row.retrievedAt) ||
-      !Number.isFinite(Date.parse(row.retrievedAt)) ||
+  if (!row || typeof row.reportId !== "string" || !ID.test(row.reportId) ||
+      typeof row.propertyId !== "string" ||
+      !/^properties\/[1-9]\d{0,19}$/.test(row.propertyId) ||
+      !validUtc(row.retrievedAt) ||
+      typeof row.periodStart !== "string" || typeof row.periodEnd !== "string" ||
       !validDate(row.periodStart) || !validDate(row.periodEnd) ||
       row.periodStart > row.periodEnd ||
       // GA4 reports use the property's MYT calendar, not the UTC date. At 00:05 MYT
