@@ -19,6 +19,8 @@ export type HitPayChargeDetailObservation = Readonly<{
 }>;
 export type DemandHitPayReconciliation = Readonly<{
   candidateKey: string;
+  /** Stable pseudonymous order identity across fee/refund/status snapshots; not attestation. */
+  orderIdentityDigest: string;
   status: "PROVIDER_REPORTED_PAID" | "REFUND_OBSERVED" | "NOT_PAID";
   orderId: string; chargeId: string;
   grossMinor: number; feeMinor: number; netMinor: number; refundedMinor: number;
@@ -77,6 +79,9 @@ export function reconcileDemandHitPayOrderCharge(
   const status = refunded ? "REFUND_OBSERVED" as const :
     paid ? "PROVIDER_REPORTED_PAID" as const : "NOT_PAID" as const;
   // Retrieval time/PII excluded. This candidate is NOT a BCI evidence ID.
+  const orderIdentityDigest = createHash("sha256")
+    .update("bros-demand:hitpay-order-identity:v1:" + order.id.toLowerCase())
+    .digest("hex");
   const candidateKey = "demand:hitpay-candidate:sha256:" + createHash("sha256")
     .update(JSON.stringify([order.id.toLowerCase(), charge.id.toLowerCase(),
       order.order_display_number, order.status, order.payment_status,
@@ -84,7 +89,7 @@ export function reconcileDemandHitPayOrderCharge(
       netMinor, refundedMinor]))
     .digest("hex");
   return Object.freeze({
-    candidateKey, status, orderId: order.id, chargeId: charge.id,
+    candidateKey, orderIdentityDigest, status, orderId: order.id, chargeId: charge.id,
     grossMinor, feeMinor, netMinor, refundedMinor,
     orderPaymentStatus: order.payment_status,
     orderFulfilmentStatus: order.fulfilment_status,
