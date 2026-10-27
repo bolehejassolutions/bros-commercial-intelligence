@@ -68,3 +68,26 @@ test('paid status alone is not a completed order and cannot produce a verified s
   assert.equal(x.verifiedBrosSellOrders,null);
   assert.equal(x.acquisitionAttributionVerified,false);
 });
+
+test('coercible provider IDs cannot masquerade as order/charge identities',()=>{
+  const baseline=reconcile(order,charge,detail);
+  // RegExp.test(array) previously accepted a single UUID string inside an
+  // array, then order.id.toLowerCase() raised an unmasked TypeError.
+  assert.throws(()=>reconcile({...order,id:[order.id]},charge,{
+    ...detail,remark:'Order #'+order.id}),invalid);
+  const arrayChargeId=[charge.id];
+  assert.throws(()=>reconcile(order,{...charge,id:arrayChargeId},{
+    ...detail,id:arrayChargeId}),invalid);
+  assert.throws(()=>reconcile(order,charge,{...detail,id:[charge.id]}),invalid);
+  // Never invoke a hostile object's custom toString during identity checks.
+  const hostile={toString(){throw new Error('provider-object-executed');}};
+  for(const [o,c,d] of [
+    [{...order,id:hostile},charge,detail],
+    [order,{...charge,id:hostile},detail],
+    [order,charge,{...detail,id:hostile}],
+  ]) assert.throws(()=>reconcile(o,c,d),invalid);
+  assert.equal(reconcile({...order},{...charge},{...detail}).candidateKey,baseline.candidateKey);
+  assert.equal(baseline.verifiedBrosSellOrders,null);
+  assert.equal(baseline.bankSettlementVerified,false);
+  assert.equal(baseline.acquisitionAttributionVerified,false);
+});
