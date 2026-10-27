@@ -55,7 +55,12 @@ export function auditDemandOrderExposureCandidates(
   } catch { return fail(); } })();
 
   const exposures = new Map<string, { arm: "control" | "treatment"; time: number; consent: boolean }>();
-  for (const event of exposureEvents) {
+  // Exposure audit has already validated these events. Use the same canonical
+  // earliest-event selection so provider page order cannot change an order join.
+  const orderedExposureEvents = [...exposureEvents].sort((a, b) =>
+    Date.parse(a.observedAt) - Date.parse(b.observedAt) ||
+    (a.eventId < b.eventId ? -1 : a.eventId > b.eventId ? 1 : 0));
+  for (const event of orderedExposureEvents) {
     if (event.kind === "exposure" && !exposures.has(event.visitorDigest)) {
       exposures.set(event.visitorDigest, {
         arm: event.arm, time: Date.parse(event.observedAt), consent: event.consentRecorded,
