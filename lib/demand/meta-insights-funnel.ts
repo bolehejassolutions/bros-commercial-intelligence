@@ -101,8 +101,11 @@ function money(v: unknown): number | null {
 export function normalizeMetaCampaignFunnel(
   scope: MetaFunnelScope, row: MetaCampaignInsight,
 ): MetaFunnelObservation {
-  if (!scope || !row || !UUID.test(scope.tenantId) || scope.product !== "demand" ||
-      !/^act_\d+$/.test(scope.accountId) || !/^\d+$/.test(scope.campaignId) ||
+  if (!scope || !row || typeof scope.tenantId !== "string" ||
+      !UUID.test(scope.tenantId) || scope.product !== "demand" ||
+      typeof scope.accountId !== "string" || !/^act_\d+$/.test(scope.accountId) ||
+      typeof scope.campaignId !== "string" || !/^\d+$/.test(scope.campaignId) ||
+      typeof row.campaign_id !== "string" ||
       scope.currency !== "MYR" || !validDate(scope.since) || !validDate(scope.until) ||
       scope.since > scope.until || !validUtc(scope.collectedAt) ||
       row.campaign_id !== scope.campaignId || row.date_start !== scope.since ||
