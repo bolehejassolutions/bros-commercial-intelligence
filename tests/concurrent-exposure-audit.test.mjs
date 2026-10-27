@@ -1,11 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { auditDemandConcurrentExposureCandidates as audit } from '../lib/demand/concurrent-exposure-audit.ts';
-const id = 'demand:concurrent-control:sha256:' + 'a'.repeat(64);
+import { proposeDemandConcurrentControl as propose } from '../lib/demand/concurrent-control-protocol.ts';
 const tenantId = '11111111-1111-4111-8111-111111111111';
-const proposal = { candidateId:id,tenantId,product:'demand',
-  status:'PROPOSED_NOT_AUTHORIZED',experimentDesign:'CONCURRENT_RANDOMIZED_HOLDOUT_PLAN_UNVERIFIED',
-  plannedStart:'2026-10-29',plannedEnd:'2026-11-04' };
+// Synthetic but replayable protocol, not an authenticated registration or real exposure.
+const proposal = propose({
+  tenantId, product:'demand', pilotProduct:'bros_sell',
+  metaAccountId:'act_1997776120879476', campaignId:'120250828102660697',
+  hypothesis:'A clearer offer explanation could improve qualified purchase decisions.',
+  action:'LANDING_PAGE_TEST',
+  treatmentChange:'Explain the offer scope and one-off price more clearly.',
+  primaryKpi:'verified_paid_orders', plannedStart:'2026-10-29', plannedEnd:'2026-11-04',
+  preRegisteredAt:'2026-10-27T07:00:00Z',
+  evidenceCandidateIds:['meta_ads:sha256:'+'a'.repeat(64)],
+  assignmentUnit:'CONSENTED_LANDING_VISITOR',
+  assignmentMethod:'STICKY_RANDOM_50_50_PROPOSED',
+  controlExperience:'UNCHANGED_EXISTING_LANDING_PAGE',
+  analysisPolicy:'INTENTION_TO_TREAT', maxIncrementalSpendMinor:0,
+});
+const id = proposal.candidateId;
 const a = 'a'.repeat(64), b = 'b'.repeat(64);
 const ev = (eventId,visitorDigest,kind,arm,patch={})=>({eventId,experimentCandidateId:id,
   tenantId,product:'demand',visitorDigest,kind,arm,observedAt:'2026-10-29T04:00:00Z',
@@ -60,4 +73,20 @@ test('rejects forged scope, duplicate event ID, raw visitor IDs and malformed ti
     assert.throws(()=>audit(proposal,[ev('assign:a',a,'assignment','control',patch)]),invalid);
   assert.throws(()=>audit(proposal,[valid[0],valid[0]]),invalid);
   assert.throws(()=>audit({...proposal,product:'content'},valid),invalid);
+});
+
+
+test('rejects plausible-looking forged protocol IDs, scope, design and caller truthy claims',()=>{
+  const invalid=/Invalid BROS DEMAND concurrent exposure candidates/;
+  for(const patch of [
+    {candidateId:'demand:concurrent-control:sha256:'+'f'.repeat(64)},
+    {hypothesis:proposal.hypothesis+' Tampered.'},
+    {treatmentChange:proposal.treatmentChange+' Changed.'},
+    {plannedEnd:'2026-11-05'},
+    {preRegisteredAt:'2026-10-29T00:00:00Z'},
+    {allocation:{controlPercent:100,treatmentPercent:0}},
+    {actionApproved:true},{actionExecuted:true},{outcomeVerified:true},
+    {learningVerified:true},{tenantAuthorizationVerified:true},
+    {verifiedPaidOrders:1},{causalLift:0.5},
+  ]) assert.throws(()=>audit({...proposal,...patch},valid),invalid);
 });
