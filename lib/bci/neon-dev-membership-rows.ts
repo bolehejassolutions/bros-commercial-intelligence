@@ -72,6 +72,7 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'TRUNCATE') AS can_truncate_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'REFERENCES') AS can_reference_memberships,
                 has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'TRIGGER') AS can_trigger_memberships,
+                has_table_privilege(current_user, 'bci_dev.tenant_memberships', 'MAINTAIN') AS can_maintain_memberships,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'SELECT') AS can_read_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'INSERT') AS can_insert_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'UPDATE') AS can_update_evidence,
@@ -79,6 +80,7 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
                 has_table_privilege(current_user, 'bci_dev.evidence', 'TRUNCATE') AS can_truncate_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'REFERENCES') AS can_reference_evidence,
                 has_table_privilege(current_user, 'bci_dev.evidence', 'TRIGGER') AS can_trigger_evidence,
+                has_table_privilege(current_user, 'bci_dev.evidence', 'MAINTAIN') AS can_maintain_evidence,
                 has_schema_privilege(current_user, 'bci_dev', 'CREATE') AS can_create_schema_objects,
                 has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_database_objects,
                 (SELECT NOT EXISTS (
@@ -110,11 +112,11 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
                       AND LEFT(outside_ns.nspname, 3) <> 'pg_'
                       AND outside_table.relkind IN ('r','p','v','m','f')
                       AND has_table_privilege(current_user, outside_table.oid,
-                        'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+                        'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
                 )) AS no_external_table_access,
                 (SELECT COUNT(*) = 3 AND bool_and(
                     NOT has_table_privilege(current_user, extra.oid,
-                      'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'))
+                      'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN'))
                  FROM pg_class extra JOIN pg_namespace extra_ns ON extra_ns.oid = extra.relnamespace
                  WHERE extra_ns.nspname = 'bci_dev'
                    AND extra.relname IN ('cases', 'case_evidence', 'proposals')
@@ -131,6 +133,7 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
           posture.rows[0].can_truncate_memberships !== false ||
           posture.rows[0].can_reference_memberships !== false ||
           posture.rows[0].can_trigger_memberships !== false ||
+          posture.rows[0].can_maintain_memberships !== false ||
           posture.rows[0].can_read_evidence !== false ||
           posture.rows[0].can_insert_evidence !== false ||
           posture.rows[0].can_update_evidence !== false ||
@@ -138,6 +141,7 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
           posture.rows[0].can_truncate_evidence !== false ||
           posture.rows[0].can_reference_evidence !== false ||
           posture.rows[0].can_trigger_evidence !== false ||
+          posture.rows[0].can_maintain_evidence !== false ||
           posture.rows[0].can_create_schema_objects !== false ||
           posture.rows[0].can_create_database_objects !== false ||
           posture.rows[0].no_definer_exec !== true ||
