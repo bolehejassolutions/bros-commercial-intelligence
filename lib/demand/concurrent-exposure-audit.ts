@@ -107,6 +107,10 @@ export function auditDemandConcurrentExposureCandidates(
   const exposureTimes = new Map<string, number>();
   const findings = new Set<string>();
   const normalized: string[] = [];
+  const validatedEvents: DemandExposureCandidate[] = [];
+  // Validate the complete batch before selecting the canonical first event
+  // for each visitor. Otherwise the same candidateId could yield different
+  // findings/counts merely because provider pages arrived in a new order.
   for (const event of events) {
     if (!event || typeof event.eventId !== "string" || !EVENT_ID.test(event.eventId) ||
         event.experimentCandidateId !== proposal.candidateId ||
@@ -119,6 +123,14 @@ export function auditDemandConcurrentExposureCandidates(
         new Date(Date.parse(event.observedAt)).toISOString().slice(0, 19) !== event.observedAt.slice(0, 19) ||
         typeof event.consentRecorded !== "boolean" || ids.has(event.eventId)) fail();
     ids.add(event.eventId);
+    validatedEvents.push(event);
+    normalized.push(JSON.stringify([event.eventId, event.experimentCandidateId,
+      event.tenantId, event.product, event.visitorDigest, event.kind,
+      event.arm, event.observedAt, event.consentRecorded]));
+  }
+  validatedEvents.sort((a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt) ||
+    (a.eventId < b.eventId ? -1 : a.eventId > b.eventId ? 1 : 0));
+  for (const event of validatedEvents) {
     const t = Date.parse(event.observedAt);
     if (t < start || t >= endExclusive) findings.add("EVENT_OUTSIDE_PREREGISTERED_WINDOW");
     if (!event.consentRecorded) findings.add("CONSENT_NOT_RECORDED");
@@ -129,9 +141,6 @@ export function auditDemandConcurrentExposureCandidates(
       (event.kind === "assignment" ? assignmentTimes : exposureTimes)
         .set(event.visitorDigest, t);
     }
-    normalized.push(JSON.stringify([event.eventId, event.experimentCandidateId,
-      event.tenantId, event.product, event.visitorDigest, event.kind,
-      event.arm, event.observedAt, event.consentRecorded]));
   }
   for (const [visitor, arm] of exposures) {
     if (!assignments.has(visitor)) findings.add("EXPOSURE_WITHOUT_ASSIGNMENT");
