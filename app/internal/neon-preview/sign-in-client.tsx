@@ -27,6 +27,10 @@ export default function NeonPreviewSignIn() {
   const [busy, setBusy] = useState(true);
   const [cooldown, setCooldown] = useState(0);
   const [message, setMessage] = useState("Checking your development session…");
+  // Keep independent, sanitized test summaries visible until sign-out or rerun.
+  // Do not persist tokens, response bodies, identity claims, or check results.
+  const [httpCheckResult, setHttpCheckResult] = useState<string | null>(null);
+  const [tenantCheckResult, setTenantCheckResult] = useState<string | null>(null);
   const [product, setProduct] = useState<"content" | "demand">("content");
 
   useEffect(() => {
@@ -131,28 +135,34 @@ export default function NeonPreviewSignIn() {
   async function checkNegativeAccess() {
     if (busy) return;
     setBusy(true);
+    setHttpCheckResult(null); // Never retain an earlier PASS when a rerun starts.
     setMessage("Running read-only HTTP rejection probes…");
     try {
       if (!await hasVerifiedOperatorSession()) throw new Error();
       const token = await requestNeonPreviewToken(auth());
       const report = await runNeonPreviewNegativeChecks(token);
-      setMessage(`Authenticated CONTENT/DEMAND controls: ${report.authenticatedControlsPassed}/${report.authenticatedControlsTotal} passed; Preview HTTP rejection probes: ${report.passed}/${report.total} passed. These checks do not prove cross-tenant database isolation, membership revocation, or independent hosted verification.`);
+      setHttpCheckResult(`Authenticated CONTENT/DEMAND controls: ${report.authenticatedControlsPassed}/${report.authenticatedControlsTotal} passed; Preview HTTP rejection probes: ${report.passed}/${report.total} passed. These checks do not prove cross-tenant database isolation, membership revocation, or independent hosted verification.`);
+      setMessage("HTTP rejection checks completed; see the separate result below.");
     } catch {
-      setMessage("Preview HTTP rejection probes could not complete. No security gate has been certified.");
+      setHttpCheckResult("Preview HTTP rejection probes could not complete. No security gate has been certified.");
+      setMessage("HTTP rejection checks failed; see the separate result below.");
     } finally { setBusy(false); }
   }
 
   async function checkEmptyTenantIsolation() {
     if (busy) return;
     setBusy(true);
+    setTenantCheckResult(null); // Never retain an earlier PASS when a rerun starts.
     setMessage("Checking the empty internal tenant against populated synthetic tenant data…");
     try {
       if (!await hasVerifiedOperatorSession()) throw new Error();
       const token = await requestNeonPreviewToken(auth());
       const report = await runNeonPreviewEmptyTenantIsolationSmoke(token);
-      setMessage(`Empty-tenant isolation smoke: ${report.passed}/${report.total} passed. This check is valid only while the internal operator tenant has zero evidence; it does not certify revocation, admin impersonation, or full cross-tenant security.`);
+      setTenantCheckResult(`Empty-tenant isolation smoke: ${report.passed}/${report.total} passed. This check is valid only while the internal operator tenant has zero evidence; it does not certify revocation, admin impersonation, or full cross-tenant security.`);
+      setMessage("Empty-tenant isolation check completed; see the separate result below.");
     } catch {
-      setMessage("Empty-tenant isolation smoke could not complete. No isolation gate has been certified.");
+      setTenantCheckResult("Empty-tenant isolation smoke could not complete. No isolation gate has been certified.");
+      setMessage("Empty-tenant isolation check failed; see the separate result below.");
     } finally { setBusy(false); }
   }
 
@@ -164,6 +174,8 @@ export default function NeonPreviewSignIn() {
       if (error) throw new Error();
       setStep("start");
       setCode("");
+      setHttpCheckResult(null);
+      setTenantCheckResult(null);
       setMessage("You have signed out of this development session.");
     } catch { setMessage("Sign-out could not be confirmed. Please try again."); }
     finally { setBusy(false); }
@@ -180,6 +192,8 @@ export default function NeonPreviewSignIn() {
           <input type="email" value={operatorEmail} readOnly autoComplete="email" />
         </label>
         <p role="status" aria-live="polite">{message}</p>
+        {step === "ready" && httpCheckResult !== null ? <p role="status" aria-label="HTTP rejection check result">{httpCheckResult}</p> : null}
+        {step === "ready" && tenantCheckResult !== null ? <p role="status" aria-label="Empty-tenant isolation result">{tenantCheckResult}</p> : null}
         {step === "start" ? <div className="auth-form"><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("verify")}>
           {cooldown > 0 ? `Wait ${cooldown}s` : "Verify email (first app login)"}
         </button><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>Send sign-in code (already verified)</button></div> : null}
