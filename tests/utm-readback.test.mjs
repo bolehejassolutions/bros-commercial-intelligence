@@ -176,3 +176,33 @@ test('GA4 readback rejects coercible identifiers and normalized impossible UTC t
   assert.equal(fractional.settledOrders,null);
   assert.equal(fractional.verifiedCacMinor,null);
 });
+
+test('forged UTM proposal verification claims fail before GA4 readback',()=>{
+  // A valid-looking proposal ID and tagged URL do not attest consent,
+  // provider capture, conversion, settlement or authorization.
+  const reordered=new URL(proposal.taggedUrl);
+  reordered.searchParams.sort();
+  const {providerOutcomeVerified: _omitted, ...missingField}=proposal;
+  const attempts=[
+    {...proposal,utmCaptureVerified:true},
+    {...proposal,checkoutAttributionVerified:true},
+    {...proposal,providerOutcomeVerified:true},
+    {...proposal,qualifiedLeads:1},
+    {...proposal,settledOrders:1},
+    {...proposal,verifiedCacMinor:0},
+    {...proposal,causalLift:0.25},
+    {...proposal,ownerApproved:true},
+    {...proposal,status:'VERIFIED'},
+    {...proposal,taggedUrl:reordered.toString()},
+    {...proposal,unexpectedProviderCredential:'must-not-pass'},
+    missingField,
+  ];
+  for(const forged of attempts){
+    assert.throws(()=>assessDemandUtmReadback(forged,row),invalid);
+    assert.throws(()=>assessDemandUtmReadback(forged,null),invalid);
+  }
+  const legitimate=assessDemandUtmReadback(proposal,row);
+  assert.equal(legitimate.status,'MATCHED_UNATTESTED');
+  assert.equal(legitimate.settledOrders,null);
+  assert.equal(legitimate.providerAuthenticationVerified,false);
+});
