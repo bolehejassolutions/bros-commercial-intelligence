@@ -32,6 +32,36 @@ test("preregistration is explicitly non-executable, with no verified business ou
   assert.equal(Object.isFrozen(x.evidenceCandidateIds), true);
   assert.match(x.candidateId, /^demand:experiment:sha256:[a-f0-9]{64}$/);
 });
+test("immutable proposal preserves full preregistered experiment protocol for independent replay", () => {
+  const x = preregister({...valid,hypothesis:"  "+valid.hypothesis+"  "});
+  assert.equal(x.metaAccountId,valid.metaAccountId);
+  assert.equal(x.campaignId,valid.campaignId);
+  assert.equal(x.hypothesis,valid.hypothesis);
+  assert.equal(x.action,valid.action);
+  assert.equal(x.primaryKpi,valid.primaryKpi);
+  for (const field of ["baselineStart","baselineEnd","experimentStart","experimentEnd",
+    "preRegisteredAt"]) assert.equal(x[field],valid[field],field);
+  // A reviewer can replay the stable candidate from the returned object alone.
+  const replay = preregister({
+    tenantId:x.tenantId,product:x.product,pilotProduct:x.pilotProduct,
+    metaAccountId:x.metaAccountId,campaignId:x.campaignId,
+    hypothesis:x.hypothesis,action:x.action,primaryKpi:x.primaryKpi,
+    baselineStart:x.baselineStart,baselineEnd:x.baselineEnd,
+    experimentStart:x.experimentStart,experimentEnd:x.experimentEnd,
+    preRegisteredAt:x.preRegisteredAt,evidenceCandidateIds:x.evidenceCandidateIds,
+    maxIncrementalSpendMinor:x.maxIncrementalSpendMinor,
+  });
+  assert.equal(replay.candidateId,x.candidateId);
+  assert.equal(x.actionApproved,false);
+  assert.equal(x.outcomeVerified,false);
+  assert.equal(x.learningVerified,false);
+  assert.equal(x.executionAllowed,false);
+  assert.equal(Object.isFrozen(x),true);
+  assert.notEqual(x.candidateId,preregister({...valid,action:"CREATIVE_TEST"}).candidateId);
+  assert.notEqual(x.candidateId,preregister({...valid,metaAccountId:"act_1997776120879477"}).candidateId);
+  assert.notEqual(x.candidateId,preregister({...valid,baselineStart:"2026-10-02"}).candidateId);
+});
+
 test("stable identity is independent of evidence order, but changes on hypothesis, window and evidence", () => {
   const other = "ga4:sha256:"+"b".repeat(64);
   const a = preregister({...valid, evidenceCandidateIds:[other,...valid.evidenceCandidateIds]});
