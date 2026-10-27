@@ -12,12 +12,17 @@ export type DemandOrderCandidate = Readonly<{
   eventId: string; experimentCandidateId: string; tenantId: string;
   product: "demand"; pilotProduct: "bros_sell";
   visitorDigest: string; orderCandidateKey: string;
+  /** Optional stable 64-hex digest of one order across revised HitPay snapshots.
+   * Never supply raw order IDs. Caller identity is untrusted. */
+  orderIdentityDigest?: string;
   arm: "control" | "treatment"; observedAt: string;
 }>;
 export type DemandOrderCandidateAudit = Readonly<{
   candidateId: string; experimentCandidateId: string; exposureAuditCandidateId: string;
   status: "UNATTESTED_ORDER_EXPOSURE_JOIN";
   controlOrderCandidates: number; treatmentOrderCandidates: number;
+  orderIdentityCoverageComplete: boolean;
+  uniqueOrderIdentityCandidates: number | null; // never verified paid orders
   findings: readonly string[]; structuralConsistency: boolean;
   providerAuthenticationVerified: false; tenantMembershipVerified: false;
   randomizedAssignmentVerified: false; consentIndependentlyVerified: false;
@@ -58,6 +63,8 @@ export function auditDemandOrderExposureCandidates(
     }
   }
   const seenEventIds = new Set<string>(), seenOrderKeys = new Set<string>();
+  const seenOrderIdentities = new Map<string, { key: string; visitor: string; arm: string }>();
+  let identityCoverageComplete = orderCandidates.length > 0;
   const findings = new Set<string>(), normalized: string[] = [];
   let control = 0, treatment = 0;
   const start = Date.parse(proposal.plannedStart + "T00:00:00+08:00");
@@ -68,6 +75,8 @@ export function auditDemandOrderExposureCandidates(
         candidate.tenantId !== proposal.tenantId || candidate.product !== "demand" ||
         candidate.pilotProduct !== "bros_sell" ||
         !DIGEST.test(candidate.visitorDigest) || !ORDER_KEY.test(candidate.orderCandidateKey) ||
+        (candidate.orderIdentityDigest !== undefined &&
+          !DIGEST.test(candidate.orderIdentityDigest)) ||
         (candidate.arm !== "control" && candidate.arm !== "treatment") ||
         !UTC.test(candidate.observedAt) ||
         !Number.isFinite(Date.parse(candidate.observedAt)) ||
@@ -76,6 +85,21 @@ export function auditDemandOrderExposureCandidates(
     seenEventIds.add(candidate.eventId);
     if (seenOrderKeys.has(candidate.orderCandidateKey)) findings.add("DUPLICATE_ORDER_CANDIDATE");
     seenOrderKeys.add(candidate.orderCandidateKey);
+    if (candidate.orderIdentityDigest === undefined) identityCoverageComplete = false;
+    else {
+      const previous = seenOrderIdentities.get(candidate.orderIdentityDigest);
+      if (previous) {
+        if (previous.key !== candidate.orderCandidateKey)
+          findings.add("SAME_ORDER_REVISED_SNAPSHOT_REVIEW_REQUIRED");
+        if (previous.arm !== candidate.arm)
+          findings.add("SAME_ORDER_CROSS_ARM");
+        if (previous.visitor !== candidate.visitorDigest)
+          findings.add("SAME_ORDER_MULTIPLE_VISITORS");
+      } else seenOrderIdentities.set(candidate.orderIdentityDigest, {
+        key: candidate.orderCandidateKey, visitor: candidate.visitorDigest,
+        arm: candidate.arm,
+      });
+    }
     const exposure = exposures.get(candidate.visitorDigest);
     const time = Date.parse(candidate.observedAt);
     if (!exposure) findings.add("ORDER_CANDIDATE_WITHOUT_EXPOSURE");
@@ -90,7 +114,8 @@ export function auditDemandOrderExposureCandidates(
     if (candidate.arm === "control") control++; else treatment++;
     normalized.push(JSON.stringify([candidate.eventId, candidate.experimentCandidateId,
       candidate.tenantId, candidate.product, candidate.pilotProduct,
-      candidate.visitorDigest, candidate.orderCandidateKey, candidate.arm,
+      candidate.visitorDigest, candidate.orderCandidateKey,
+      candidate.orderIdentityDigest ?? null, candidate.arm,
       candidate.observedAt]));
   }
   if (!exposureAudit.structuralConsistency)
@@ -105,6 +130,8 @@ export function auditDemandOrderExposureCandidates(
     exposureAuditCandidateId: exposureAudit.candidateId,
     status: "UNATTESTED_ORDER_EXPOSURE_JOIN" as const,
     controlOrderCandidates: control, treatmentOrderCandidates: treatment,
+    orderIdentityCoverageComplete: identityCoverageComplete,
+    uniqueOrderIdentityCandidates: identityCoverageComplete ? seenOrderIdentities.size : null,
     findings: sortedFindings, structuralConsistency: sortedFindings.length === 0,
     providerAuthenticationVerified: false as const, tenantMembershipVerified: false as const,
     randomizedAssignmentVerified: false as const, consentIndependentlyVerified: false as const,
