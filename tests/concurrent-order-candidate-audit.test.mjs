@@ -117,3 +117,19 @@ test('rejects raw IDs, forged scope, duplicate event IDs and tampered protocol',
   assert.throws(()=>audit({...protocol,treatmentChange:'forged treatment'},events,orders),invalid);
   assert.throws(()=>audit({...protocol,actionApproved:true},events,orders),invalid);
 });
+
+test('order join picks canonical earliest exposure, never provider input order',()=>{
+  const later=exposure('expose:a:later',a,'exposure','control',
+    {observedAt:'2026-10-29T07:00:00Z'});
+  const sample=[...events,later];
+  const first=audit(protocol,sample,[orders[0]]);
+  const reversed=audit(protocol,[...sample].reverse(),[orders[0]]);
+  assert.equal(first.candidateId,reversed.candidateId);
+  assert.equal(first.exposureAuditCandidateId,reversed.exposureAuditCandidateId);
+  assert.deepEqual(first.findings,reversed.findings);
+  assert.ok(first.findings.includes('EXPOSURE_AUDIT_NOT_STRUCTURALLY_CONSISTENT'));
+  assert.ok(!first.findings.includes('ORDER_CANDIDATE_BEFORE_EXPOSURE'));
+  assert.equal(first.structuralConsistency,false);
+  assert.equal(first.verifiedPaidOrders,null);
+  assert.equal(first.attributionVerified,false);
+});
