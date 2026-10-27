@@ -13,7 +13,7 @@ import {deflateSync} from 'node:zlib';
 import {pathToFileURL} from 'node:url';
 
 const pins={
-  content:'6ec10e66074c226e968673c8cee381142b4fa1b5',
+  content:'032442df54a691fc7a16f83ee026617d9806916c',
   demand:'a5538c2f7a3ddc4a7886bb287a351e3008009c34',
   bci:'f7b4c05283c11a0228864544557fd5f7feee0976',
 };
@@ -135,6 +135,22 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       assert.equal(reconciled.status,'MEASURED');
       assert.equal(reconciled.providerAttestedByModule,false);
       assert.equal(reconciled.approvalVerified,false);
+      // PORTFOLIO_CONTENT_DUPLICATE_PROVIDER_MEDIA_TO_BCI_HOLD_20261028_V1
+      // Provider-shaped SENT with duplicate asset identity must never become
+      // an eligible CONTENT evidence handoff or a shared BCI append input.
+      const duplicateAssetId=projectBufferContentObservation({...post,
+        assets:[{...post.assets[0],id:'same-provider-asset'},
+          {...post.assets[1],id:'same-provider-asset'}]},scope);
+      assert.equal(duplicateAssetId.status,'REVIEW_REQUIRED');
+      assert.ok(duplicateAssetId.flags.includes('DUPLICATE_PROVIDER_ASSET_ID'));
+      assert.throws(()=>buildContentBciEvidenceHandoff(duplicateAssetId,scope,
+        '2026-10-27T11:30:00Z'),/INVALID_CONTENT_EVIDENCE_SCOPE/);
+      const duplicateSource=projectBufferContentObservation({...post,
+        assets:[post.assets[0],{...post.assets[1],source:post.assets[0].source}]},scope);
+      assert.equal(duplicateSource.status,'REVIEW_REQUIRED');
+      assert.ok(duplicateSource.flags.includes('DUPLICATE_ASSET_SOURCE'));
+      assert.throws(()=>buildContentBciEvidenceHandoff(duplicateSource,scope,
+        '2026-10-27T11:30:00Z'),/INVALID_CONTENT_EVIDENCE_SCOPE/);
       const observation=reconciled.observation;
       assert.equal(observation.status,'MEASURED');
       assert.equal(observation.providerAttestedByModule,false);
