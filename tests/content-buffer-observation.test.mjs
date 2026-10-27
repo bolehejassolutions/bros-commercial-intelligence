@@ -299,9 +299,8 @@ test("Buffer list without permalink/metrics needs matching get_post detail",()=>
 test("detail missing native permalink or stale pre-SENT metrics cannot be promoted",()=>{
   assert.equal(hydrate(listSummary,{...detailedPost,externalLink:null},scope).status,"REVIEW_REQUIRED");
   const stale={...detailedPost,metricsUpdatedAt:"2026-10-21T00:00:00.000Z"};
-  const r=hydrate({...listSummary,metricsUpdatedAt:detailedPost.metricsUpdatedAt},stale,scope);
-  assert.equal(r.status,"REVIEW_REQUIRED");
-  assert.equal(r.observation.metrics.views,null);
+  assert.throws(()=>hydrate({...listSummary,metricsUpdatedAt:detailedPost.metricsUpdatedAt},stale,scope),
+    /BUFFER_DETAIL_METRICS_STALE/);
 });
 test("list/detail identity and content drift fail closed",()=>{
   for(const field of ["id","channelId","channelService","status","sentAt","dueAt"])
@@ -428,4 +427,27 @@ test("JPEG source reference parity is inspected but remains REVIEW_REQUIRED with
     decodedPixelIntegrityVerified:true}]},[url]),/INVALID_SOURCE_QA_EVIDENCE/);
   assert.throws(()=>inspect(fbPost,fbScope,{...qa,images:[qa.images[0],qa.images[0]]},
     [url,url]),/INVALID_SOURCE_QA_EVIDENCE/);
+});
+
+
+// CONTENT_BUFFER_DETAIL_METRIC_MONOTONICITY_20261027_V1
+// Synthetic list/detail provider-shaped revisions: no provider authentication.
+test("newer list metric revision cannot be silently replaced by stale detail",()=>{
+  const later="2026-10-26T15:34:46.678Z";
+  const earlier="2026-10-26T14:32:54.244Z";
+  const list={...listSummary,metricsUpdatedAt:later};
+  const stale={...detailedPost,metricsUpdatedAt:earlier};
+  assert.throws(()=>hydrate(list,stale,scope),/BUFFER_DETAIL_METRICS_STALE/);
+  assert.throws(()=>hydrate(list,{...detailedPost,metricsUpdatedAt:null},scope),
+    /BUFFER_DETAIL_METRICS_STALE/);
+  assert.throws(()=>hydrate({...list,metricsUpdatedAt:"not-a-date"},detailedPost,scope),
+    /BUFFER_LIST_METRIC_TIMESTAMP_INVALID/);
+  const current={...detailedPost,metricsUpdatedAt:later};
+  const accepted=hydrate(list,current,scope);
+  assert.equal(accepted.status,"MEASURED");
+  assert.equal(accepted.providerAttestedByModule,false);
+  assert.equal(accepted.approvalVerified,false);
+  assert.equal(accepted.executionAllowed,false);
+  const olderList={...listSummary,metricsUpdatedAt:earlier};
+  assert.equal(hydrate(olderList,current,scope).status,"MEASURED");
 });
