@@ -28,6 +28,8 @@ test("read-only transaction pins all queries to a single checkout and releases a
   assert.equal(result, 42);
   assert.equal(f.connections(), 1);
   assert.match(f.calls[0].sql, /^BEGIN.*READ ONLY/);
+  assert.equal(f.calls[1].sql, "SET LOCAL search_path = pg_catalog, pg_temp");
+  assert.ok(f.calls.findIndex(c => c.sql?.includes("statement_timeout")) > 1);
   assert.ok(f.calls.some(c => c.sql?.includes("statement_timeout")));
   assert.ok(f.calls.some(c => c.sql?.includes("idle_in_transaction_session_timeout")));
   assert.deepEqual(f.calls.find(c => c.sql?.includes("SELECT $1")).params, ["synthetic-tenant"]);
