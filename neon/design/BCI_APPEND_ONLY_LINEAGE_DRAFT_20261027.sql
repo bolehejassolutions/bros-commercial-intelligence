@@ -69,7 +69,7 @@ BEGIN
   RAISE EXCEPTION 'BCI lineage is append-only'
     USING ERRCODE = '55000';
 END;
-$;
+$$;
 
 -- PostgreSQL grants EXECUTE on new functions to PUBLIC by default. Keep
 -- both trigger functions inaccessible as callable application entry points.
@@ -145,7 +145,7 @@ BEGIN
   END IF;
   RETURN NULL;
 END;
-$;
+$$;
 
 REVOKE ALL ON FUNCTION bci_dev.check_lineage_integrity() FROM PUBLIC;
 
