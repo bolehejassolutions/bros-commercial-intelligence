@@ -28,10 +28,33 @@ test("preregistration is explicitly non-executable, with no verified business ou
   assert.equal(x.maxIncrementalSpendMinor, 0);
   assert.equal(x.noPricingChanges, true);
   assert.equal(x.noPublisherChanges, true);
+  assert.equal(x.experimentDesign, "SEQUENTIAL_BASELINE_NOT_CONTROLLED");
+  assert.equal(x.controlledExperimentVerified, false);
+  assert.equal(x.causalInferenceEligible, false);
   assert.equal(Object.isFrozen(x), true);
   assert.equal(Object.isFrozen(x.evidenceCandidateIds), true);
   assert.match(x.candidateId, /^demand:experiment:sha256:[a-f0-9]{64}$/);
 });
+test("sequential baseline cannot masquerade as a controlled experiment or causal proof", () => {
+  const x = preregister({
+    ...valid,
+    experimentDesign: "RANDOMIZED_CONTROLLED",
+    controlledExperimentVerified: true,
+    causalInferenceEligible: true,
+    controlGroupVerified: true,
+    verifiedPaidOrders: 3,
+    causalLift: 0.5,
+  });
+  assert.equal(x.experimentDesign, "SEQUENTIAL_BASELINE_NOT_CONTROLLED");
+  assert.equal(x.controlledExperimentVerified, false);
+  assert.equal(x.causalInferenceEligible, false);
+  assert.equal(x.outcomeVerified, false);
+  assert.equal(x.learningVerified, false);
+  assert.equal(x.verifiedPaidOrders, null);
+  assert.equal(x.causalLift, null);
+  assert.equal(x.executionAllowed, false);
+});
+
 test("immutable proposal preserves full preregistered experiment protocol for independent replay", () => {
   const x = preregister({...valid,hypothesis:"  "+valid.hypothesis+"  "});
   assert.equal(x.metaAccountId,valid.metaAccountId);
