@@ -96,6 +96,13 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
                       AND has_function_privilege(current_user, external_proc.oid, 'EXECUTE')
                 )) AS no_external_definer_exec,
                 (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_namespace external_schema
+                    WHERE external_schema.nspname <> 'bci_dev'
+                      AND external_schema.nspname <> 'information_schema'
+                      AND LEFT(external_schema.nspname, 3) <> 'pg_'
+                      AND has_schema_privilege(current_user, external_schema.oid, 'CREATE')
+                )) AS no_external_schema_create,
+                (SELECT NOT EXISTS (
                     SELECT 1 FROM pg_class outside_table
                     JOIN pg_namespace outside_ns ON outside_ns.oid = outside_table.relnamespace
                     WHERE outside_ns.nspname <> 'bci_dev'
@@ -135,6 +142,7 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
           posture.rows[0].can_create_database_objects !== false ||
           posture.rows[0].no_definer_exec !== true ||
           posture.rows[0].no_external_definer_exec !== true ||
+          posture.rows[0].no_external_schema_create !== true ||
           posture.rows[0].no_external_table_access !== true ||
           posture.rows[0].other_bci_tables_denied !== true) deny();
 
