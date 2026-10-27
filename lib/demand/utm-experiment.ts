@@ -35,7 +35,8 @@ const CHANNELS: readonly string[] = ["facebook", "instagram", "tiktok", "whatsap
 const fail = (): never => { throw new Error("Invalid BROS DEMAND UTM proposal"); };
 
 export function proposeDemandPilotUtm(input: DemandUtmProposalInput): DemandUtmProposal {
-  if (!input || !EXPERIMENT.test(input.experimentId) ||
+  if (!input || typeof input.experimentId !== "string" ||
+      !EXPERIMENT.test(input.experimentId) ||
       !CHANNELS.includes(input.channel) || (input.variant !== "a" && input.variant !== "b") ||
       typeof input.landingUrl !== "string" || input.landingUrl.length > 500) fail();
   let url: URL;
