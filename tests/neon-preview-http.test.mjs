@@ -75,7 +75,7 @@ function database(kind, rows, calls, error) {
 }
 
 function harness({ env = {}, grants = [grant], rows = [evidence],
-  membershipError, evidenceError, jwksError } = {}) {
+  membershipError, evidenceError, jwksError, afterEvidenceRead } = {}) {
   const calls = [];
   const verifierConfig = { issuer: ISSUER, audience: ISSUER,
     jwksUrl: `${ISSUER}/auth/.well-known/jwks.json`,
@@ -87,7 +87,14 @@ function harness({ env = {}, grants = [grant], rows = [evidence],
     },
   };
   const membershipsFor = createNeonDevMembershipLookup(database("membership", grants, calls, membershipError));
-  const readRows = createNeonDevReadRows(database("evidence", rows, calls, evidenceError));
+  const restrictedEvidenceRead = createNeonDevReadRows(database("evidence", rows, calls, evidenceError));
+  const readRows = async scope => {
+    const result = await restrictedEvidenceRead(scope);
+    // Synthetic interleaving: another transaction revokes/reassigns membership
+    // after the evidence transaction, before the HTTP response is serialized.
+    afterEvidenceRead?.();
+    return result;
+  };
   const handler = createNeonPreviewHandler({ env: () => ({
     VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: BRANCH,
     BCI_NEON_DEV_PRIVATE_READS: "enabled", ...env,
@@ -203,6 +210,24 @@ test("HTTP refreshes membership on every read and denies after revocation withou
   await denied(await f.handler(f.request()), 403);
   assert.equal(f.calls.filter(c => c.kind === "evidence" && c.step === "begin").length, 1);
   assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 3); // two for successful read, one for post-revocation rejection
+});
+
+test("HTTP denies in-flight revocation, reassignment and ambiguous membership after evidence SELECT", async () => {
+  const cases = [
+    grants => { grants.splice(0); },
+    grants => { grants[0] = { ...grant, tenantId: OTHER }; },
+    grants => { grants.push({ ...grant, tenantId: OTHER }); },
+    grants => { grants[0] = { ...grant, active: false, revokedAt: "2026-10-27T00:00:00Z" }; },
+  ];
+  for (const revokeOrReassign of cases) {
+    const grants = [{ ...grant }];
+    const f = harness({ grants, afterEvidenceRead: () => revokeOrReassign(grants) });
+    const response = await f.handler(f.request("product=content&limit=1"));
+    const body = await denied(response, 403);
+    assert.equal(body.includes("offline-synthetic-only"), false);
+    assert.equal(f.calls.filter(c => c.kind === "evidence" && c.step === "begin").length, 1);
+    assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 2);
+  }
 });
 
 test("HTTP masks provider, membership and evidence failures and never returns partial data", async () => {
