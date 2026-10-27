@@ -70,3 +70,15 @@ test("stored provider-attested metadata stays historical but does not attest new
   assert.equal(plan.providerAttested, false);
   assert.equal(plan.persisted, false);
 });
+
+
+test('untrusted audit append rejects array-coerced UUID identifiers before planning', () => {
+  assert.throws(() => planUntrustedBciAuditAppend(scope, [], [
+    { ...chain[0], id: [ids[0]] },
+  ]), denied);
+  const wrappedTenant = [tenant];
+  assert.throws(() => planUntrustedBciAuditAppend(
+    { tenantId: wrappedTenant, product: 'demand' }, [],
+    [{ ...chain[0], tenantId: wrappedTenant }],
+  ), denied);
+});
