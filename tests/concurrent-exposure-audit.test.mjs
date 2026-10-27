@@ -106,3 +106,22 @@ test('complete protocol guard also blocks forged downstream order-join readiness
     {maxIncrementalSpendMinor:1},{unexpectedVerificationFlag:true}])
     assert.throws(()=>orderAudit({...proposal,...patch},valid,[]),invalid);
 });
+
+test('duplicate exposure replay is order-independent, including findings and arm counts',()=>{
+  const early=ev('expose:a:early',a,'exposure','control',
+    {observedAt:'2026-10-29T03:59:00Z'});
+  const late=ev('expose:a:late',a,'exposure','treatment',
+    {observedAt:'2026-10-29T05:00:00Z'});
+  const sample=[valid[0],valid[2],valid[3],early,late];
+  const first=audit(proposal,sample), reversed=audit(proposal,[...sample].reverse());
+  assert.equal(first.candidateId,reversed.candidateId);
+  assert.deepEqual(first.findings,reversed.findings);
+  assert.deepEqual([first.controlExposures,first.treatmentExposures],
+    [reversed.controlExposures,reversed.treatmentExposures]);
+  assert.deepEqual([first.controlExposures,first.treatmentExposures],[1,1]);
+  assert.ok(first.findings.includes('DUPLICATE_VISITOR_EXPOSURE'));
+  assert.ok(first.findings.includes('EXPOSURE_BEFORE_ASSIGNMENT'));
+  assert.equal(first.structuralConsistency,false);
+  assert.equal(first.outcomeVerified,false);
+  assert.equal(first.causalLift,null);
+});
