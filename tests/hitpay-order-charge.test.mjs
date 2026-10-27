@@ -29,6 +29,9 @@ test('same observation is idempotent, status/fee/refund revisions change candida
   const refundRevision=reconcile({...order,payment_status:'partially_refunded'},charge,
     {...detail,refunded_amount:10});
   assert.notEqual(x.candidateKey,feeRevision.candidateKey);
+  assert.match(x.orderIdentityDigest,/^[a-f0-9]{64}$/);
+  assert.equal(x.orderIdentityDigest,feeRevision.orderIdentityDigest);
+  assert.equal(x.orderIdentityDigest,refundRevision.orderIdentityDigest);
   assert.notEqual(x.candidateKey,refundRevision.candidateKey);
   assert.equal(refundRevision.status,'REFUND_OBSERVED');
   assert.equal(refundRevision.settledOrders,null);
