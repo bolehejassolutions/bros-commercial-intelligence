@@ -1,4 +1,5 @@
 import "server-only";
+import { isNeonPreviewEnabled } from "./neon-preview-handler";
 import {
   createPrivateEvidenceReader,
   PrivateEvidenceAccessDenied,
@@ -18,10 +19,9 @@ import {
  * only; it does not independently grant any customer tenant membership.
  */
 export function createPreviewPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
-  if (process.env.VERCEL_ENV !== "preview" ||
-      process.env.BCI_NEON_DEV_PRIVATE_READS !== "enabled") {
+  if (!isNeonPreviewEnabled(process.env)) {
     throw new PrivateEvidenceAccessDenied(
-      "Private Neon BCI evidence reader is disabled outside an explicitly enabled preview."
+      "Private Neon BCI evidence reader is disabled outside the approved internal Preview branch."
     );
   }
   return createPrivateEvidenceReader(deps);
