@@ -5,7 +5,7 @@ const token = "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ0ZXN0In0.c2ln";
 const control = () => new Response(JSON.stringify({ scope: "internal-development", evidence: [] }), {
  status: 200, headers: { "Cache-Control": "private, no-store", "Vary": "Authorization" },
 });
-test("both authenticated product controls precede eight bounded denial probes", async()=>{
+test("both authenticated product controls precede twelve bounded denial probes", async()=>{
  const calls=[];
  const mock=async (url,options)=>{
   calls.push({url,options});
@@ -16,15 +16,27 @@ test("both authenticated product controls precede eight bounded denial probes", 
  const report=await runNeonPreviewNegativeChecks(token,mock);
  assert.equal(report.authenticatedControlsPassed,2);
  assert.equal(report.authenticatedControlsTotal,2);
- assert.equal(report.total,8);
- assert.equal(report.passed,8);
- assert.equal(calls.length,10);
+ assert.equal(report.total,12);
+ assert.equal(report.passed,12);
+ assert.equal(calls.length,14);
  assert.equal(calls[0].url,"/api/internal/neon-evidence?product=content&limit=1");
  assert.equal(calls[1].url,"/api/internal/neon-evidence?product=demand&limit=1");
  assert.ok(calls.slice(0,2).every(c=>c.options.headers.Authorization===`Bearer ${token}`));
  assert.equal(calls[2].options.headers.Authorization,undefined);
  assert.equal(calls[3].options.headers.Authorization,`Bearer ${token}`);
  assert.equal(calls.filter(c=>c.options.method==="POST").length,1);
+ for (const [name, value] of [
+  ["x-tenant-id","11111111-1111-4111-8111-111111111111"],
+  ["x-bci-tenant-id","11111111-1111-4111-8111-111111111111"],
+  ["x-principal-id","11111111-1111-4111-8111-111111111111"],
+  ["x-admin","true"],
+ ]) {
+  assert.equal(calls.filter(c=>c.options.headers[name]===value).length,1, name);
+ }
+ assert.deepEqual(report.checks.filter(c=>c.id.endsWith("_header")).map(c=>c.id), [
+  "tenant_header","bci_tenant_header","principal_header",
+  "admin_impersonation_header","admin_header","product_header",
+ ]);
  const tamperedCalls=calls.filter(c=>c.options.headers.Authorization &&
    c.options.headers.Authorization!==`Bearer ${token}`);
  assert.equal(tamperedCalls.length,1);
@@ -50,8 +62,8 @@ test("tampered signature must receive HTTP 403; 200, 400 or 401 must not pass",a
    }),{status,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"}});
   };
   const report=await runNeonPreviewNegativeChecks(token,mock);
-  assert.equal(report.total,8);
-  assert.equal(report.passed,7);
+  assert.equal(report.total,12);
+  assert.equal(report.passed,11);
   assert.deepEqual(report.checks.filter(x=>!x.passed).map(x=>x.id),["tampered_signature"]);
   assert.equal(JSON.stringify(report).includes(token),false);
  }
@@ -203,6 +215,6 @@ test("authenticated controls reject unreviewed response fields and malformed evi
  };
  const report=await runNeonPreviewNegativeChecks(token,mock);
  assert.equal(report.authenticatedControlsPassed,2);
- assert.equal(report.passed,8);
+ assert.equal(report.passed,12);
  assert.equal(JSON.stringify(report).includes("post-1"),false);
 });
