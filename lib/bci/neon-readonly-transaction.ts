@@ -55,6 +55,9 @@ export function createPgReadOnlyTransaction(pool: ReadOnlyPool) {
     try {
       client = await pool.connect();
       await client.query("BEGIN READ ONLY");
+      // Pin built-in catalog resolution before any role/ACL checks. Explicit pg_temp
+      // placement prevents temporary relations shadowing pg_catalog objects.
+      await client.query("SET LOCAL search_path = pg_catalog, pg_temp");
       await client.query("SET LOCAL statement_timeout = '5000ms'");
       await client.query("SET LOCAL lock_timeout = '1000ms'");
       await client.query("SET LOCAL idle_in_transaction_session_timeout = '10000ms'");
