@@ -75,7 +75,16 @@ export function auditDemandOrderExposureCandidates(
   const start = Date.parse(proposal.plannedStart + "T00:00:00+08:00");
   const endExclusive = Date.parse(proposal.plannedEnd + "T00:00:00+08:00") + 86400000;
   for (const candidate of orderCandidates) {
-    if (!candidate || !EVENT_ID.test(candidate.eventId) ||
+    // RegExp.test coerces arrays/objects to strings. Reject them explicitly:
+    // otherwise distinct object references can evade duplicate order identity
+    // and event-key detection while producing plausible-looking digest text.
+    if (!candidate || typeof candidate.eventId !== "string" ||
+        typeof candidate.visitorDigest !== "string" ||
+        typeof candidate.orderCandidateKey !== "string" ||
+        (candidate.orderIdentityDigest !== undefined &&
+          typeof candidate.orderIdentityDigest !== "string") ||
+        typeof candidate.observedAt !== "string" ||
+        !EVENT_ID.test(candidate.eventId) ||
         candidate.experimentCandidateId !== proposal.candidateId ||
         candidate.tenantId !== proposal.tenantId || candidate.product !== "demand" ||
         candidate.pilotProduct !== "bros_sell" ||
