@@ -13,14 +13,16 @@ import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const pins=Object.freeze({
-  content:'42e75052e05aaba25eb10d54f04f0d0a04dfdbb9',
-  demand:'b6bb3e6864689e55bdbb86ee854c28df9d3014ab',
-  bci:'878f03383419f24726d1413ee411a6328776a82b',
+  content:'0b564c01e4e38659d1efe20313090d7429218035',
+  demand:'5b75e54ba293ad563e8e6d7d61c074d05d277bcd',
+  bci:'f41eaf72ac0ea0680e8243e3586169d5858039aa',
 });
 const sources=[
   [pins.content,'lib/content/buffer-observation.mjs'],
   [pins.content,'lib/content/measurement-revision.mjs'],
+  [pins.content,'lib/content/png-source-qa.mjs'],
   [pins.demand,'lib/demand/experiment-preregistration.ts'],
+  [pins.demand,'lib/demand/concurrent-control-protocol.ts'],
   [pins.bci,'lib/bci/internal-lineage.ts'],
   [pins.bci,'lib/bci/audit-append-plan.ts'],
 ];
@@ -63,8 +65,10 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       const load=async path=>import(pathToFileURL(join(dir,path)).href);
       const {projectBufferContentObservation}=await load(sources[0][1]);
       const {proposeContentMeasurementRevision}=await load(sources[1][1]);
-      const {preregisterDemandExperiment}=await load(sources[2][1]);
-      const {planUntrustedBciAuditAppend}=await load(sources[4][1]);
+      const {preregisterDemandExperiment}=await load('lib/demand/experiment-preregistration.ts');
+      const {proposeDemandConcurrentControl}=await load('lib/demand/concurrent-control-protocol.ts');
+      const {verifyDistinctPngSources}=await load('lib/content/png-source-qa.mjs');
+      const {planUntrustedBciAuditAppend}=await load('lib/bci/audit-append-plan.ts');
 
       const contentScope={tenantId,product:'content',instanceId:'sell-internal',
         contentId:'synthetic-content-001',channelService:'instagram',
@@ -141,6 +145,76 @@ if(process.env.GITHUB_ACTIONS!=='true'){
           ...scope,tenantId:'55555555-5555-4555-8555-555555555555'
         },[],records),/Invalid BCI evidence lineage/);
       }
+
+      // PORTFOLIO_CURRENT_SOURCE_ACCEPTANCE_20261027_1520:
+      // Exercise newly changed CONTENT singleton byte QA and DEMAND concurrent
+      // holdout proposal against the same BCI planner. Synthetic PNG fixture;
+      // no provider media, approved publication, actual assignment or audit write.
+      const pngBytes=Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGOQNPIGIgYIBQAPrgJZZFXdEgAAAABJRU5ErkJggg==',
+        'base64');
+      const qa=verifyDistinctPngSources([pngBytes],{expectedWidth:2,expectedHeight:2});
+      assert.equal(qa.status,'SOURCE_BYTES_STRUCTURALLY_VERIFIED');
+      assert.equal(qa.images.length,1);
+      assert.equal(qa.images[0].structuralIntegrity,'CRC_AND_DEFLATE_VALID');
+      for(const flag of ['visualDistinctnessVerified','approvalVerified','publishedVerified'])
+        assert.equal(qa[flag],false,flag);
+      assert.equal(qa.images[0].providerByteIdentityVerified,false);
+      const corrupted=Buffer.from(pngBytes);
+      corrupted[corrupted.length-1]^=1;
+      assert.throws(()=>verifyDistinctPngSources([corrupted],
+        {expectedWidth:2,expectedHeight:2}),/PNG_QA_/);
+      assert.throws(()=>verifyDistinctPngSources([],
+        {expectedWidth:2,expectedHeight:2}),/INVALID_ASSET_SET/);
+
+      const concurrent=proposeDemandConcurrentControl({
+        tenantId,product:'demand',pilotProduct:'bros_sell',
+        metaAccountId:'act_1997776120879476',campaignId:'123456789',
+        hypothesis:'Synthetic consented-visitor randomized holdout hypothesis',
+        action:'LANDING_PAGE_TEST',
+        treatmentChange:'Synthetic alternative educational landing explanation',
+        primaryKpi:'verified_paid_orders',
+        plannedStart:'2026-10-29',plannedEnd:'2026-11-05',
+        preRegisteredAt:'2026-10-27T06:00:00Z',
+        evidenceCandidateIds:['demand:synthetic:meta:01'],
+        assignmentUnit:'CONSENTED_LANDING_VISITOR',
+        assignmentMethod:'STICKY_RANDOM_50_50_PROPOSED',
+        controlExperience:'UNCHANGED_EXISTING_LANDING_PAGE',
+        analysisPolicy:'INTENTION_TO_TREAT',maxIncrementalSpendMinor:0,
+      });
+      assert.equal(concurrent.status,'PROPOSED_NOT_AUTHORIZED');
+      assert.equal(concurrent.experimentDesign,
+        'CONCURRENT_RANDOMIZED_HOLDOUT_PLAN_UNVERIFIED');
+      assert.deepEqual(concurrent.allocation,{controlPercent:50,treatmentPercent:50});
+      for(const flag of ['tenantAuthorizationVerified','preRegistrationAttested',
+        'assignmentAndExposureVerified','concurrentControlVerified',
+        'providerEvidenceAttested','actionApproved','actionExecuted',
+        'outcomeVerified','learningVerified','controlledExperimentVerified',
+        'causalInferenceEligible','executionAllowed'])
+        assert.equal(concurrent[flag],false,flag);
+      assert.equal(concurrent.verifiedPaidOrders,null);
+      assert.equal(concurrent.verifiedCacMinor,null);
+      assert.equal(concurrent.causalLift,null);
+
+      const contentEvidence=chain('content','content:source-png-sha256:'+qa.images[0].sha256);
+      const demandEvidence=chain('demand',concurrent.candidateId);
+      for(const [product,records] of [
+        ['content',contentEvidence],['demand',demandEvidence],
+      ]){
+        const plan=planUntrustedBciAuditAppend({tenantId,product},[],records);
+        assert.equal(plan.toInsert.length,8);
+        assert.equal(plan.structurallyLinkedLearnings,1);
+        for(const flag of ['authenticated','providerAttested','persisted'])
+          assert.equal(plan[flag],false,flag);
+        assert.equal(planUntrustedBciAuditAppend({tenantId,product},
+          records,records).toInsert.length,0);
+      }
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'demand'},[],contentEvidence),
+        /Invalid BCI evidence lineage/);
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[],demandEvidence),
+        /Invalid BCI evidence lineage/);
     }finally{rmSync(dir,{recursive:true,force:true});}
   });
 }
