@@ -36,6 +36,8 @@ test('untrusted order join is replay-stable, never paid/settled/attributed',()=>
   assert.deepEqual(x.findings,[]);
   assert.deepEqual([x.controlOrderCandidates,x.treatmentOrderCandidates],[1,1]);
   assert.equal(x.status,'UNATTESTED_ORDER_EXPOSURE_JOIN');
+  assert.equal(x.orderIdentityCoverageComplete,false);
+  assert.equal(x.uniqueOrderIdentityCandidates,null);
   for(const k of ['providerAuthenticationVerified','tenantMembershipVerified',
     'randomizedAssignmentVerified','consentIndependentlyVerified','ownerApprovalVerified',
     'actionExecutedVerified','hitpayLiveEnvironmentVerified','hitpaySettlementVerified',
@@ -50,6 +52,40 @@ test('duplicate order across arms is not two verified conversions',()=>{
   assert.equal(x.structuralConsistency,false);
   assert.ok(x.findings.includes('DUPLICATE_ORDER_CANDIDATE'));
   assert.equal(x.verifiedPaidOrders,null);
+});
+test('same order across revised HitPay snapshots is not two distinct orders',()=>{
+  const identity='9'.repeat(64);
+  const first={...orders[0],orderIdentityDigest:identity};
+  const revision={...orders[0],eventId:'checkout:a:revised',
+    orderCandidateKey:'demand:hitpay-candidate:sha256:'+'e'.repeat(64),
+    orderIdentityDigest:identity};
+  const x=audit(protocol,events,[first,revision]);
+  const replay=audit(protocol,[...events].reverse(),[revision,first]);
+  assert.equal(x.candidateId,replay.candidateId);
+  assert.equal(x.orderIdentityCoverageComplete,true);
+  assert.equal(x.uniqueOrderIdentityCandidates,1);
+  assert.equal(x.controlOrderCandidates,2); // candidate observations, not paid orders
+  assert.ok(x.findings.includes('SAME_ORDER_REVISED_SNAPSHOT_REVIEW_REQUIRED'));
+  assert.equal(x.structuralConsistency,false);
+  assert.equal(x.verifiedPaidOrders,null);
+  assert.equal(x.settledOrders,null);
+  assert.equal(x.verifiedCacMinor,null);
+  const cross=audit(protocol,events,[first,{...orders[1],orderIdentityDigest:identity}]);
+  assert.ok(cross.findings.includes('SAME_ORDER_CROSS_ARM'));
+  assert.ok(cross.findings.includes('SAME_ORDER_MULTIPLE_VISITORS'));
+  assert.equal(cross.uniqueOrderIdentityCandidates,1);
+});
+test('missing or forged order identity never becomes a verified conversion',()=>{
+  const complete=audit(protocol,events,[{...orders[0],orderIdentityDigest:'1'.repeat(64)},
+    {...orders[1],orderIdentityDigest:'2'.repeat(64)}]);
+  assert.equal(complete.orderIdentityCoverageComplete,true);
+  assert.equal(complete.uniqueOrderIdentityCandidates,2);
+  assert.equal(complete.verifiedPaidOrders,null);
+  const incomplete=audit(protocol,events,[{...orders[0],orderIdentityDigest:'1'.repeat(64)},orders[1]]);
+  assert.equal(incomplete.orderIdentityCoverageComplete,false);
+  assert.equal(incomplete.uniqueOrderIdentityCandidates,null);
+  assert.throws(()=>audit(protocol,events,[{...orders[0],orderIdentityDigest:'Order #1007'}]),
+    /Invalid BROS DEMAND order exposure candidates/);
 });
 test('wrong arm, no exposure and pre-exposure candidate cannot be attributed',()=>{
   const x=audit(protocol,events,[order('checkout:a',a,'treatment','e'.repeat(64),
