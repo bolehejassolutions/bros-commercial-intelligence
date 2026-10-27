@@ -82,3 +82,15 @@ test('untrusted audit append rejects array-coerced UUID identifiers before plann
     [{ ...chain[0], tenantId: wrappedTenant }],
   ), denied);
 });
+
+
+test('untrusted append rejects symbol and hidden metadata before planning', () => {
+  const symbol = Symbol('credential');
+  const symbolRecord = { ...chain[0], [symbol]: 'must-not-persist' };
+  const hiddenRecord = Object.defineProperty({ ...chain[0] }, 'hiddenCredential', {
+    value: 'must-not-persist', enumerable: false,
+  });
+  assert.throws(() => planUntrustedBciAuditAppend(scope, [], [symbolRecord]), denied);
+  assert.throws(() => planUntrustedBciAuditAppend(scope, [], [hiddenRecord]), denied);
+  assert.equal(planUntrustedBciAuditAppend(scope, [], [chain[0]]).toInsert.length, 1);
+});
