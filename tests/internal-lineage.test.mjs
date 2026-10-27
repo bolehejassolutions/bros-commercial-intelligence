@@ -55,3 +55,20 @@ test('CONTENT and DEMAND each validate independently, but cannot share private r
   assert.equal(validateBciLineage({...scope,product:'content'},content).counts.learning,1);
   assert.throws(() => validateBciLineage(scope,content),denied);
 });
+
+
+test('UUID fields reject array-coerced scope, record IDs and parent references', () => {
+  // RegExp.test([uuid]) coerces the array to a valid-looking UUID string.
+  // Lineage IDs must be primitive strings before map lookup or freezing.
+  assert.throws(() => validateBciLineage(scope, [{ ...chain[0], id: [ids[0]] }]), denied);
+  const wrappedTenant = [A];
+  assert.throws(() => validateBciLineage(
+    { tenantId: wrappedTenant, product: 'demand' },
+    [{ ...chain[0], tenantId: wrappedTenant }],
+  ), denied);
+  const wrappedParentId = [ids[0]];
+  assert.throws(() => validateBciLineage(scope, [
+    { ...chain[0], id: wrappedParentId },
+    { ...chain[1], parentIds: [wrappedParentId] },
+  ]), denied);
+});
