@@ -13,7 +13,7 @@ import {deflateSync} from 'node:zlib';
 import {pathToFileURL} from 'node:url';
 
 const pins={
-  content:'032442df54a691fc7a16f83ee026617d9806916c',
+  content:'f5587d32a3f9383f4022e127eb38f97edb426e71',
   demand:'a5538c2f7a3ddc4a7886bb287a351e3008009c34',
   bci:'f7b4c05283c11a0228864544557fd5f7feee0976',
 };
@@ -157,6 +157,21 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       const h1=buildContentBciEvidenceHandoff(observation,scope,'2026-10-27T11:30:00Z');
       const h2=buildContentBciEvidenceHandoff(observation,scope,'2026-10-27T11:45:00Z');
       assert.equal(h1.evidenceId,h2.evidenceId);
+      // PORTFOLIO_CONTENT_BCI_EQUIVALENT_UTC_CROSS_HEAD_20261028_V1
+      // Latest CONTENT code must dedupe equivalent provider UTC instants across
+      // the private BCI boundary; do not promote provider-shaped input to proof.
+      const equivalentUtc=projectBufferContentObservation({...post,
+        sentAt:'2026-10-27T10:00:00.000Z',
+        metricsUpdatedAt:'2026-10-27T11:00:00.000Z'},scope);
+      assert.equal(equivalentUtc.status,'MEASURED');
+      const equivalentHandoff=buildContentBciEvidenceHandoff(equivalentUtc,scope,
+        '2026-10-27T11:45:00Z');
+      assert.equal(equivalentHandoff.evidenceId,h1.evidenceId,
+        'same provider UTC instant and values must reuse BCI evidence ID');
+      assert.notEqual(equivalentHandoff.provenance.observedAt,h1.provenance.observedAt,
+        'preserve provider raw timestamp serialization for audit');
+      assert.ok(equivalentHandoff.unknowns.includes('PROVIDER_AUTHENTICATION_UNVERIFIED'));
+      assert.ok(equivalentHandoff.unknowns.includes('SHARED_BCI_AUDIT_NOT_WRITTEN'));
       assert.equal(h1.provenance.completeness,'unverified');
       assert.ok(h1.unknowns.includes('PUBLICATION_APPROVAL_UNVERIFIED'));
       assert.ok(h1.unknowns.includes('NATIVE_MEDIA_BYTES_UNVERIFIED'));
