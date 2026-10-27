@@ -12,6 +12,20 @@ test("stale metrics are not promoted to zero",()=>{const o=make({metricsUpdatedA
 test("no metric snapshot is unknown",()=>{const o=make({metricsUpdatedAt:null,metrics:null});assert.equal(o.status,"SENT_UNMEASURED");assert.equal(o.metrics.views,null)});
 test("invalid calendar and duplicate metrics fail closed",()=>{assert.equal(make({metricsUpdatedAt:"2026-02-30T15:00:00Z"}).status,"REVIEW_REQUIRED");assert.equal(make({metrics:[...post.metrics,{type:"views",unit:"count",value:99}]}).status,"REVIEW_REQUIRED")});
 test("invalid counts and asset count are held",()=>{for(const value of [-1,2.5])assert.equal(make({metrics:[{type:"views",unit:"count",value}]}).status,"REVIEW_REQUIRED");assert.equal(make({assets:[post.assets[0]]}).status,"REVIEW_REQUIRED")});
+// CONTENT_DUPLICATE_PROVIDER_MEDIA_REFERENCE_GUARD_20261028: synthetic media identity hold.
+test("distinct carousel slots cannot reuse one media source URL or provider asset ID",()=>{
+  const duplicateSource=make({assets:[post.assets[0],{...post.assets[1],source:post.assets[0].source}]});
+  assert.equal(duplicateSource.status,"REVIEW_REQUIRED");
+  assert.ok(duplicateSource.flags.includes("DUPLICATE_ASSET_SOURCE"));
+  assert.equal(next([duplicateSource]).reason,"EVIDENCE_QA_REVIEW");
+  assert.throws(()=>handoff(duplicateSource,scope,"2026-10-26T17:00:00.000Z"),/INVALID_CONTENT_EVIDENCE_SCOPE/);
+  const duplicateId=make({assets:[{...post.assets[0],id:"provider-asset-1"},
+    {...post.assets[1],id:"provider-asset-1"}]});
+  assert.equal(duplicateId.status,"REVIEW_REQUIRED");
+  assert.ok(duplicateId.flags.includes("DUPLICATE_PROVIDER_ASSET_ID"));
+  assert.equal(make().status,"MEASURED","two distinct sources remain valid provider-shaped observations");
+});
+
 test("AI caption/native metadata conflict triggers review",()=>{const o=make({metadata:{isAiGenerated:false}});assert.equal(o.status,"REVIEW_REQUIRED");assert.equal(next([o]).reason,"AI_DISCLOSURE_REVIEW")});
 test("native URL must be HTTPS on matching channel",()=>{assert.equal(make({externalLink:"https://www.tiktok.com/@a/video/1"}).status,"REVIEW_REQUIRED");assert.equal(make({externalLink:"http://www.instagram.com/p/a"}).status,"REVIEW_REQUIRED")});
 test("learning rejects cross tenant and duplicate posts",()=>{const o=make();assert.throws(()=>next([o,{...o,tenantId:"tenant-B",postId:"post456"}]),/CROSS_SCOPE/);assert.throws(()=>next([o,o]),/DUPLICATE_POST/)});
