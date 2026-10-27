@@ -481,3 +481,25 @@ test("same-revision list/detail metric disagreement fails closed without inventi
   assert.equal(hydrate({...current,metrics:undefined},detailedPost,scope).status,"MEASURED",
     "an omitted list metrics array is unknown, not conflicting");
 });
+
+
+// CONTENT_BUFFER_EQUIVALENT_UTC_METRIC_REVISION_20261027_V1
+// Different valid ISO-UTC spellings can represent the same provider revision.
+// Do not allow conflicting metrics to bypass the same-instant consistency gate.
+test("equivalent UTC metric timestamps cannot bypass list/detail conflict guard",()=>{
+  const atWholeSecond="2026-10-25T15:34:40Z";
+  const atMilliseconds="2026-10-25T15:34:40.000Z";
+  const detail={...detailedPost,metricsUpdatedAt:atMilliseconds};
+  const summary={...listSummary,metricsUpdatedAt:atWholeSecond,
+    metrics:[{type:"views",unit:"count",value:0}]};
+  assert.throws(()=>hydrate(summary,detail,scope),
+    /BUFFER_LIST_DETAIL_METRIC_CONFLICT/,
+    "same UTC instant with different textual precision must fail closed");
+  const consistent={...summary,metrics:[{type:"views",unit:"count",value:7}]};
+  const observed=hydrate(consistent,detail,scope);
+  assert.equal(observed.status,"MEASURED");
+  assert.equal(observed.observation.metrics.views,7);
+  assert.equal(observed.providerAttestedByModule,false);
+  assert.equal(observed.approvalVerified,false);
+  assert.equal(observed.executionAllowed,false);
+});
