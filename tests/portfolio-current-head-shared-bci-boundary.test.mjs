@@ -1,5 +1,5 @@
 /**
- * PORTFOLIO_CURRENT_HEAD_BCI_BOUNDARY_20261027_1827
+ * PORTFOLIO_CURRENT_HEAD_BCI_BOUNDARY_20261027_LATEST
  * Coordinator-only, exact-commit integration. Synthetic JPEG and visitor events.
  * No provider attestation, approval, publication, database write or verified learning.
  */
@@ -13,9 +13,9 @@ import {deflateSync} from 'node:zlib';
 import {pathToFileURL} from 'node:url';
 
 const pins={
-  content:'af8723b0be936ed4a176b2473f63ec4d87ea6e11',
-  demand:'6ee183bbbad617958e8922e8659cb9d811c2e5f0',
-  bci:'cdde7b2810273fd713dca23cfd12dab12f80fd4d',
+  content:'d2d8c4dc16a5de9431503101eeefc0ec1d5588ca',
+  demand:'e171c98835ffde3815ccbe2604ec44b284e3cfd2',
+  bci:'653ed2b9eaf1ed59923413fc392eb815645c938e',
 };
 const files=[
   [pins.content,'lib/content/jpeg-source-qa.mjs'],
