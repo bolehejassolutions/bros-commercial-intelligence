@@ -386,3 +386,46 @@ test("one-image Facebook source reference is inspected, never auto-approved",()=
   assert.equal(jpeg.providerByteIdentityVerified,false);
   assert.throws(()=>inspect(fbPost,fbScope,{...qa,images:[]},[url]),/INVALID_SOURCE_QA_EVIDENCE/);
 });
+
+
+// CONTENT_JPEG_SOURCE_TO_SENT_REFERENCE_20261027_1657
+// Synthetic structurally parseable JPEG is NOT decoded or provider-authenticated.
+// A real FB JPEG was independently byte-decoded in the prior 15:50 checkpoint.
+test("JPEG source reference parity is inspected but remains REVIEW_REQUIRED without decoded pixels",async()=>{
+  const {verifyDistinctJpegSources}=await import("../lib/content/jpeg-source-qa.mjs");
+  const segment=(marker,payload)=>{
+    const b=Buffer.alloc(payload.length+4);b[0]=255;b[1]=marker;
+    b.writeUInt16BE(payload.length+2,2);payload.copy(b,4);return b;
+  };
+  const frame=Buffer.alloc(15);frame[0]=8;frame.writeUInt16BE(2,1);frame.writeUInt16BE(2,3);frame[5]=3;
+  const scan=Buffer.from([3,1,0,2,0,3,0,0,63,0]);
+  const bytes=Buffer.concat([Buffer.from([255,216]),segment(0xdb,Buffer.from([0,1])),
+    segment(0xc0,frame),segment(0xc4,Buffer.from([0,1])),segment(0xda,scan),
+    Buffer.alloc(80,3),Buffer.from([255,217])]);
+  const qa=verifyDistinctJpegSources([bytes],{expectedWidth:2,expectedHeight:2});
+  const url="https://drive.google.com/uc?export=download&id=1yVYCap3_SWhPkwuQorqppDpZeQl-LjGy";
+  const fbScope={...scope,channelService:"facebook",channelId:"fb123",expectedAssetCount:1};
+  const fbPost={...post,channelService:"facebook",channelId:"fb123",
+    externalLink:"https://www.facebook.com/967812963066089/posts/983614971485888",
+    assets:[{type:"image",source:url,mimeType:"image/jpeg"}]};
+  const x=inspect(fbPost,fbScope,qa,[url]);
+  assert.equal(x.status,"REVIEW_REQUIRED");
+  assert.deepEqual(x.flags,["JPEG_PIXEL_DECODE_NOT_ATTESTED"]);
+  assert.deepEqual(x.sourceFileSha256,[qa.images[0].sha256]);
+  assert.deepEqual(x.sourcePixelSha256,[null]);
+  assert.equal(x.sourceBytesRevalidatedByModule,false);
+  assert.equal(x.providerAttestedByModule,false);
+  assert.equal(x.providerByteIdentityVerified,false);
+  assert.equal(x.approvalVerified,false);
+  assert.equal(x.executionAllowed,false);
+  const mismatch=inspect({...fbPost,assets:[{...fbPost.assets[0],source:"https://other.example/a.jpg"}]},
+    fbScope,qa,[url]);
+  assert.ok(mismatch.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"));
+  const wrongMime=inspect({...fbPost,assets:[{...fbPost.assets[0],mimeType:"image/png"}]},
+    fbScope,qa,[url]);
+  assert.ok(wrongMime.flags.includes("PROVIDER_MEDIA_FORMAT_NOT_SOURCE_JPEG"));
+  assert.throws(()=>inspect(fbPost,fbScope,{...qa,images:[{...qa.images[0],
+    decodedPixelIntegrityVerified:true}]},[url]),/INVALID_SOURCE_QA_EVIDENCE/);
+  assert.throws(()=>inspect(fbPost,fbScope,{...qa,images:[qa.images[0],qa.images[0]]},
+    [url,url]),/INVALID_SOURCE_QA_EVIDENCE/);
+});
