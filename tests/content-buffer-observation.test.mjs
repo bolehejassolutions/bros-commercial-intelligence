@@ -364,3 +364,25 @@ test("next-step requires concrete tenant, instance and post identities",()=>{
   assert.throws(()=>next([{...make(),tenantId:undefined}]),/INVALID_NEXT_STEP_SCOPE/);
   assert.throws(()=>next([{...make(),postId:undefined}]),/INVALID_NEXT_STEP_POST_ID/);
 });
+
+// CONTENT_SINGLE_IMAGE_SOURCE_QA_20261027_1453: one-image FB references remain untrusted until independent provider byte attestation.
+test("one-image Facebook source reference is inspected, never auto-approved",()=>{
+  const fbScope={...scope,channelService:"facebook",channelId:"fb123",expectedAssetCount:1};
+  const url="https://drive.google.com/uc?id=fb-single&export=download";
+  const fbPost={...post,channelService:"facebook",channelId:"fb123",
+    externalLink:"https://www.facebook.com/967812963066089/posts/983614971485888",
+    assets:[{type:"image",source:url,mimeType:"image/png"}]};
+  const qa={...sourceQa,images:[sourceQa.images[0]]};
+  const matched=inspect(fbPost,fbScope,qa,[url]);
+  assert.equal(matched.status,"SOURCE_REFERENCES_MATCHED_UNATTESTED");
+  assert.deepEqual(matched.flags,[]);
+  assert.equal(matched.sourceFileSha256.length,1);
+  assert.equal(matched.providerByteIdentityVerified,false);
+  assert.equal(matched.approvalVerified,false);
+  assert.equal(matched.executionAllowed,false);
+  const jpeg=inspect({...fbPost,assets:[{...fbPost.assets[0],mimeType:"image/jpeg"}]},fbScope,qa,[url]);
+  assert.equal(jpeg.status,"REVIEW_REQUIRED");
+  assert.ok(jpeg.flags.includes("PROVIDER_MEDIA_FORMAT_NOT_SOURCE_PNG"));
+  assert.equal(jpeg.providerByteIdentityVerified,false);
+  assert.throws(()=>inspect(fbPost,fbScope,{...qa,images:[]},[url]),/INVALID_SOURCE_QA_EVIDENCE/);
+});
