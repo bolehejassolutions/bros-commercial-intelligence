@@ -15,7 +15,7 @@ test("invalid counts and asset count are held",()=>{for(const value of [-1,2.5])
 test("AI caption/native metadata conflict triggers review",()=>{const o=make({metadata:{isAiGenerated:false}});assert.equal(o.status,"REVIEW_REQUIRED");assert.equal(next([o]).reason,"AI_DISCLOSURE_REVIEW")});
 test("native URL must be HTTPS on matching channel",()=>{assert.equal(make({externalLink:"https://www.tiktok.com/@a/video/1"}).status,"REVIEW_REQUIRED");assert.equal(make({externalLink:"http://www.instagram.com/p/a"}).status,"REVIEW_REQUIRED")});
 test("learning rejects cross tenant and duplicate posts",()=>{const o=make();assert.throws(()=>next([o,{...o,tenantId:"tenant-B",postId:"post456"}]),/CROSS_SCOPE/);assert.throws(()=>next([o,o]),/DUPLICATE_POST/)});
-test("cross-platform views cannot be compared as a winner",()=>{const o=make();assert.equal(next([o,{...o,postId:"post456",channelService:"tiktok"}]).reason,"NO_SAME_CHANNEL_PAIR")});
+test("cross-platform views cannot be compared as a winner",()=>{const o=make();const t=make({id:"post456",channelService:"tiktok",channelId:"tt123",externalLink:"https://www.tiktok.com/@bros.sell/video/7699352537861737735"},{channelService:"tiktok",channelId:"tt123"});assert.equal(t.status,"MEASURED");assert.equal(next([o,t]).reason,"NO_SAME_CHANNEL_PAIR")});
 test("same channel candidate is nonexecuting and noncausal",()=>{const o=make();const r=next([o,{...o,postId:"post456"}]);assert.equal(r.reason,"SAME_CHANNEL_CANDIDATES");assert.equal(r.executionAllowed,false);assert.equal(r.causalLiftProven,false)});
 
 test("empty and unsupported metric snapshots remain unmeasured rather than zero",()=>{
