@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
 import {projectUnattestedDemandHitPayHandoff as projectHandoff}
   from "../lib/bci/unattested-hitpay-handoff.ts";
 
@@ -7,6 +8,9 @@ const scope={tenantId:"11111111-1111-4111-8111-111111111111",product:"demand"};
 const observedAt="2026-10-27T02:00:00Z";
 const candidate={
   candidateKey:"demand:hitpay-candidate:sha256:"+"a".repeat(64),
+  orderIdentityDigest:createHash("sha256")
+    .update("bros-demand:hitpay-order-identity:v1:22222222-2222-4222-8222-222222222222")
+    .digest("hex"),
   status:"PROVIDER_REPORTED_PAID",
   orderId:"22222222-2222-4222-8222-222222222222",
   chargeId:"33333333-3333-4333-8333-333333333333",
@@ -30,6 +34,7 @@ test("HitPay maps to constrained Neon provider without verified conversion",()=>
   assert.equal(result.envelope.environment,"unknown");
   assert.equal(result.envelope.provenance,"synthetic");
   assert.equal(result.sourceProvider,"hitpay");
+  assert.equal(result.sourceOrderIdentityDigest,candidate.orderIdentityDigest);
   assert.equal(result.sourceStatus,"PROVIDER_REPORTED_PAID");
   assert.equal(result.envelope.metrics.observed_gross_minor,5000);
   assert.equal(result.envelope.metrics.observed_fee_minor,170);
@@ -53,6 +58,9 @@ test("retries preserve identity; changed source candidate or charge changes key"
 });
 test("caller cannot forge provider verification, settlement, entitlement or attribution",()=>{
   for(const invalid of [
+    {...candidate,orderIdentityDigest:"0".repeat(64)},
+    {...candidate,orderIdentityDigest:"A".repeat(64)},
+    {...candidate,orderIdentityDigest:undefined},
     {...candidate,providerAuthenticationVerified:true},
     {...candidate,tenantMembershipVerified:true},
     {...candidate,paymentEnvironmentVerified:true},
@@ -92,4 +100,24 @@ test("refund observation remains unverified and settlement stays unknown",()=>{
   assert.equal(result.envelope.metrics.observed_refunded_minor,100);
   assert.equal(result.envelope.metrics.settled_orders,null);
   assert.equal(result.providerAttested,false);
+});
+
+test("stable identity across revised snapshots remains unverified and snapshot keys remain distinct",()=>{
+  const original=project();
+  const revised=project({...candidate,
+    candidateKey:"demand:hitpay-candidate:sha256:"+"b".repeat(64),
+    feeMinor:200,netMinor:4800,
+  });
+  assert.equal(original.sourceOrderIdentityDigest,revised.sourceOrderIdentityDigest);
+  assert.notEqual(original.envelope.providerRecordKey,revised.envelope.providerRecordKey);
+  assert.equal(revised.envelope.metrics.settled_orders,null);
+  assert.equal(revised.envelope.metrics.verified_bros_sell_orders,null);
+  assert.equal(revised.authenticated,false);
+  assert.equal(revised.providerAttested,false);
+  const otherOrderId="44444444-4444-4444-8444-444444444444";
+  assert.throws(()=>project({...candidate,orderId:otherOrderId}),/Invalid unattested HitPay handoff/);
+  const otherIdentity=createHash("sha256")
+    .update("bros-demand:hitpay-order-identity:v1:"+otherOrderId).digest("hex");
+  assert.equal(project({...candidate,orderId:otherOrderId,orderIdentityDigest:otherIdentity})
+    .sourceOrderIdentityDigest,otherIdentity);
 });
