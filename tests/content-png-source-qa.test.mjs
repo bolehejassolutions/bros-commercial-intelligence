@@ -14,6 +14,18 @@ test('rejects corrupt CRC, truncated file and trailing bytes',()=>{const a=png()
 test('rejects wrong dimensions, interlace, unsupported JPEG and excessive dimensions',()=>{assert.throws(()=>verify(png(),{expectedWidth:1080,expectedHeight:1350}),/DIMENSION_MISMATCH/);assert.throws(()=>verify(png(10,{interlace:1}),opts),/UNSUPPORTED_PNG_FORMAT/);assert.throws(()=>verify(Buffer.from([0xff,0xd8,0xff]),opts),/PNG_QA_/);assert.throws(()=>verify(png(10,{w:6000,h:3000}),{expectedWidth:6000,expectedHeight:3000}),/PIXEL_LIMIT/);});
 test('rejects invalid scanline filter despite valid CRC and deflate',()=>{const h=Buffer.alloc(13);h.writeUInt32BE(2);h.writeUInt32BE(2,4);h[8]=8;h[9]=2;const rows=Buffer.alloc(14,1);rows[0]=5;rows[7]=0;const b=Buffer.concat([sig,chunk('IHDR',h),chunk('IDAT',deflateSync(rows)),chunk('IEND',Buffer.alloc(0))]);assert.throws(()=>verify(b,opts),/INVALID_SCANLINE_FILTER/);});
 
+test('CRC-valid IDAT rejects trailing compressed junk and concatenated zlib streams',()=>{
+  const header=Buffer.alloc(13);header.writeUInt32BE(2);header.writeUInt32BE(2,4);header[8]=8;header[9]=2;
+  const rows=Buffer.alloc(14,30);rows[0]=0;rows[7]=0;
+  const stream=deflateSync(rows);
+  for(const trailing of [Buffer.from([0,1,2]),stream]){
+    const b=Buffer.concat([sig,chunk('IHDR',header),chunk('IDAT',Buffer.concat([stream,trailing])),chunk('IEND',Buffer.alloc(0))]);
+    assert.throws(()=>verify(b,opts),/TRAILING_COMPRESSED_BYTES/);
+  }
+  // Splitting one valid zlib stream across contiguous IDAT chunks is legal.
+  const split=Buffer.concat([sig,chunk('IHDR',header),chunk('IDAT',stream.subarray(0,5)),chunk('IDAT',stream.subarray(5)),chunk('IEND',Buffer.alloc(0))]);
+  assert.equal(verify(split,opts).pixelSha256,verify(png(30),opts).pixelSha256);
+});
 test('different PNG encoding of identical pixels cannot pass as independent image',()=>{
   const a=png(30,{level:1}),b=png(30,{level:9});
   assert.notEqual(verify(a,opts).sha256,verify(b,opts).sha256);
