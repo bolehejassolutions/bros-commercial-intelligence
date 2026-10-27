@@ -54,3 +54,21 @@ test("both trigger functions explicitly revoke default PUBLIC EXECUTE", () => {
   assert.equal((ddl.match(/REVOKE ALL ON FUNCTION bci_dev\./g) ?? []).length, 2);
   assert.doesNotMatch(ddl, /^\s*GRANT\s+EXECUTE\b/im);
 });
+
+test("draft PL/pgSQL trigger bodies close their dollar quotes before PUBLIC EXECUTE revocation", () => {
+  // Static lexical guard only: PostgreSQL parsing/execution still requires a
+  // separately authorized isolated DEV test, not a CI connection to Neon.
+  assert.equal((ddl.match(/\\bAS \\$\\$/g) ?? []).length, 2);
+  assert.equal((ddl.match(/^\\$\\$;$/gm) ?? []).length, 2);
+  assert.doesNotMatch(ddl, /^\\$;$/gm);
+  for (const fn of ["reject_lineage_mutation", "check_lineage_integrity"]) {
+    const signature = `CREATE FUNCTION bci_dev.${fn}()`;
+    const revoke = `REVOKE ALL ON FUNCTION bci_dev.${fn}() FROM PUBLIC;`;
+    const begin = ddl.indexOf(signature);
+    const end = ddl.indexOf(revoke, begin);
+    assert.ok(begin >= 0 && end > begin, `${fn} function/revocation ordering`);
+    const body = ddl.slice(begin, end);
+    assert.match(body, /\\bAS \\$\\$[\\s\\S]*\\n\\$\\$;\\s*$/);
+    assert.equal((body.match(/\\$\\$/g) ?? []).length, 2);
+  }
+});
