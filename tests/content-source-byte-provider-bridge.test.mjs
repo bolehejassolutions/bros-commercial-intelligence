@@ -91,3 +91,13 @@ test('unsupported mixed formats and caller-forged QA summaries cannot bypass raw
     /INVALID_FETCHED_SOURCE/);
   assert.throws(()=>inspect(post,scope,[],options),/INVALID_FETCHED_SOURCE_SET/);
 });
+
+test('distinct image bytes cannot be matched to a repeated source URL',()=>{
+  const duplicatedUrls=[urls[0],urls[0]];
+  const duplicatedPost={...post,assets:duplicatedUrls.map(source=>({
+    type:'image',source,mimeType:'image/png'
+  }))};
+  assert.throws(()=>inspect(duplicatedPost,scope,[
+    src(png(10),duplicatedUrls[0]),src(png(20),duplicatedUrls[1])
+  ],options),/INVALID_SOURCE_REFERENCE_MANIFEST/);
+});
