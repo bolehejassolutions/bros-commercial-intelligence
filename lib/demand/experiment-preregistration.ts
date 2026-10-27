@@ -82,7 +82,10 @@ export function preregisterDemandExperiment(
       input.baselineStart > input.baselineEnd ||
       input.baselineEnd >= input.experimentStart ||
       input.experimentStart > input.experimentEnd ||
-      input.preRegisteredAt.slice(0, 10) > input.experimentStart ||
+      // MYT experiment day begins at 00:00 UTC+08; UTC date-only comparison
+      // would accept a proposal registered after local experiment start.
+      // Caller-supplied timestamps are NOT independent registration attestation.
+      Date.parse(input.preRegisteredAt) >= Date.parse(input.experimentStart + "T00:00:00+08:00") ||
       input.maxIncrementalSpendMinor !== 0 ||
       !Array.isArray(input.evidenceCandidateIds) ||
       input.evidenceCandidateIds.length < 1 || input.evidenceCandidateIds.length > 20 ||
