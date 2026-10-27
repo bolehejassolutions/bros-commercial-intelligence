@@ -72,3 +72,18 @@ test('UUID fields reject array-coerced scope, record IDs and parent references',
     { ...chain[1], parentIds: [wrappedParentId] },
   ]), denied);
 });
+
+test('shared lineage rejects unreviewed scope and record fields rather than reflecting them', () => {
+  // This pure validator returns copies of scope/records. Extra input keys must
+  // not survive the boundary, even on exact replay of an existing record ID.
+  assert.throws(() => validateBciLineage(
+    { ...scope, callerTenantOverride: B }, [chain[0]],
+  ), denied);
+  assert.throws(() => validateBciLineage(scope, [
+    { ...chain[0], providerCredential: 'must-not-leak' },
+  ]), denied);
+  assert.throws(() => validateBciLineage(scope, [
+    chain[0], { ...chain[0], providerCredential: 'must-not-leak' },
+  ]), denied);
+  assert.equal(validateBciLineage(scope, [chain[0]]).records.length, 1);
+});
