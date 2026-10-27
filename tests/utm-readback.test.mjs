@@ -128,17 +128,20 @@ test('GA4 candidate identity scopes report ID by property and date window withou
   }
 });
 
-test('GA4 revised snapshots cannot alias one candidate key despite identical report IDs',()=>{
+test('GA4 repeated collection is idempotent; revised metrics or report lineage change identity',()=>{
   const first=assessDemandUtmReadback(proposal,row);
   const later=assessDemandUtmReadback(proposal,{...row,retrievedAt:'2026-10-26T14:15:00Z'});
   const revised=assessDemandUtmReadback(proposal,{...row,sessions:6,engagedSessions:3});
+  const differentReport=assessDemandUtmReadback(proposal,{...row,reportId:'ga4report_20261026_02'});
   const missing=assessDemandUtmReadback(proposal,{...row,sessions:null,engagedSessions:null});
   const reportedZero=assessDemandUtmReadback(proposal,{...row,sessions:0,engagedSessions:0});
-  const keys=[first,later,revised,missing,reportedZero].map(x=>x.candidateReportCorrelationKey);
+  assert.equal(first.candidateReportCorrelationKey,later.candidateReportCorrelationKey);
+  const keys=[first,revised,differentReport,missing,reportedZero].map(x=>x.candidateReportCorrelationKey);
   assert.equal(new Set(keys).size,keys.length);
+  assert.match(first.candidateReportCorrelationKey,/^demand:utm-candidate:.*:sha256:[a-f0-9]{64}$/);
   assert.equal(first.candidateReportCorrelationKey,
     assessDemandUtmReadback(proposal,{...row}).candidateReportCorrelationKey);
-  for(const x of [first,later,revised,missing,reportedZero]){
+  for(const x of [first,later,revised,differentReport,missing,reportedZero]){
     assert.equal(x.status,'MATCHED_UNATTESTED');
     assert.equal(x.providerAuthenticationVerified,false);
     assert.equal(x.tenantMembershipVerified,false);

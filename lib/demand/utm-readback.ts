@@ -8,6 +8,7 @@
  * The candidate correlation key is NOT a tenant-global BCI evidence ID and
  * must never be persisted as such before server-verified tenant scoping.
  */
+import { createHash } from "node:crypto";
 import type { DemandUtmProposal } from "./utm-experiment.ts";
 
 export type DemandGa4UtmRow = Readonly<{
@@ -107,11 +108,20 @@ export function assessDemandUtmReadback(
       row.campaign !== proposal.experimentId || row.content !== proposal.variant) {
     return result("REJECTED_SCOPE", null, null, null);
   }
-  // Include GA4 property, window, retrieval timestamp and exact reported counts.
-  // GA4 can revise historical attribution without changing its report ID;
-  // distinct snapshots must not silently overwrite one another. Null is
-  // distinct from provider-reported zero. This is still NOT BCI evidence.
+  // DEMAND_GA4_SNAPSHOT_IDEMPOTENCY_20261027: retrieval time is audit
+  // metadata, NOT provider-snapshot identity. Re-reading unchanged report
+  // dimensions/metrics must not generate a new candidate key every hour.
+  // The reportId is retained as a report-definition/source discriminator;
+  // a changed reportId, property, window or metrics yields a distinct key.
+  // Null and reported zero remain distinct. This is NOT provider
+  // authentication, tenant attestation or durable shared BCI evidence.
+  const snapshotDigest = createHash("sha256").update(JSON.stringify([
+    proposal.proposalId, row.reportId, row.propertyId,
+    row.periodStart, row.periodEnd, row.landingPath,
+    row.source, row.medium, row.campaign, row.content,
+    row.sessions, row.engagedSessions,
+  ])).digest("hex");
   return result("MATCHED_UNATTESTED",
-    `demand:utm-candidate:${proposal.proposalId}:${row.propertyId}:${row.periodStart}:${row.periodEnd}:${row.reportId}:${row.retrievedAt}:${row.sessions === null ? 'null' : row.sessions}:${row.engagedSessions === null ? 'null' : row.engagedSessions}`,
+    `demand:utm-candidate:${proposal.proposalId}:sha256:${snapshotDigest}`,
     row.sessions, row.engagedSessions);
 }
