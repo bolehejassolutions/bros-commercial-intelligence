@@ -35,10 +35,12 @@ const stages: readonly BciLineageStage[] = [
   "evidence", "signal", "case", "diagnosis", "decision", "action", "outcome", "learning",
 ];
 const deny = (): never => { throw new Error("Invalid BCI audit append"); };
-const exactShape = (value: unknown): value is BciLineageRecord =>
-  value !== null && typeof value === "object" && !Array.isArray(value) &&
-  Object.keys(value).length === keys.size &&
-  Object.keys(value).every(key => keys.has(key));
+const exactShape = (value: unknown): value is BciLineageRecord => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const ownKeys = Reflect.ownKeys(value);
+  return ownKeys.length === keys.size &&
+    ownKeys.every(key => typeof key === "string" && keys.has(key));
+};
 
 /**
  * Plan an append without rewriting history or promoting caller assertions.
