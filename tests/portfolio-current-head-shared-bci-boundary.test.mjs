@@ -13,9 +13,9 @@ import {deflateSync} from 'node:zlib';
 import {pathToFileURL} from 'node:url';
 
 const pins={
-  content:'f5587d32a3f9383f4022e127eb38f97edb426e71',
-  demand:'a5538c2f7a3ddc4a7886bb287a351e3008009c34',
-  bci:'f7b4c05283c11a0228864544557fd5f7feee0976',
+  content:'3bfa118349dffddb25c18c18f1d03664ccb68c75',
+  demand:'6a9bced47b22b35dda3cb8e222e3afd0a9a7d8c7',
+  bci:'cee811f816c5a0d16a51a4d738034f5b2dc98f35',
 };
 const files=[
   [pins.content,'lib/content/jpeg-source-qa.mjs'],
@@ -75,6 +75,18 @@ function distinctPng(pixel){
     pngChunk('IDAT',deflateSync(rows)),pngChunk('IEND',Buffer.alloc(0))]);
 }
 
+// PORTFOLIO_RGBA_RENDERED_DUPLICATE_TO_BCI_HOLD_20261028_V1
+// Same rendered pixels with different PNG channel encodings must be rejected
+// before a provider-shaped SENT observation can reach shared BCI.
+function opaqueRgbaPng(pixel){
+  const head=Buffer.alloc(13);head.writeUInt32BE(2,0);head.writeUInt32BE(2,4);
+  head[8]=8;head[9]=6;
+  const rows=Buffer.alloc(18,pixel);rows[0]=0;rows[9]=0;
+  for(const i of [4,8,13,17])rows[i]=255;
+  return Buffer.concat([pngSig,pngChunk('IHDR',head),
+    pngChunk('IDAT',deflateSync(rows)),pngChunk('IEND',Buffer.alloc(0))]);
+}
+
 if(process.env.GITHUB_ACTIONS!=='true'){
   test.skip('exact-head integration runs only in GitHub Actions');
 }else{
@@ -117,6 +129,21 @@ if(process.env.GITHUB_ACTIONS!=='true'){
         metricsUpdatedAt:'2026-10-27T11:00:00Z',
         metrics:[{type:'views',unit:'count',value:6},
           {type:'reach',unit:'count',value:4}]};
+      // Byte SHA and channel-specific pixel SHA differ for RGB/RGBA copies,
+      // but the rendered RGBA pixels are identical. No BCI evidence is built.
+      const sameRendered=[sources[0],
+        {...sources[1],bytes:opaqueRgbaPng(10)}];
+      assert.throws(()=>inspectContentFetchedSourceBytes(post,scope,sameRendered,
+        {expectedWidth:2,expectedHeight:2}),/PNG_QA_DUPLICATE_RENDERED_PIXELS/);
+      const differentRendered=[sources[0],
+        {...sources[1],bytes:opaqueRgbaPng(20)}];
+      const rgbaQa=inspectContentFetchedSourceBytes(post,scope,differentRendered,
+        {expectedWidth:2,expectedHeight:2});
+      assert.equal(rgbaQa.status,'SOURCE_REFERENCES_MATCHED_UNATTESTED');
+      assert.equal(rgbaQa.sourcePixelIntegrityVerified,true);
+      assert.equal(rgbaQa.providerByteIdentityVerified,false);
+      assert.equal(rgbaQa.approvalVerified,false);
+      assert.equal(rgbaQa.executionAllowed,false);
       const byteQa=inspectContentFetchedSourceBytes(post,scope,sources,
         {expectedWidth:2,expectedHeight:2});
       assert.equal(byteQa.status,'SOURCE_REFERENCES_MATCHED_UNATTESTED');
