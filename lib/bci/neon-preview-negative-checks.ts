@@ -11,7 +11,7 @@ export type PreviewNegativeReport = Readonly<{
   authenticatedControlsTotal: number;
   checks: readonly PreviewNegativeCheck[];
 }>;
-type Probe = Readonly<{ id: string; path: string; expected: number; method?: "POST"; extraHeader?: readonly [string,string]; bearer: boolean }>;
+type Probe = Readonly<{ id: string; path: string; expected: number; method?: "POST"; extraHeader?: readonly [string,string]; bearer: boolean; tamperSignature?: true }>;
 const probes: readonly Probe[] = [
   { id: "missing_bearer", path: "?product=content", expected: 401, bearer: false },
   { id: "tenant_override", path: "?product=content&tenantId=11111111-1111-4111-8111-111111111111", expected: 400, bearer: true },
@@ -20,8 +20,19 @@ const probes: readonly Probe[] = [
   { id: "admin_header", path: "?product=content", expected: 400, bearer: true, extraHeader: ["x-role","BROS"] },
   { id: "product_header", path: "?product=content", expected: 400, bearer: true, extraHeader: ["x-product","demand"] },
   { id: "write_method", path: "?product=content", expected: 405, bearer: true, method: "POST" },
+  // A valid, owner-signed JWT must not grant access if any signature byte changes.
+  { id: "tampered_signature", path: "?product=content", expected: 403, bearer: true, tamperSignature: true },
 ];
 const controlProducts = ["content", "demand"] as const;
+/** Alter one authenticated signature character without decoding, persisting or logging credentials.
+ * The token stays JWT-shaped, so an HTTP 403 must come from the server-side verification path,
+ * not the missing/malformed Authorization-header gate (HTTP 401).
+ */
+const tamperedSignatureToken = (token: string): string => {
+  const signatureStart = token.lastIndexOf(".") + 1;
+  return token.slice(0, signatureStart) +
+    (token[signatureStart] === "A" ? "B" : "A") + token.slice(signatureStart + 1);
+};
 /** Development-only cross-tenant smoke: the approved operator's internal tenant
  * currently has zero CONTENT and DEMAND evidence rows, while separate synthetic
  * tenants have populated rows. A provider-authenticated GET must not return any
@@ -118,7 +129,7 @@ export async function runNeonPreviewNegativeChecks(
   const checks: PreviewNegativeCheck[] = [];
   for (const probe of probes) {
     try {
-      const headers: Record<string,string> = probe.bearer ? { Authorization: `Bearer ${token}` } : {};
+      const headers: Record<string,string> = probe.bearer ? { Authorization: `Bearer ${probe.tamperSignature ? tamperedSignatureToken(token) : token}` } : {};
       if (probe.extraHeader) headers[probe.extraHeader[0]] = probe.extraHeader[1];
       const response = await request(`/api/internal/neon-evidence${probe.path}`, {
         method: probe.method ?? "GET", headers, cache: "no-store", redirect: "error",
