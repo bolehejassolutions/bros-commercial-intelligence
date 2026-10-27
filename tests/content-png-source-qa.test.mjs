@@ -47,3 +47,20 @@ test('rejects truecolor tRNS color-key transparency absent from RGB pixel digest
   const transparent=Buffer.concat([sig,chunk('IHDR',header),chunk('tRNS',transparentRgb),chunk('IDAT',deflateSync(rows)),chunk('IEND',Buffer.alloc(0))]);
   assert.throws(()=>verify(transparent,opts),/UNSUPPORTED_COLOR_KEY_TRANSPARENCY/);
 });
+
+// CONTENT_PNG_COLOR_RENDERING_METADATA_GATE_20261027_0953: raw RGB(A) scanlines alone cannot prove visual identity when
+// color-management, alpha-background or orientation metadata changes rendering.
+test('rejects CRC-valid rendering metadata outside the decoded pixel digest',()=>{
+  const base=png(30),headerEnd=8+12+13;
+  for(const type of ['gAMA','cHRM','sRGB','iCCP','sBIT','bKGD','eXIf']){
+    const variant=Buffer.concat([base.subarray(0,headerEnd),chunk(type,Buffer.from([0,1,2,3])),base.subarray(headerEnd)]);
+    assert.throws(()=>verify(variant,opts),/UNSUPPORTED_RENDERING_METADATA/,type);
+  }
+});
+test('harmless text metadata preserves decoded-pixel identity, not source-byte identity',()=>{
+  const base=png(30),headerEnd=8+12+13;
+  const annotated=Buffer.concat([base.subarray(0,headerEnd),chunk('tEXt',Buffer.from('Comment\\0safe')),base.subarray(headerEnd)]);
+  assert.notEqual(verify(base,opts).sha256,verify(annotated,opts).sha256);
+  assert.equal(verify(base,opts).pixelSha256,verify(annotated,opts).pixelSha256);
+  assert.throws(()=>set([base,annotated],opts),/DUPLICATE_PIXELS/);
+});
