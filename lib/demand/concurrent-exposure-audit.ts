@@ -64,6 +64,26 @@ export function auditDemandConcurrentExposureCandidates(
     try { return proposeDemandConcurrentControl(proposal); }
     catch { return fail(); }
   })();
+  // The candidate hash binds the input plan, but not derived safety fields.
+  // Reject modified/extra protocol claims, including approval, zero-spend
+  // guardrails and acceptance requirements. Order of object keys is irrelevant.
+  const canonical = replay as unknown as Record<string, unknown>;
+  const supplied = proposal as unknown as Record<string, unknown>;
+  const canonicalKeys = Object.keys(canonical);
+  if (Object.keys(supplied).length !== canonicalKeys.length ||
+      Object.keys(supplied).some(key => !Object.prototype.hasOwnProperty.call(canonical, key)) ||
+      canonicalKeys.some(key => {
+        const expected = canonical[key], actual = supplied[key];
+        if (Array.isArray(expected))
+          return !Array.isArray(actual) || actual.length !== expected.length ||
+            expected.some((value, index) => actual[index] !== value);
+        if (key === "allocation")
+          return !actual || typeof actual !== "object" || Array.isArray(actual) ||
+            Object.keys(actual).length !== 2 ||
+            (actual as {controlPercent?: unknown}).controlPercent !== 50 ||
+            (actual as {treatmentPercent?: unknown}).treatmentPercent !== 50;
+        return actual !== expected;
+      })) fail();
   if (replay.candidateId !== proposal.candidateId ||
       proposal.allocation?.controlPercent !== 50 ||
       proposal.allocation?.treatmentPercent !== 50 ||
