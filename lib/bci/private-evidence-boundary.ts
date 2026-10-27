@@ -90,8 +90,10 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
     if (!grant || grant.active !== true || !validUuid(grant.tenantId) ||
         grant.principalId !== principal.userId || grant.product !== request.product) denied();
 
-    // Scope must be derived exclusively from verified membership, never request.
-    const rows = await deps.readRows({ tenantId: grant.tenantId, product: request.product, limit });
+    // Capture the verified tenant before any asynchronous evidence read. Never
+    // derive it from a caller-supplied scope or a subsequently mutated grant.
+    const authorizedTenantId = grant.tenantId;
+    const rows = await deps.readRows({ tenantId: authorizedTenantId, product: request.product, limit });
     if (!Array.isArray(rows) || rows.length > limit) denied();
     // The database schema enforces both keys. Recheck at the API boundary so a
     // buggy/mock adapter cannot replay one record as multiple independent facts.
@@ -103,7 +105,7 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
       // Reject the entire response instead of serializing extra DB columns.
       if (!row || Object.keys(row).length !== evidenceFields.size ||
           Object.keys(row).some(key => !evidenceFields.has(key)) ||
-          !validUuid(row.id) || row.tenantId !== grant.tenantId ||
+          !validUuid(row.id) || row.tenantId !== authorizedTenantId ||
           row.product !== request.product || typeof row.provider !== "string" ||
           !row.provider || typeof row.providerRecordKey !== "string" ||
           !row.providerRecordKey || !validMetrics(row.metrics)) denied();
@@ -112,8 +114,22 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
       seenIds.add(row.id);
       seenProviderKeys.add(providerKey);
     }
+    // These are two different restricted database connections. A membership
+    // can be revoked/reassigned while the evidence SELECT is in progress.
+    // Recheck the authoritative membership immediately before serializing any
+    // evidence: fail the entire response if the scope changed or lookup fails.
+    // This NARROWS the time-of-check/time-of-use gap; it does not make separate
+    // membership/evidence transactions atomic or guarantee instant revocation.
+    const latestGrants = await deps.membershipsFor(principal.userId, request.product);
+    if (!Array.isArray(latestGrants) || latestGrants.length !== 1) denied();
+    const latestGrant = latestGrants[0];
+    if (!latestGrant || latestGrant.active !== true ||
+        latestGrant.principalId !== principal.userId ||
+        latestGrant.product !== request.product ||
+        latestGrant.tenantId !== authorizedTenantId) denied();
+
     return rows.map(row => Object.freeze({
-      id: row.id, tenantId: row.tenantId, product: row.product,
+      id: row.id, tenantId: authorizedTenantId, product: row.product,
       provider: row.provider, providerRecordKey: row.providerRecordKey,
       metrics: Object.freeze({ ...row.metrics }),
     }));
