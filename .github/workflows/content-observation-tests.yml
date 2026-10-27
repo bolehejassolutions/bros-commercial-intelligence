@@ -4,16 +4,12 @@ on:
     branches: [feat/content-measurement-gate-20261026]
     paths:
       - "lib/content/**"
-      - "tests/content-buffer-observation.test.mjs"
-      - "tests/content-png-source-qa.test.mjs"
-      - "tests/content-measurement-revision.test.mjs"
+      - "tests/content-*.test.mjs"
       - ".github/workflows/content-observation-tests.yml"
   pull_request:
     paths:
       - "lib/content/**"
-      - "tests/content-buffer-observation.test.mjs"
-      - "tests/content-png-source-qa.test.mjs"
-      - "tests/content-measurement-revision.test.mjs"
+      - "tests/content-*.test.mjs"
       - ".github/workflows/content-observation-tests.yml"
 jobs:
   content-observation:
@@ -25,4 +21,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node --test tests/content-buffer-observation.test.mjs tests/content-png-source-qa.test.mjs tests/content-measurement-revision.test.mjs
+      - run: node --test tests/content-*.test.mjs
