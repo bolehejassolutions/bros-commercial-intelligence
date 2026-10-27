@@ -39,3 +39,18 @@ test("untrusted source cannot claim provider verification or persistent success"
   assert.match(ddl, /no provider attestation or customer access/i);
   assert.match(ddl, /intentionally NOT\s*\n--\s*under neon\/migrations/);
 });
+
+test("draft rejects nonfinite timestamps and padded source identifiers before any DEV apply", () => {
+  assert.match(ddl, /recorded_at timestamptz NOT NULL CHECK \(isfinite\(recorded_at\)\)/);
+  for (const field of ["source_system", "source_record_key"]) {
+    assert.match(ddl, new RegExp(field + " = btrim\\(" + field + "\\)"));
+  }
+});
+
+test("both trigger functions explicitly revoke default PUBLIC EXECUTE", () => {
+  for (const fn of ["reject_lineage_mutation", "check_lineage_integrity"]) {
+    assert.match(ddl, new RegExp("REVOKE ALL ON FUNCTION bci_dev\\." + fn + "\\(\\) FROM PUBLIC"));
+  }
+  assert.equal((ddl.match(/REVOKE ALL ON FUNCTION bci_dev\./g) ?? []).length, 2);
+  assert.doesNotMatch(ddl, /^\s*GRANT\s+EXECUTE\b/im);
+});
