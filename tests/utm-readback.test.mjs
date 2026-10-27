@@ -153,3 +153,26 @@ test('GA4 repeated collection is idempotent; revised metrics or report lineage c
     assert.equal(x.causalLift,null);
   }
 });
+
+test('GA4 readback rejects coercible identifiers and normalized impossible UTC timestamps',()=>{
+  for(const patch of [
+    {reportId:[row.reportId]},
+    {propertyId:[row.propertyId]},
+    {periodStart:[row.periodStart]},
+    {periodEnd:[row.periodEnd]},
+    {retrievedAt:'2026-10-26T24:00:00Z'},
+    {retrievedAt:'2026-02-30T13:15:00Z'},
+    {retrievedAt:'2026-10-26T13:60:00Z'},
+  ]) assert.throws(()=>assessDemandUtmReadback(proposal,{...row,...patch}),invalid);
+  // Valid milliseconds remain allowed, but neither an untrusted GA4 row nor
+  // its stable candidate key becomes provider-authenticated purchase proof.
+  const fractional=assessDemandUtmReadback(proposal,{
+    ...row,retrievedAt:'2026-10-26T13:15:00.12Z'});
+  assert.equal(fractional.status,'MATCHED_UNATTESTED');
+  assert.equal(fractional.candidateReportCorrelationKey,
+    assessDemandUtmReadback(proposal,row).candidateReportCorrelationKey);
+  assert.equal(fractional.providerAuthenticationVerified,false);
+  assert.equal(fractional.checkoutAttributionVerified,false);
+  assert.equal(fractional.settledOrders,null);
+  assert.equal(fractional.verifiedCacMinor,null);
+});
