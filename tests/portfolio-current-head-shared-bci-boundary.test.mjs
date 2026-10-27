@@ -12,9 +12,9 @@ import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const pins={
-  content:'9090bc394a42f886d3675f35ca93dbf633c3df1c',
-  demand:'5a43590366f17c204e84bc4addf5bbacef9d918f',
-  bci:'ddebb07d95258c2eec3cd87fe3ce7249c9a7e95c',
+  content:'87d7a9bceab75e04319891d65e532fa39d679267',
+  demand:'907d726c5095a8a35b1e83a5574fb1e5c86683f2',
+  bci:'cdde7b2810273fd713dca23cfd12dab12f80fd4d',
 };
 const files=[
   [pins.content,'lib/content/jpeg-source-qa.mjs'],
