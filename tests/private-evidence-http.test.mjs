@@ -26,7 +26,7 @@ process.on('exit',()=>{for(const [k,v] of Object.entries(previousEnv)){if(v===un
 test('valid verified bearer and membership return only product-scoped evidence',async()=>{
  const f=fixture();const r=await f.request();assert.equal(r.status,200);
  assert.deepEqual((await r.json()).data,[ROW]);
- assert.deepEqual(f.calls,[['auth','verified.test.token'],['membership',USER,'content'],['read',{tenantId:TENANT,product:'content',limit:25}]]);
+ assert.deepEqual(f.calls,[['auth','verified.test.token'],['membership',USER,'content'],['read',{tenantId:TENANT,product:'content',limit:25}],['membership',USER,'content']]);
  assert.match(r.headers.get('cache-control'),/no-store/);assert.equal(r.headers.get('vary'),'Authorization');
  assert.equal(r.headers.get('access-control-allow-origin'),null);
 });
