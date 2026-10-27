@@ -215,3 +215,25 @@ test('Meta snapshot IDs are bounded for BCI, collection-time independent, and re
   assert.equal(first.verifiedCacMinor,null);
   assert.equal(first.causalLift,null);
 });
+
+// DEMAND_META_SCOPE_STRING_IDENTITY_20261028: RegExp.test coerces arrays to strings.
+test('Meta scope IDs reject array-to-string coercion before building tenant or campaign evidence identity',()=>{
+  const baseline=normalizeMetaCampaignFunnel(scope,row);
+  assert.match(baseline.snapshotKey,/^meta_ads:sha256:[a-f0-9]{64}$/);
+  // A coerced account ID previously produced a plausible sourceKey but
+  // returned an array as accountId; a shared array campaign ID could pass
+  // strict equality between scope and row and corrupt identity provenance.
+  assert.throws(()=>normalizeMetaCampaignFunnel(
+    {...scope,accountId:[scope.accountId]},row),invalid);
+  const arrayCampaignId=[scope.campaignId];
+  assert.throws(()=>normalizeMetaCampaignFunnel(
+    {...scope,campaignId:arrayCampaignId},
+    {...row,campaign_id:arrayCampaignId}),invalid);
+  assert.throws(()=>normalizeMetaCampaignFunnel(
+    {...scope,tenantId:[scope.tenantId]},row),invalid);
+  assert.throws(()=>normalizeMetaCampaignFunnel(
+    scope,{...row,campaign_id:[scope.campaignId]}),invalid);
+  assert.equal(normalizeMetaCampaignFunnel(scope,row).snapshotKey,baseline.snapshotKey);
+  assert.equal(baseline.hitpaySettledOrders,null);
+  assert.equal(baseline.verifiedCacMinor,null);
+});
