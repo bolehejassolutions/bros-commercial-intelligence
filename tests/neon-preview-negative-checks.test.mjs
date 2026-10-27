@@ -5,29 +5,58 @@ const token = "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ0ZXN0In0.c2ln";
 const control = () => new Response(JSON.stringify({ scope: "internal-development", evidence: [] }), {
  status: 200, headers: { "Cache-Control": "private, no-store", "Vary": "Authorization" },
 });
-test("both authenticated product controls precede seven bounded denial probes", async()=>{
+test("both authenticated product controls precede eight bounded denial probes", async()=>{
  const calls=[];
  const mock=async (url,options)=>{
   calls.push({url,options});
   if (url.includes("&limit=1")) return control();
-  const status=options.method==="POST"?405:url.endsWith("?product=content")&&!options.headers.Authorization?401:400;
+  const status=options.method==="POST"?405:!options.headers.Authorization?401:options.headers.Authorization!==`Bearer ${token}`?403:400;
   return new Response(JSON.stringify({error:status===405?"Method not allowed.":"BCI private evidence access denied."}),{status,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"}});
  };
  const report=await runNeonPreviewNegativeChecks(token,mock);
  assert.equal(report.authenticatedControlsPassed,2);
  assert.equal(report.authenticatedControlsTotal,2);
- assert.equal(report.total,7);
- assert.equal(report.passed,7);
- assert.equal(calls.length,9);
+ assert.equal(report.total,8);
+ assert.equal(report.passed,8);
+ assert.equal(calls.length,10);
  assert.equal(calls[0].url,"/api/internal/neon-evidence?product=content&limit=1");
  assert.equal(calls[1].url,"/api/internal/neon-evidence?product=demand&limit=1");
  assert.ok(calls.slice(0,2).every(c=>c.options.headers.Authorization===`Bearer ${token}`));
  assert.equal(calls[2].options.headers.Authorization,undefined);
  assert.equal(calls[3].options.headers.Authorization,`Bearer ${token}`);
  assert.equal(calls.filter(c=>c.options.method==="POST").length,1);
+ const tamperedCalls=calls.filter(c=>c.options.headers.Authorization &&
+   c.options.headers.Authorization!==`Bearer ${token}`);
+ assert.equal(tamperedCalls.length,1);
+ const tampered=tamperedCalls[0];
+ assert.equal(tampered.url,"/api/internal/neon-evidence?product=content");
+ assert.deepEqual(tampered.options.headers.Authorization.slice(7).split(".").slice(0,2),token.split(".").slice(0,2));
+ assert.notEqual(tampered.options.headers.Authorization, `Bearer ${token}`);
+ assert.equal(tampered.options.headers.Authorization.slice(7).split(".")[2].length,token.split(".")[2].length);
  assert.equal(JSON.stringify(report).includes(token),false);
  assert.ok(calls.every(c=>c.options.redirect==="error"&&c.options.cache==="no-store"));
 });
+
+test("tampered signature must receive HTTP 403; 200, 400 or 401 must not pass",async()=>{
+ for(const wrongStatus of [200,400,401]){
+  const mock=async (url,options)=>{
+   if(url.includes("&limit=1")) return control();
+   const badSignature=options.headers.Authorization &&
+     options.headers.Authorization!==`Bearer ${token}`;
+   const status=badSignature?wrongStatus:
+     options.method==="POST"?405:!options.headers.Authorization?401:400;
+   return new Response(JSON.stringify({
+    error:status===405?"Method not allowed.":"BCI private evidence access denied.",
+   }),{status,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"}});
+  };
+  const report=await runNeonPreviewNegativeChecks(token,mock);
+  assert.equal(report.total,8);
+  assert.equal(report.passed,7);
+  assert.deepEqual(report.checks.filter(x=>!x.passed).map(x=>x.id),["tampered_signature"]);
+  assert.equal(JSON.stringify(report).includes(token),false);
+ }
+});
+
 test("wrong status, missing no-store, or leaked evidence fails the probe",async()=>{
  for(const variant of ["status","cache","leak"]){
   const mock=async url=>url.includes("&limit=1")?control():new Response(variant==="leak"?JSON.stringify({evidence:[{}]}):"{}",{
@@ -79,7 +108,7 @@ test("matching status and privacy headers cannot mask unexpected denial payloads
  ]){
   const mock=async (url,options)=>{
    if(url.includes("&limit=1")) return control();
-   const status=options.method==="POST"?405:url.endsWith("?product=content")&&!options.headers.Authorization?401:400;
+   const status=options.method==="POST"?405:!options.headers.Authorization?401:options.headers.Authorization!==`Bearer ${token}`?403:400;
    return new Response(typeof payload==="string"?payload:JSON.stringify(payload),{
     status,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"},
    });
@@ -167,13 +196,13 @@ test("authenticated controls reject unreviewed response fields and malformed evi
   if(url.includes("&limit=1"))return new Response(JSON.stringify({
    scope:"internal-development",evidence:url.includes("product=content")?[validRow]:[],
   }),{status:200,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"}});
-  const status=options.method==="POST"?405:url.endsWith("?product=content")&&!options.headers.Authorization?401:400;
+  const status=options.method==="POST"?405:!options.headers.Authorization?401:options.headers.Authorization!==`Bearer ${token}`?403:400;
   return new Response(JSON.stringify({error:status===405?"Method not allowed.":"BCI private evidence access denied."}),{
    status,headers:{"Cache-Control":"private, no-store","Vary":"Authorization"},
   });
  };
  const report=await runNeonPreviewNegativeChecks(token,mock);
  assert.equal(report.authenticatedControlsPassed,2);
- assert.equal(report.passed,7);
+ assert.equal(report.passed,8);
  assert.equal(JSON.stringify(report).includes("post-1"),false);
 });
