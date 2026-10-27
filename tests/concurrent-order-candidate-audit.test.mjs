@@ -118,6 +118,29 @@ test('rejects raw IDs, forged scope, duplicate event IDs and tampered protocol',
   assert.throws(()=>audit({...protocol,actionApproved:true},events,orders),invalid);
 });
 
+test('coercible arrays cannot bypass event, snapshot or stable order identity deduplication',()=>{
+  const invalid=/Invalid BROS DEMAND order exposure candidates/;
+  const identity='9'.repeat(64);
+  const key='demand:hitpay-candidate:sha256:'+'c'.repeat(64);
+  for(const patch of [
+    {eventId:['checkout:a']},
+    {visitorDigest:[a]},
+    {orderCandidateKey:[key]},
+    {orderIdentityDigest:[identity]},
+    {observedAt:['2026-10-29T06:00:00Z']},
+  ]) assert.throws(()=>audit(protocol,events,[{...orders[0],...patch}]),invalid);
+  // A second array object must not masquerade as a second stable order ID.
+  const first={...orders[0],orderIdentityDigest:identity};
+  const duplicate={...orders[0],eventId:'checkout:a:again',
+    orderIdentityDigest:[identity]};
+  assert.throws(()=>audit(protocol,events,[first,duplicate]),invalid);
+  const safe=audit(protocol,events,[first]);
+  assert.equal(safe.orderIdentityCoverageComplete,true);
+  assert.equal(safe.uniqueOrderIdentityCandidates,1);
+  assert.equal(safe.verifiedPaidOrders,null);
+  assert.equal(safe.attributionVerified,false);
+});
+
 test('order join picks canonical earliest exposure, never provider input order',()=>{
   const later=exposure('expose:a:later',a,'exposure','control',
     {observedAt:'2026-10-29T07:00:00Z'});
