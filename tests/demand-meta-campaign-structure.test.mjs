@@ -105,3 +105,22 @@ test('incomplete, duplicate, missing-scope and malformed inventories fail closed
   assert.equal(run(campaigns,adsets,ads,'120251158023300000').state,
     'TARGET_CAMPAIGN_NOT_IN_INVENTORY');
 });
+
+test('provider parent IDs must be present; absent relationships cannot masquerade as zero target assets',()=>{
+  const brokenSet={...adsets.rows[0]};
+  delete brokenSet.campaign_id;
+  assert.throws(()=>run(campaigns,envelope([brokenSet,...adsets.rows.slice(1)]),ads));
+  const brokenAd={...ads.rows[0]};
+  delete brokenAd.campaign_id;
+  assert.throws(()=>run(campaigns,adsets,envelope([brokenAd,...ads.rows.slice(1)])));
+  const missingAdset={...ads.rows[0]};
+  delete missingAdset.adset_id;
+  assert.throws(()=>run(campaigns,adsets,envelope([missingAdset,...ads.rows.slice(1)])));
+  assert.throws(()=>run(campaigns,envelope([{...adsets.rows[0],campaign_id:'999999999'},...adsets.rows.slice(1)]),ads));
+  assert.throws(()=>run(campaigns,adsets,envelope([{...ads.rows[0],adset_id:deprecatedSet},...ads.rows.slice(1)])));
+  assert.throws(()=>run(campaigns,adsets,envelope([{...ads.rows[0],campaign_id:deprecated},...ads.rows.slice(1)])));
+  const original=run();
+  assert.equal(original.state,'NO_ADSETS_OR_ADS_AT_READBACK');
+  assert.equal(original.verifiedCpaMinor,null);
+  assert.equal(original.experimentActionVerified,false);
+});

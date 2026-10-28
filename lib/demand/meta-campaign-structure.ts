@@ -41,8 +41,10 @@ function validateInventory(response: DemandCampaignInventory, kind: ObjectKind):
     seen.add(id as string);
     const parent = kind === "campaign" ? null : row.campaign_id;
     const adset = kind === "ad" ? row.adset_id : null;
-    if ((parent !== null && (typeof parent !== "string" || !ID.test(parent))) ||
-        (adset !== null && (typeof adset !== "string" || !ID.test(adset)))) fail();
+    // A missing parent identifier is UNKNOWN, never proof of zero target assets.
+    // Provider inventories must be complete and relationally joinable.
+    if ((kind !== "campaign" && (typeof parent !== "string" || !ID.test(parent))) ||
+        (kind === "ad" && (typeof adset !== "string" || !ID.test(adset)))) fail();
     let creativeId: string | null = null;
     if (kind === "ad" && row.creative !== undefined && row.creative !== null) {
       if (typeof row.creative !== "object" || Array.isArray(row.creative)) fail();
@@ -69,6 +71,13 @@ export function assessDemandMetaCampaignStructure(
   const campaignRows = validateInventory(campaigns, "campaign");
   const adsetRows = validateInventory(adsets, "adset");
   const adRows = validateInventory(ads, "ad");
+  // A full-account readback cannot silently discard unjoinable adsets/ads.
+  // This is structural integrity only; no delivery or outcome attestation.
+  const campaignIds = new Set(campaignRows.map(row => row.id));
+  const adsetParents = new Map(adsetRows.map(row => [row.id, row.campaignId]));
+  if (adsetRows.some(row => !campaignIds.has(row.campaignId ?? "")) ||
+      adRows.some(row => !campaignIds.has(row.campaignId ?? "") ||
+        adsetParents.get(row.adsetId ?? "") !== row.campaignId)) fail();
   const target = campaignRows.find(row => row.id === campaignId) ?? null;
   const targetAdsets = adsetRows.filter(row => row.campaignId === campaignId);
   const targetAds = adRows.filter(row => row.campaignId === campaignId);
