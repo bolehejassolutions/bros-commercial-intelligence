@@ -223,3 +223,49 @@ test("completed recent MYT baseline keeps evidence-link diagnosis; seven-day bou
     assert.equal(a.causalLift,null);
   }
 });
+
+// DEMAND_COST_TO_CASH_OBSERVATION_20261028: provider-shaped, synthetic only.
+test("shows independent observed campaign cost and HitPay payment without invented CPA or revenue",()=>{
+  const a=run();
+  assert.deepEqual(a.independentProviderObservations.meta,{
+    currency:"MYR",spendMinor:432,inlineLinkClicks:1,landingPageViews:1,
+    attributedPurchaseEvents:1,pixelPurchaseEvents:1,
+  });
+  assert.deepEqual(a.independentProviderObservations.hitpay,{
+    currency:"MYR",paymentStatus:"PROVIDER_REPORTED_PAID",grossMinor:5000,
+    feeMinor:170,netAfterFeesMinor:4830,refundedMinor:0,
+  });
+  assert.equal(a.independentProviderObservations.crossProviderAttribution,"UNVERIFIED_UNJOINED");
+  assert.equal(a.independentProviderObservations.paymentSettlement,"UNVERIFIED");
+  assert.equal(a.independentProviderObservations.brosSellProductIdentity,"UNVERIFIED");
+  assert.equal(a.verifiedPaidOrders,null);
+  assert.equal(a.verifiedSettledOrders,null);
+  assert.equal(a.verifiedCpaMinor,null);
+  assert.equal(a.verifiedCacMinor,null);
+  assert.equal(a.verifiedConversionRate,null);
+  assert.equal(a.causalLift,null);
+  assert.equal(Object.isFrozen(a.independentProviderObservations),true);
+  assert.equal(Object.isFrozen(a.independentProviderObservations.meta),true);
+  assert.equal(Object.isFrozen(a.independentProviderObservations.hitpay),true);
+  const serialized=JSON.stringify(a.independentProviderObservations);
+  assert.equal(serialized.includes(order.id),false);
+  assert.equal(serialized.includes(charge.id),false);
+});
+
+test("unknown Meta spend remains null rather than zero or a paid-order cost ratio",()=>{
+  const missingSpend={...meta};
+  delete missingSpend.spend;
+  const pair=reviewDemandAcquisitionEvidencePair(scope,missingSpend,order,charge,detail);
+  const p={...proposal,evidenceCandidateIds:[pair.pairKey]};
+  const unknown=run(scope,missingSpend,p);
+  assert.equal(unknown.independentProviderObservations.meta.spendMinor,null);
+  assert.equal(unknown.independentProviderObservations.hitpay.grossMinor,5000);
+  assert.equal(unknown.verifiedCpaMinor,null);
+  assert.notEqual(unknown.caseId,run().caseId);
+  const zeroSpend={...meta,spend:"0"};
+  const zeroPair=reviewDemandAcquisitionEvidencePair(scope,zeroSpend,order,charge,detail);
+  const zero=run(scope,zeroSpend,{...proposal,evidenceCandidateIds:[zeroPair.pairKey]});
+  assert.equal(zero.independentProviderObservations.meta.spendMinor,0);
+  assert.notEqual(zero.caseId,unknown.caseId);
+  assert.equal(zero.verifiedCpaMinor,null);
+});
