@@ -94,3 +94,22 @@ test('untrusted append rejects symbol and hidden metadata before planning', () =
   assert.throws(() => planUntrustedBciAuditAppend(scope, [], [hiddenRecord]), denied);
   assert.equal(planUntrustedBciAuditAppend(scope, [], [chain[0]]).toInsert.length, 1);
 });
+
+
+test('untrusted audit append rejects accessor and hidden allowed fields before getter execution', () => {
+  let reads = 0;
+  const accessorIncoming = Object.defineProperty({ ...chain[0] }, 'verification', {
+    enumerable: true, get() { reads++; return 'unverified'; },
+  });
+  const accessorPersisted = Object.defineProperty({ ...chain[0] }, 'sourceRecordKey', {
+    enumerable: true, get() { reads++; return 'offline-v1-evidence'; },
+  });
+  const hiddenAllowed = Object.defineProperty({ ...chain[0] }, 'verification', {
+    enumerable: false, value: 'unverified',
+  });
+  assert.throws(() => planUntrustedBciAuditAppend(scope, [], [accessorIncoming]), denied);
+  assert.throws(() => planUntrustedBciAuditAppend(scope, [accessorPersisted], []), denied);
+  assert.throws(() => planUntrustedBciAuditAppend(scope, [], [hiddenAllowed]), denied);
+  assert.equal(reads, 0);
+  assert.equal(planUntrustedBciAuditAppend(scope, [], [chain[0]]).toInsert.length, 1);
+});
