@@ -127,6 +127,18 @@ test("bad tenant UUID, product and limit are rejected without SQL", async () => 
   }
 });
 
+test("restricted evidence rejects coercible non-string tenant IDs before any SQL", async () => {
+  // RegExp.test coerces [uuid], boxed strings and custom objects into valid UUID text.
+  // SQL scope must remain a primitive, authoritative tenant ID.
+  for (const tenantId of [[A], new String(A), { toString: () => A }, null, 42]) {
+    const { calls, read } = mock();
+    await assert.rejects(read({ ...scope, tenantId }), /access denied/i);
+    assert.equal(calls.length, 0, "no role query, GUC or evidence read may occur");
+  }
+  const { read } = mock();
+  assert.deepEqual(await read(scope), []);
+});
+
 test("returned cross-tenant/cross-product evidence rejected, not filtered silently", async () => {
   for (const row of [
     { id: ROW, tenantId: B, product: "demand", provider: "manual", providerRecordKey: "b", metrics: {} },
