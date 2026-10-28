@@ -34,13 +34,14 @@ export function assessDemandCampaignExecutionEvidence(
   const seen = new Set<string>();
   let target: Readonly<Record<string, unknown>> | null = null;
   for (const row of response.rows) {
-    if (!row || typeof row !== "object" || Array.isArray(row) ||
-        typeof row.id !== "string" || !campaignIdPattern.test(row.id) ||
+    if (!row || typeof row !== "object" || Array.isArray(row)) fail();
+    const rowId = row.id;
+    if (typeof rowId !== "string" || !campaignIdPattern.test(rowId) ||
         typeof row.status !== "string" || typeof row.effective_status !== "string" ||
         !/^[A-Z_]+$/.test(row.status) || !/^[A-Z_]+$/.test(row.effective_status) ||
-        seen.has(row.id)) fail();
-    seen.add(row.id);
-    if (row.id === campaignId) target = row;
+        seen.has(rowId)) fail();
+    seen.add(rowId);
+    if (rowId === campaignId) target = row;
   }
 
   // Both configured and effective PAUSED are required for this narrow finding.
