@@ -12,7 +12,8 @@ const scope=(service,channelId)=>({
   contentId:'seller-education',channelService:service,channelId,
   expectedAssetCount:2,asOf:'2026-10-28T13:00:00.000Z'
 });
-const assets=prefix=>[0,1].map(i=>({
+const assets=(prefix,withIds=false)=>[0,1].map(i=>({
+  id:withIds?`native-media-${i}`:null,
   type:'image',mimeType:'image/jpeg',source:`https://media.example.test/${prefix}-${i}.jpg`
 }));
 const igScope=scope('instagram','ig-pilot');
@@ -20,7 +21,7 @@ const ig={
   id:'ig-post-new',status:'sent',channelService:'instagram',channelId:'ig-pilot',
   sentAt:'2026-10-28T10:03:40.687Z',
   externalLink:'https://www.instagram.com/p/DfCK-3YIDRD/',
-  assets:assets('ig'),text:'Ilustrasi AI',metadata:{isAiGenerated:true},
+  assets:assets('ig',true),text:'Ilustrasi AI',metadata:{isAiGenerated:true},
   metricsUpdatedAt:'2026-10-28T12:33:13.672Z',
   metrics:[
     {type:'views',value:0,unit:'count'},{type:'reach',value:0,unit:'count'},
@@ -53,6 +54,9 @@ test('observed IG post-SENT zero is MEASURED, never fabricated as missing',()=>{
   assert.deepEqual(r.flags,[]);
   assert.ok(r.measurementAgeSeconds>8000);
   assert.equal(r.providerAuthenticated,false);
+  assert.equal(r.providerMediaIdsPresent,2);
+  assert.equal(r.providerMediaIdsComplete,true);
+  assert.equal(r.providerMediaBytesVerified,false);
   assert.equal(r.contentPublisherVerified,false);
   assert.equal(r.learningVerified,false);
   assert.equal(r.bciAuditWritten,false);
@@ -70,6 +74,9 @@ test('observed TikTok metrics do not override native AI-disclosure review hold',
   assert.ok(r.flags.includes('AI_DISCLOSURE_MISMATCH'));
   assert.equal(r.metrics.views,78);
   assert.equal(r.metrics.reach,0);
+  assert.equal(r.providerMediaIdsPresent,0);
+  assert.equal(r.providerMediaIdsComplete,false);
+  assert.equal(r.providerMediaBytesVerified,false);
   assert.equal(r.learningVerified,false);
   assert.equal(r.executionAllowed,false);
 });
