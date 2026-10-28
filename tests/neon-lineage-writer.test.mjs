@@ -23,12 +23,14 @@ const signal = {
 const role = {
   roleName: "bci_dev_lineage_writer", sessionRoleName: "bci_dev_lineage_writer",
   canLogin: true, bypassRls: false, superuser: false, canCreateRole: false,
-  canCreateDb: false, inherits: false, parentRoles: 0,
+  canCreateDb: false, canReplicate: false, inherits: false, parentRoles: 0,
 };
 const posture = {
   databaseName: "bros_intelligence_dev", forcedRls: true, lineageOnly: true,
   membershipDenied: true, evidenceDenied: true,
   schemaCreateDenied: true, dbCreateDenied: true,
+  otherBciDenied: true, externalTablesDenied: true, definerExecDenied: true,
+  allSchemaCreateDenied: true, sequenceAccessDenied: true,
 };
 const grant = { principalId: userId, tenantId: tenant, product: "content", active: true };
 const denied = /BCI private lineage write denied/;
@@ -85,7 +87,7 @@ test("unverified input is mandatory and caller cannot select tenant, product or 
 test("wrong session/admin SET ROLE impersonation and privilege drift fail closed", async () => {
   for (const changed of [
     { sessionRoleName: "BROS" }, { roleName: "BROS" }, { bypassRls: true },
-    { canCreateRole: true }, { parentRoles: 1 },
+    { canCreateRole: true }, { canReplicate: true }, { parentRoles: 1 },
   ]) {
     const h = harness({ transaction: async fn => fn(async sql =>
       sql.includes('AS "roleName"') ? { rows: [{ ...role, ...changed }] } : { rows: [posture] }) });
@@ -142,4 +144,20 @@ test("idempotent replay accepts equivalent UTC timestamps with different precisi
   await assert.rejects(h.write({ product: "content", records: [
     { ...evidence, recordedAt: "2026-10-29T00:00:00+00:00" },
   ] }), denied);
+});
+
+test("writer rejects lateral privileges and SECURITY DEFINER escape paths before any append", async () => {
+  for (const key of [
+    "otherBciDenied", "externalTablesDenied", "definerExecDenied",
+    "allSchemaCreateDenied", "sequenceAccessDenied",
+  ]) {
+    const h = harness({ transaction: async fn => fn(async (sql, params) => {
+      h.calls.push({ sql, params });
+      if (sql.includes('AS "roleName"')) return { rows: [role] };
+      if (sql.includes('AS "forcedRls"')) return { rows: [{ ...posture, [key]: false }] };
+      return { rows: [] };
+    }) });
+    await assert.rejects(h.write({ product: "content", records: [evidence] }), denied, key);
+    assert.equal(h.calls.some(c => c.sql.includes("INSERT INTO")), false, key);
+  }
 });

@@ -112,7 +112,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           `SELECT current_user AS "roleName", session_user AS "sessionRoleName",
                   rolcanlogin AS "canLogin", rolbypassrls AS "bypassRls",
                   rolsuper AS "superuser", rolcreaterole AS "canCreateRole",
-                  rolcreatedb AS "canCreateDb", rolinherit AS "inherits",
+                  rolcreatedb AS "canCreateDb", rolreplication AS "canReplicate", rolinherit AS "inherits",
                   (SELECT count(*)::integer FROM pg_auth_members WHERE member = pg_roles.oid) AS "parentRoles"
            FROM pg_roles WHERE rolname = current_user`, []);
         const r = role.rows[0];
@@ -121,7 +121,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
             r.sessionRoleName !== "bci_dev_lineage_writer" ||
             r.canLogin !== true || r.bypassRls !== false || r.superuser !== false ||
             r.canCreateRole !== false || r.canCreateDb !== false ||
-            r.inherits !== false || r.parentRoles !== 0) deny();
+            r.canReplicate !== false || r.inherits !== false || r.parentRoles !== 0) deny();
         const posture = await query(
           `SELECT current_database() AS "databaseName",
                   bool_and(c.relrowsecurity AND c.relforcerowsecurity) AS "forcedRls",
@@ -131,7 +131,38 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
                   NOT has_table_privilege(current_user,'bci_dev.tenant_memberships','SELECT,INSERT,UPDATE,DELETE') AS "membershipDenied",
                   NOT has_table_privilege(current_user,'bci_dev.evidence','SELECT,INSERT,UPDATE,DELETE') AS "evidenceDenied",
                   NOT has_schema_privilege(current_user,'bci_dev','CREATE') AS "schemaCreateDenied",
-                  NOT has_database_privilege(current_user,current_database(),'CREATE') AS "dbCreateDenied"
+                  NOT has_database_privilege(current_user,current_database(),'CREATE') AS "dbCreateDenied",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_class t JOIN pg_namespace ns ON ns.oid=t.relnamespace
+                    WHERE ns.nspname='bci_dev' AND t.relkind IN ('r','p','v','m','f')
+                      AND t.relname NOT IN ('lineage_nodes','lineage_edges')
+                      AND has_table_privilege(current_user,t.oid,
+                        'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
+                  )) AS "otherBciDenied",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_class t JOIN pg_namespace ns ON ns.oid=t.relnamespace
+                    WHERE ns.nspname <> 'bci_dev' AND ns.nspname <> 'information_schema'
+                      AND LEFT(ns.nspname,3) <> 'pg_' AND t.relkind IN ('r','p','v','m','f')
+                      AND has_table_privilege(current_user,t.oid,
+                        'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
+                  )) AS "externalTablesDenied",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_proc f JOIN pg_namespace ns ON ns.oid=f.pronamespace
+                    WHERE ns.nspname <> 'information_schema' AND LEFT(ns.nspname,3) <> 'pg_'
+                      AND f.prosecdef AND has_function_privilege(current_user,f.oid,'EXECUTE')
+                  )) AS "definerExecDenied",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_namespace ns
+                    WHERE ns.nspname <> 'information_schema' AND LEFT(ns.nspname,3) <> 'pg_'
+                      AND has_schema_privilege(current_user,ns.oid,'CREATE')
+                  )) AS "allSchemaCreateDenied",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_class s JOIN pg_namespace ns ON ns.oid=s.relnamespace
+                    WHERE ns.nspname <> 'information_schema' AND LEFT(ns.nspname,3) <> 'pg_'
+                      AND CASE WHEN s.relkind='S'
+                        THEN has_sequence_privilege(current_user,s.oid,'USAGE,SELECT,UPDATE')
+                        ELSE false END
+                  )) AS "sequenceAccessDenied"
            FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
            WHERE n.nspname='bci_dev' AND c.relname IN ('lineage_nodes','lineage_edges')
              AND c.relkind='r' HAVING count(*)=2`, []);
@@ -140,7 +171,9 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
             p.databaseName !== "bros_intelligence_dev" || p.forcedRls !== true ||
             p.lineageOnly !== true || p.membershipDenied !== true ||
             p.evidenceDenied !== true || p.schemaCreateDenied !== true ||
-            p.dbCreateDenied !== true) deny();
+            p.dbCreateDenied !== true || p.otherBciDenied !== true ||
+            p.externalTablesDenied !== true || p.definerExecDenied !== true ||
+            p.allSchemaCreateDenied !== true || p.sequenceAccessDenied !== true) deny();
         await query(
           "SELECT set_config('bci.tenant_id',$1::text,true), set_config('bci.product',$2::text,true)",
           [tenantId, request.product]);
