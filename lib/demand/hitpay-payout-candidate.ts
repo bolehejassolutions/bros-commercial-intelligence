@@ -81,11 +81,20 @@ export function assessDemandHitPayPayoutCandidate(
       provider: row.payment_provider,
       amountMinor: toMinor(row.amount),
       createdAt: row.created_at,
+      // HitPay's 12 Oct payout was created at 11 Oct 16:03 UTC,
+      // i.e. 12 Oct MYT. The API's filter basis is NOT attested here.
+      createdMytDate: new Date(Date.parse(row.created_at) + 8 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10),
     };
   }).sort((a, b) => a.id.localeCompare(b.id));
 
   const paid = observations.filter(x => x.status === "paid" || x.status === "succeeded");
   const netAmountMatches = paid.filter(x => x.amountMinor === paidOrder.netAfterFeesMinor);
+  // Diagnostic only: provider date filters may use a payout-effective date
+  // rather than UTC creation time. Never reject legitimate rows or infer
+  // a universal filter rule from a single live observed boundary.
+  const outsideMytCreatedWindow = observations.filter(x =>
+    x.createdMytDate < query.dateFrom || x.createdMytDate > query.dateTo).length;
   const snapshotKey = "demand:hitpay-payout-candidate:sha256:" + createHash("sha256")
     .update(JSON.stringify(["v1", query.dateFrom, query.dateTo,
       paidOrder.snapshotKey, observations.map(x => [x.id, x.status, x.provider, x.amountMinor, x.createdAt])]))
@@ -96,6 +105,8 @@ export function assessDemandHitPayPayoutCandidate(
     observedPayoutRows: observations.length,
     providerReportedPaidPayoutRows: paid.length,
     sameNetAmountPaidPayoutRows: netAmountMatches.length,
+    observedPayoutsOutsideMytCreatedWindow: outsideMytCreatedWindow,
+    payoutDateFilterSemanticsVerified: false as const,
     candidateStatus: netAmountMatches.length === 0
       ? "NO_NET_AMOUNT_MATCH_IN_BOUNDED_INVENTORY" as const
       : netAmountMatches.length === 1
@@ -113,6 +124,8 @@ export function assessDemandHitPayPayoutCandidate(
     causalLift: null,
     verifiedAcquisitionOutcome: null,
     durableBciLearningVerified: false as const,
-    nextEvidenceAction: "OBTAIN_CHARGE_TO_PAYOUT_ALLOCATION_AND_BANK_RECEIPT" as const,
+    nextEvidenceAction: outsideMytCreatedWindow > 0
+      ? "VERIFY_HITPAY_PAYOUT_DATE_FILTER_BASIS" as const
+      : "OBTAIN_CHARGE_TO_PAYOUT_ALLOCATION_AND_BANK_RECEIPT" as const,
   });
 }

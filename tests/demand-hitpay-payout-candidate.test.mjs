@@ -69,3 +69,24 @@ test("status revisions, monetary revisions and query windows change snapshot", (
   assert.notEqual(run({ ...page, data: [{ ...payout, amount: 48.31 }] }).snapshotKey, base.snapshotKey);
   assert.notEqual(run(page, paidOrder, { dateFrom: "2026-10-02", dateTo: "2026-10-29" }).snapshotKey, base.snapshotKey);
 });
+
+test("live 11/12 October payout filter boundary uses MYT created-day advisory, not UTC date or settlement", () => {
+  // Actual read-only HitPay queries on 29 Oct: 11 Oct returned no rows;
+  // 12 Oct returned the paid payout created 11 Oct 16:03 UTC = 12 Oct MYT.
+  // This is provider-observed shape, not app-owned authenticated ingestion.
+  const on12 = run(page, paidOrder, { dateFrom: "2026-10-12", dateTo: "2026-10-12" });
+  assert.equal(on12.observedPayoutsOutsideMytCreatedWindow, 0);
+  assert.equal(on12.sameNetAmountPaidPayoutRows, 1);
+  assert.equal(on12.payoutDateFilterSemanticsVerified, false);
+  assert.equal(on12.bankReceiptVerified, false);
+  const noRows11 = run({ data: [], has_more: false, next_cursor: null },
+    paidOrder, { dateFrom: "2026-10-11", dateTo: "2026-10-11" });
+  assert.equal(noRows11.observedPayoutRows, 0);
+  assert.equal(noRows11.verifiedSettledOrders, null);
+  // An inconsistent caller envelope is REVIEW, not a rejected or verified payout.
+  const mismatched = run(page, paidOrder, { dateFrom: "2026-10-13", dateTo: "2026-10-13" });
+  assert.equal(mismatched.observedPayoutsOutsideMytCreatedWindow, 1);
+  assert.equal(mismatched.nextEvidenceAction, "VERIFY_HITPAY_PAYOUT_DATE_FILTER_BASIS");
+  assert.equal(mismatched.payoutAllocationVerified, false);
+  assert.notEqual(mismatched.snapshotKey, on12.snapshotKey);
+});
