@@ -8,7 +8,9 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import os
 import re
+import stat
 
 from PIL import Image, ImageFile, UnidentifiedImageError, __version__ as PILLOW_VERSION
 
@@ -89,6 +91,38 @@ def audit_jpeg_sources(sources, scope, *, expected_width=1080, expected_height=1
             "executionAllowed": False, "customerSaasReady": False}
 
 
+def read_bounded_local_sources(file_names):
+    """Bound local CLI reads before allocation; never treat this as provider attestation."""
+    if not isinstance(file_names, (list, tuple)) or not 1 <= len(file_names) <= 20:
+        _fail("INVALID_SOURCE_SET")
+    paths = [Path(name) for name in file_names]
+    estimated_total = 0
+    for path in paths:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            _fail("INVALID_SOURCE_PATH")
+        if not 64 <= info.st_size <= MAX_SOURCE_BYTES:
+            _fail("SOURCE_BYTE_LIMIT")
+        estimated_total += info.st_size
+        if estimated_total > MAX_TOTAL_BYTES:
+            _fail("SOURCE_BYTE_LIMIT")
+    # Recheck after opening: a file can change between lstat and the read.
+    sources = []
+    actual_total = 0
+    for path in paths:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or not 64 <= info.st_size <= MAX_SOURCE_BYTES:
+                _fail("SOURCE_BYTE_LIMIT")
+            data = handle.read(MAX_SOURCE_BYTES + 1)
+        actual_total += len(data)
+        if not 64 <= len(data) <= MAX_SOURCE_BYTES or actual_total > MAX_TOTAL_BYTES:
+            _fail("SOURCE_BYTE_LIMIT")
+        sources.append(data)
+    return sources
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tenant-id", required=True)
@@ -99,10 +133,7 @@ def main():
     parser.add_argument("files", nargs="+")
     args = parser.parse_args()
     try:
-        paths = [Path(p) for p in args.files]
-        if any(p.stat().st_size > MAX_SOURCE_BYTES for p in paths):
-            _fail("SOURCE_BYTE_LIMIT")
-        result = audit_jpeg_sources([p.read_bytes() for p in paths],
+        result = audit_jpeg_sources(read_bounded_local_sources(args.files),
                                     {"tenantId": args.tenant_id, "instanceId": args.instance_id,
                                      "planId": args.plan_id},
                                     expected_width=args.width, expected_height=args.height)
