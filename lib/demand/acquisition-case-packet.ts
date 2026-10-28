@@ -32,6 +32,17 @@ export function prepareDemandAcquisitionCasePacket(
   // than its declared registration time, or an unfinished MYT baseline day.
   // This checks internal chronology only: both timestamps remain untrusted
   // until the BCI worker independently authenticates and persists receipts.
+  // DEMAND_CASE_FUTURE_ATTESTATION_GUARD_20261028: a *case* is a
+  // present-tense decision handoff, unlike the pure Meta projection which
+  // must support offline replay of hypothetical future experiment windows.
+  // Caller-asserted evidence collection and preregistration timestamps must
+  // not be materially ahead of the executing clock. Five minutes allows
+  // bounded skew; BCI still owns independent provider/time attestation.
+  const latestPermittedTime = Date.now() + 5 * 60 * 1000;
+  if (Date.parse(scope.collectedAt) > latestPermittedTime ||
+      Date.parse(proposal.preRegisteredAt) > latestPermittedTime) {
+    throw new Error("Invalid BROS DEMAND acquisition case chronology");
+  }
   const collectedMytDay = new Date(Date.parse(scope.collectedAt) + 8 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
   if (Date.parse(scope.collectedAt) > Date.parse(proposal.preRegisteredAt) ||
