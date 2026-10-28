@@ -245,3 +245,21 @@ test('sub-cent numeric Meta spend is rejected rather than rounded into a fabrica
   assert.equal(normalizeMetaCampaignFunnel(scope,{...row,spend:0.29}).spendMinor,29);
   assert.equal(normalizeMetaCampaignFunnel(scope,{...row,spend:'0.29'}).spendMinor,29);
 });
+
+// DEMAND_META_FUTURE_COLLECTION_GUARD_20261028
+test('future-dated Meta collection cannot make an unobserved MYT report day look closed',()=>{
+  const valid=normalizeMetaCampaignFunnel(scope,row);
+  assert.equal(valid.hitpaySettledOrders,null);
+  const futureCollectedAt='2099-01-02T01:00:00Z';
+  // Previous implementation treated a caller-asserted 2099 collection as a
+  // valid past-day observation for this 2026 report.
+  assert.throws(()=>normalizeMetaCampaignFunnel(
+    {...scope,collectedAt:futureCollectedAt},row),invalid);
+  // A wholly future reporting period also cannot be laundered by supplying
+  // a matching future collection timestamp.
+  const futureScope={...scope,since:'2099-01-01',until:'2099-01-01',
+    collectedAt:futureCollectedAt};
+  const futureRow={...row,date_start:'2099-01-01',date_stop:'2099-01-01'};
+  assert.throws(()=>normalizeMetaCampaignFunnel(futureScope,futureRow),invalid);
+  assert.equal(normalizeMetaCampaignFunnel(scope,row).snapshotKey,valid.snapshotKey);
+});
