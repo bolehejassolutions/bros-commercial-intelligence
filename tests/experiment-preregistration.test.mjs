@@ -140,3 +140,25 @@ test("MYT year-rollover preregistration cutoff does not use UTC calendar date", 
   assert.equal(preregister(nextYear).status,"PROPOSED_NOT_AUTHORIZED");
   assert.throws(()=>preregister({...nextYear,preRegisteredAt:"2026-12-31T16:00:00Z"}),invalid);
 });
+
+test("reject coercible tenant, Meta account and campaign identities before proposal hashing", () => {
+  const coercible = [
+    {tenantId: [valid.tenantId]},
+    {metaAccountId: [valid.metaAccountId]},
+    {campaignId: [valid.campaignId]},
+    {tenantId: {toString: () => valid.tenantId}},
+    {metaAccountId: {toString: () => valid.metaAccountId}},
+    {campaignId: {toString: () => valid.campaignId}},
+    {tenantId: null}, {metaAccountId: null}, {campaignId: null},
+    {tenantId: 1}, {metaAccountId: 1}, {campaignId: 1},
+  ];
+  for (const patch of coercible) {
+    assert.throws(() => preregister({...valid, ...patch}), invalid);
+  }
+  // Valid replay remains stable and non-executable.
+  const a = preregister(valid), b = preregister({...valid});
+  assert.equal(a.candidateId, b.candidateId);
+  assert.equal(a.actionApproved, false);
+  assert.equal(a.executionAllowed, false);
+  assert.equal(a.verifiedPaidOrders, null);
+});
