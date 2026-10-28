@@ -58,6 +58,20 @@ export function prepareDemandAcquisitionCasePacket(
     throw new Error("Invalid BROS DEMAND acquisition case linkage");
   }
 
+  // Freshness is an advisory based on the proposed decision's own MYT date,
+  // not the time this pure function happens to be replayed. A stale baseline
+  // can support historical diagnosis but must not be treated as current
+  // acquisition evidence for executing a new experiment.
+  const preregMytDay = new Date(Date.parse(proposal.preRegisteredAt) + 8 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  const baselineAgeDaysAtPreregistration =
+    (Date.parse(preregMytDay + "T00:00:00Z") -
+      Date.parse(proposal.baselineEnd + "T00:00:00Z")) / 86400000;
+  const baselineRefreshRecommended = baselineAgeDaysAtPreregistration > 7;
+  const nextBestEvidenceAction = baselineRefreshRecommended
+    ? "REFRESH_AUTHENTICATED_ACQUISITION_BASELINE"
+    : diagnosis.nextAction;
+
   const caseId = "demand:acquisition-case:sha256:" + createHash("sha256")
     .update(JSON.stringify([
       "v1", proposal.candidateId, diagnosis.pairKey, diagnosis.nextAction,
@@ -80,8 +94,17 @@ export function prepareDemandAcquisitionCasePacket(
     proposedAction: proposal.action,
     hypothesis: proposal.hypothesis,
     primaryKpi: proposal.primaryKpi,
-    nextBestEvidenceAction: diagnosis.nextAction,
-    requiredIndependentEvidence: diagnosis.requiredIndependentEvidence,
+    // Seven days is a DEMAND advisory threshold, NOT a provider freshness
+    // attestation or an owner-approved experiment policy. Historical cases
+    // remain inspectable; a new action still requires independent evidence.
+    baselineAgeDaysAtPreregistration,
+    baselineFreshnessAdvisory: baselineRefreshRecommended
+      ? "REFRESH_RECOMMENDED" as const : "RECENT_COMPLETED_WINDOW" as const,
+    nextBestEvidenceAction,
+    requiredIndependentEvidence: Object.freeze([
+      ...diagnosis.requiredIndependentEvidence,
+      ...(baselineRefreshRecommended ? ["fresh_authenticated_baseline_before_action"] : []),
+    ]),
     // Owner approval must be tied to a trusted, immutable action in BCI.
     ownerApprovalRequired: true as const,
     ownerApprovalVerified: false as const,
