@@ -134,7 +134,7 @@ export function assessDemandCampaignActivityCandidates(
           row.event_time.slice(0, 19)) fail();
     if (row.object_name === exactCampaignName) {
       matching.push(JSON.stringify([row.event_type, row.event_time]));
-      matchedTypes.push(row.event_type);
+      matchedTypes.push(row.event_type as string); // Runtime validated above.
     }
   }
   const statusChangeCandidates = matchedTypes.filter(
