@@ -28,6 +28,16 @@ export function prepareDemandAcquisitionCasePacket(
     scope, metaRow, order, charge, chargeDetail,
   );
   const proposal = preregisterDemandExperiment(experiment);
+  // A preregistered diagnosis cannot cite a provider snapshot collected later
+  // than its declared registration time, or an unfinished MYT baseline day.
+  // This checks internal chronology only: both timestamps remain untrusted
+  // until the BCI worker independently authenticates and persists receipts.
+  const collectedMytDay = new Date(Date.parse(scope.collectedAt) + 8 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  if (Date.parse(scope.collectedAt) > Date.parse(proposal.preRegisteredAt) ||
+      scope.until >= collectedMytDay) {
+    throw new Error("Invalid BROS DEMAND acquisition case chronology");
+  }
   if (proposal.tenantId !== scope.tenantId.toLowerCase() ||
       proposal.metaAccountId !== scope.accountId ||
       proposal.campaignId !== scope.campaignId ||
