@@ -14,12 +14,13 @@ import {pathToFileURL} from 'node:url';
 import {deflateSync} from 'node:zlib';
 
 const pins=Object.freeze({
-  content:'58953c5a097f3c1f43d962f8bdf1dad6ed94b9fe',
-  bci:'6d870dd16023370de307eb4fe89050c38ecdf9cc'
+  content:'f08e5f434221b6d36e1a45f198b113b1d8f5c233',
+  bci:'d951579930c247e46587b44590d89534156e0e0c'
 });
 const files=[
   [pins.content,'lib/content/plan-source-byte-gate.mjs'],
   [pins.content,'lib/content/approval-request.mjs'],
+  [pins.content,'lib/content/generation-intent.mjs'],
   [pins.content,'lib/content/instance-plan.mjs'],
   [pins.content,'lib/content/png-source-qa.mjs'],
   [pins.bci,'lib/bci/audit-append-plan.ts'],
@@ -99,7 +100,58 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       const load=async path=>import(pathToFileURL(join(dir,path)).href);
       const {inspectPlannedContentPngBytes}=await load('lib/content/plan-source-byte-gate.mjs');
       const {prepareContentApprovalRequest}=await load('lib/content/approval-request.mjs');
+      const {prepareContentIndependentImageIntents}=await load('lib/content/generation-intent.mjs');
       const {planUntrustedBciAuditAppend}=await load('lib/bci/audit-append-plan.ts');
+      // PORTFOLIO_CONTENT_GENERATION_INTENT_TO_BCI_UNTRUSTED_20261028_V1
+      // Two declared independent prompts are NOT two generated media receipts.
+      // The cross-product BCI boundary must not promote this planning output.
+      const slots=[
+        {slot:1,visualBrief:'Show a customer selecting a bouquet at the flower shop.',
+          visualDistinction:'Scene one: customer choosing flowers in store.',
+          avoid:'Avoid invented claims or unsupported testimonials.'},
+        {slot:2,visualBrief:'Show the florist explaining the delivery options.',
+          visualDistinction:'Scene two: florist explaining delivery options.',
+          avoid:'Avoid invented claims or unsupported testimonials.'}
+      ];
+      const intents=prepareContentIndependentImageIntents(config(),brief(),slots);
+      const intentReplay=prepareContentIndependentImageIntents(config(),brief(),slots);
+      assert.equal(intents.status,'GENERATION_REQUEST_ONLY');
+      assert.equal(intents.generationBatchId,intentReplay.generationBatchId);
+      assert.equal(intents.jobs.length,2);
+      assert.notEqual(intents.jobs[0].generationIntentId,intents.jobs[1].generationIntentId);
+      assert.equal(intents.independentImagesVerified,false);
+      assert.equal(intents.sourceBytesVerified,false);
+      assert.equal(intents.approvalGranted,false);
+      assert.equal(intents.providerSentVerified,false);
+      assert.equal(intents.learningVerified,false);
+      assert.equal(intents.sharedBciAuditVerified,false);
+      assert.equal(intents.executionAllowed,false);
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[],[intents]),/Invalid BCI audit append/);
+      const intentCandidate={...root(intents.generationBatchId),
+        sourceSystem:'content_generation_intent'};
+      const intentPlan=planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[],[intentCandidate]);
+      assert.equal(intentPlan.toInsert.length,1);
+      assert.equal(intentPlan.toInsert[0].verification,'unverified');
+      assert.equal(intentPlan.authenticated,false);
+      assert.equal(intentPlan.providerAttested,false);
+      assert.equal(intentPlan.persisted,false);
+      assert.equal(intentPlan.structurallyLinkedLearnings,0);
+      assert.equal(planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[intentCandidate],[intentCandidate]).toInsert.length,0);
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[],[{...intentCandidate,verification:'verified'}]),
+        /Invalid BCI audit append/);
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'demand'},[],[intentCandidate]),
+        /Invalid BCI evidence lineage/);
+      const modifiedSlots=slots.map(x=>({...x}));
+      modifiedSlots[0].visualBrief='Show a customer comparing two bouquet sizes in store.';
+      const changedIntents=prepareContentIndependentImageIntents(config(),brief(),modifiedSlots);
+      assert.notEqual(changedIntents.generationBatchId,intents.generationBatchId);
+      assert.equal(changedIntents.sourceBytesVerified,false);
+      // Intent count/IDs cannot bypass duplicate actual image-byte QA.
       const source=[png(20),png(30)],options={expectedWidth:2,expectedHeight:2};
       const qa=inspectPlannedContentPngBytes(config(),brief(),source,options);
       const repeat=inspectPlannedContentPngBytes(config(),brief(),source,options);
