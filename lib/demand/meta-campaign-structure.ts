@@ -48,7 +48,7 @@ function validateInventory(response: DemandCampaignInventory, kind: ObjectKind):
       if (typeof row.creative !== "object" || Array.isArray(row.creative)) fail();
       const value = (row.creative as Record<string, unknown>).id;
       if (typeof value !== "string" || !ID.test(value)) fail();
-      creativeId = value;
+      creativeId = value as string;
     }
     objects.push({ id: id as string, campaignId: parent as string | null,
       adsetId: adset as string | null, status: status as string,
