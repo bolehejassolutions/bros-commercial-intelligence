@@ -116,6 +116,13 @@ export function normalizeMetaCampaignFunnel(
   // collection date alone is incorrect near local midnight. Reject a report
   // ending in the future local day; never label an ongoing day as closed.
   // A past calendar day can still be revised by Meta attribution later.
+  // DEMAND_META_FUTURE_COLLECTION_GUARD_20261028: a caller-provided collection
+  // timestamp is NOT a provider receipt. Reject observations dated materially
+  // after the executing clock; otherwise a forged future collection date can
+  // make an unobserved reporting day appear complete in MYT and can enter a
+  // synthetic experiment baseline. Five minutes allows bounded clock skew;
+  // the BCI worker must still attest collection time and source independently.
+  if (Date.parse(scope.collectedAt) > Date.now() + 5 * 60 * 1000) fail();
   const collectedMytDate = new Date(Date.parse(scope.collectedAt) + 8 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
   if (collectedMytDate < scope.since || scope.until > collectedMytDate) fail();
