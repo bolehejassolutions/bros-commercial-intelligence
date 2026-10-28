@@ -161,3 +161,26 @@ test("rejects incomplete MYT calendar baseline even when UTC collection date dif
     /Invalid BROS DEMAND acquisition case chronology/);
   assert.equal(run().verifiedOutcome,null);
 });
+
+// DEMAND_CASE_FUTURE_ATTESTATION_GUARD_20261028
+test("future-dated collection or preregistration cannot masquerade as a present acquisition case",()=>{
+  // The pure Meta normalizer still supports future synthetic scenario replay.
+  // A decision packet must not cite observations not yet collected.
+  const futureScope={...scope,collectedAt:"2099-01-02T01:00:00Z"};
+  const futurePair=reviewDemandAcquisitionEvidencePair(
+    futureScope,meta,order,charge,detail);
+  const futureProposal={...proposal,
+    preRegisteredAt:"2099-01-03T01:00:00Z",
+    experimentStart:"2100-01-01",experimentEnd:"2100-01-07",
+    evidenceCandidateIds:[futurePair.pairKey]};
+  assert.throws(()=>run(futureScope,meta,futureProposal),
+    /Invalid BROS DEMAND acquisition case chronology/);
+  // Even real historical evidence cannot be cited by a fabricated future
+  // preregistration as if a decision had already occurred.
+  assert.throws(()=>run(scope,meta,{...proposal,
+    preRegisteredAt:"2099-01-03T01:00:00Z",
+    experimentStart:"2100-01-01",experimentEnd:"2100-01-07"}),
+    /Invalid BROS DEMAND acquisition case chronology/);
+  assert.equal(run().outcomeVerified,false);
+  assert.equal(run().verifiedCpaMinor,null);
+});
