@@ -48,6 +48,11 @@ export function reviewDemandAcquisitionEvidencePair(
     hitpayCandidateKey: payment.candidateKey,
     hitpayOrderIdentityDigest: payment.orderIdentityDigest,
     metaPurchaseAliasConflict: meta.actionAliasMismatch,
+    // Campaign spend and funnel observations are independently provider-reported.
+    // Never divide by the unrelated HitPay order to imply CPA, ROAS or attribution.
+    metaObservedSpendMinor: meta.spendMinor,
+    metaObservedInlineLinkClicks: meta.inlineLinkClicks,
+    metaObservedLandingPageViews: meta.landingPageViews,
     metaAttributedPurchaseEvents: meta.metaAttributedPurchases,
     pixelPurchaseEvents: meta.pixelPurchaseEvents,
     hitpayPaymentObservation: payment.status,
