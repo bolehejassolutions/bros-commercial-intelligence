@@ -68,14 +68,35 @@ def audit_jpeg_sources(sources, scope, *, expected_width=1080, expected_height=1
                 )
         except (OSError, SyntaxError, UnidentifiedImageError) as exc:
             raise ValueError("CONTENT_JPEG_QA_DECODE_FAILED") from exc
+        # Perceptual dHash is a similarity REVIEW cue, not image-independence proof.
+        # A sequential carousel may intentionally reuse a scene; never auto-reject it.
+        gray = decoded.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
+        dhash_bits = 0
+        for row in range(8):
+            for col in range(8):
+                dhash_bits = (dhash_bits << 1) | int(
+                    gray.getpixel((col, row)) > gray.getpixel((col + 1, row))
+                )
         images.append({"slot": slot, "format": "JPEG", "width": expected_width,
                        "height": expected_height, "bytes": len(data),
-                       "sha256": _digest(data), "rgbPixelSha256": pixel_digest})
+                       "sha256": _digest(data), "rgbPixelSha256": pixel_digest,
+                       "perceptualDHash64": f"{dhash_bits:016x}"})
 
     if len({image["sha256"] for image in images}) != len(images):
         _fail("DUPLICATE_SOURCE_BYTES")
     if len({image["rgbPixelSha256"] for image in images}) != len(images):
         _fail("DUPLICATE_DECODED_PIXELS")
+    # Review only: perceptual similarity is not a cryptographic duplicate.
+    # Threshold 12/64 is a heuristic, not an editorial or provider guarantee.
+    advisories = []
+    for i, first in enumerate(images):
+        for second in images[i + 1:]:
+            distance = (int(first["perceptualDHash64"], 16)
+                        ^ int(second["perceptualDHash64"], 16)).bit_count()
+            if distance <= 12:
+                advisories.append({"slotA": first["slot"], "slotB": second["slot"],
+                                   "distance": distance, "bits": 64,
+                                   "reason": "POSSIBLE_VISUAL_NEAR_DUPLICATE_REVIEW"})
     identity = [1, scope["tenantId"], scope["instanceId"], scope["planId"],
                 [[x["slot"], x["sha256"], x["rgbPixelSha256"]] for x in images]]
     manifest_id = "content-jpeg-pixel-" + _digest(json.dumps(identity, separators=(",", ":")).encode())
@@ -83,7 +104,11 @@ def audit_jpeg_sources(sources, scope, *, expected_width=1080, expected_height=1
             "qaManifestId": manifest_id, "status": "SOURCE_JPEG_PIXEL_QA_ONLY",
             "decoder": "Pillow", "decoderVersion": PILLOW_VERSION,
             "images": images, "sourceBytesDecoded": True, "distinctFileHashes": True,
-            "distinctDecodedPixelHashes": True, "independentGenerationVerified": False,
+            "distinctDecodedPixelHashes": True,
+            "visualSimilarityHeuristic": "DHASH64_HAMMING_LE_12_ADVISORY_ONLY",
+            "visualSimilarityReviewRequired": bool(advisories),
+            "visualSimilarityAdvisories": advisories,
+            "independentGenerationVerified": False,
             "visualEditorialQaVerified": False, "approvalAuthenticated": False,
             "approvalGranted": False, "providerByteIdentityVerified": False,
             "providerSentVerified": False, "measurementVerified": False,
