@@ -13,8 +13,8 @@ import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const pins=Object.freeze({
-  demand:'60e6bd77a6a416afc7ad76b349c13e31d51f180a',
-  bci:'6d870dd16023370de307eb4fe89050c38ecdf9cc'
+  demand:'84f21f4411a05be2293df10ff64587a192171ff6',
+  bci:'5a4a55c5cee58c1adf5bb9a98f91075f0e73bfbb'
 });
 const sources=[
   [pins.demand,'lib/demand/acquisition-case-packet.ts'],
@@ -90,6 +90,22 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       const {reviewDemandAcquisitionEvidencePair}=await load(sources[1][1]);
       const {prepareDemandAcquisitionCasePacket}=await load(sources[0][1]);
       const {planUntrustedBciAuditAppend}=await load(sources[6][1]);
+      // PORTFOLIO_DEMAND_EXACT_CENT_TO_BCI_FAIL_CLOSED_20261028_V1
+      // Latest DEMAND source must reject fractional-sen merchant amounts
+      // before a candidate or a BCI learning/action record can be constructed.
+      // This is synthetic provider-shaped input, NOT a live charge or outcome.
+      for(const malformed of [
+        {...detail,amount_without_fees:48.301},
+        {...detail,refunded_amount:0.001},
+      ]){
+        assert.throws(()=>reviewDemandAcquisitionEvidencePair(
+          scope,meta,order,charge,malformed),
+          /Invalid BROS DEMAND HitPay order-charge evidence/);
+        assert.throws(()=>prepareDemandAcquisitionCasePacket(
+          scope,meta,order,charge,malformed,
+          experiment('demand:acquisition-evidence-pair:sha256:'+'a'.repeat(64))),
+          /Invalid BROS DEMAND HitPay order-charge evidence/);
+      }
       const pair=reviewDemandAcquisitionEvidencePair(scope,meta,order,charge,detail);
       // Coordinator gate: current DEMAND head rejects a provider snapshot
       // collected after a purported experiment preregistration. The older
@@ -130,6 +146,17 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       assert.equal(planned.persisted,false);
       assert.ok(planned.toInsert.every(x=>x.verification==='unverified'));
       assert.equal(planUntrustedBciAuditAppend(bciScope,chain,chain).toInsert.length,0);
+      // Latest BCI worker's exact-own-DATA-descriptor boundary must not
+      // execute a malicious getter on an otherwise allowed lineage key.
+      let getterCalls=0;
+      const accessor={...chain[0]};
+      Object.defineProperty(accessor,'sourceRecordKey',{
+        enumerable:true,configurable:true,get(){getterCalls++;return chain[0].sourceRecordKey;}
+      });
+      assert.throws(()=>planUntrustedBciAuditAppend(bciScope,[],[
+        accessor,...chain.slice(1)]),/Invalid BCI audit append/);
+      assert.equal(getterCalls,0);
+
       assert.throws(()=>planUntrustedBciAuditAppend(bciScope,[],[
         ...chain.slice(0,7),{...chain[7],verification:'verified'}]),
         /Invalid BCI audit append/);
