@@ -13,9 +13,9 @@ import {deflateSync} from 'node:zlib';
 import {pathToFileURL} from 'node:url';
 
 const pins={
-  content:'3bfa118349dffddb25c18c18f1d03664ccb68c75',
-  demand:'6a9bced47b22b35dda3cb8e222e3afd0a9a7d8c7',
-  bci:'cee811f816c5a0d16a51a4d738034f5b2dc98f35',
+  content:'5870356c3edc7d09748cbe004543e6a288ce1c28',
+  demand:'3ddf3f8c126642eb4968157f6fb81dd4db5cceef',
+  bci:'ad24d4b364c95106ba81ffc13d169015f1d82bd0',
 };
 const files=[
   [pins.content,'lib/content/jpeg-source-qa.mjs'],
@@ -178,6 +178,31 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       assert.ok(duplicateSource.flags.includes('DUPLICATE_ASSET_SOURCE'));
       assert.throws(()=>buildContentBciEvidenceHandoff(duplicateSource,scope,
         '2026-10-27T11:30:00Z'),/INVALID_CONTENT_EVIDENCE_SCOPE/);
+      // PORTFOLIO_CONTENT_DRIVE_ALIAS_TO_SHARED_BCI_HOLD_20261028_V1
+      // A single Drive file in download + view form is one source, not two
+      // independently approved carousel assets. Provider-shaped SENT cannot
+      // cross the CONTENT handoff boundary into shared BCI.
+      const driveFileId='1A2b3C4d5E6f7G8h9I0jKlMnOpQrStUv';
+      const download='https://drive.google.com/uc?export=download&id='+driveFileId;
+      const view='https://drive.google.com/file/d/'+driveFileId+'/view';
+      const aliasPost={...post,assets:[
+        {type:'image',source:download,mimeType:'image/png'},
+        {type:'image',source:view,mimeType:'image/png'}]};
+      const aliasObservation=projectBufferContentObservation(aliasPost,scope);
+      assert.equal(aliasObservation.status,'REVIEW_REQUIRED');
+      assert.ok(aliasObservation.flags.includes('DUPLICATE_ASSET_SOURCE'));
+      assert.throws(()=>buildContentBciEvidenceHandoff(aliasObservation,scope,
+        '2026-10-27T11:30:00Z'),/INVALID_CONTENT_EVIDENCE_SCOPE/);
+      const distinctPost={...aliasPost,assets:[
+        aliasPost.assets[0],
+        {...aliasPost.assets[1],source:'https://drive.google.com/file/d/'+
+          '1Z2y3X4w5V6u7T8s9R0qPoNmLkJiHgFeD'+'/view'}]};
+      const distinctObservation=projectBufferContentObservation(distinctPost,scope);
+      assert.equal(distinctObservation.status,'MEASURED');
+      const distinctHandoff=buildContentBciEvidenceHandoff(distinctObservation,scope,
+        '2026-10-27T11:30:00Z');
+      assert.equal(distinctHandoff.provenance.completeness,'unverified');
+      assert.ok(distinctHandoff.unknowns.includes('SHARED_BCI_AUDIT_NOT_WRITTEN'));
       const observation=reconciled.observation;
       assert.equal(observation.status,'MEASURED');
       assert.equal(observation.providerAttestedByModule,false);
