@@ -75,7 +75,7 @@ function database(kind, rows, calls, error) {
 }
 
 function harness({ env = {}, grants = [grant], rows = [evidence],
-  membershipError, evidenceError, jwksError, afterEvidenceRead } = {}) {
+  membershipError, evidenceError, jwksError, afterEvidenceRead, directRows } = {}) {
   const calls = [];
   const verifierConfig = { issuer: ISSUER, audience: ISSUER,
     jwksUrl: `${ISSUER}/auth/.well-known/jwks.json`,
@@ -89,7 +89,9 @@ function harness({ env = {}, grants = [grant], rows = [evidence],
   const membershipsFor = createNeonDevMembershipLookup(database("membership", grants, calls, membershipError));
   const restrictedEvidenceRead = createNeonDevReadRows(database("evidence", rows, calls, evidenceError));
   const readRows = async scope => {
-    const result = await restrictedEvidenceRead(scope);
+    // Synthetic direct adapter override exercises HTTP policy independently of
+    // the production DB row normalizer, which already strips extra fields.
+    const result = directRows === undefined ? await restrictedEvidenceRead(scope) : directRows;
     // Synthetic interleaving: another transaction revokes/reassigns membership
     // after the evidence transaction, before the HTTP response is serialized.
     afterEvidenceRead?.();
@@ -285,10 +287,10 @@ test("HTTP rejects hidden and symbol DB metadata with generic 403 and no partial
     { ...second, metrics: hidden(second.metrics, "private_key") },
     { ...second, metrics: { ...second.metrics, [symbol]: "secret-sentinel" } },
   ]) {
-    const f = harness({ rows: [evidence, bad] });
+    const f = harness({ directRows: [evidence, bad] });
     const response = await f.handler(f.request("product=content&limit=2"));
     const body = await denied(response, 403);
     assert.equal(body.includes("offline-synthetic-only"), false);
-    assert.equal(f.calls.filter(c => c.kind === "evidence" && c.step === "begin").length, 1);
+    assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 1);
   }
 });
