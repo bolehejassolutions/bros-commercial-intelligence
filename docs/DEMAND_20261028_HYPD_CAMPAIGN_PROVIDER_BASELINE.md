@@ -41,3 +41,11 @@ References:
 - DEMAND spec: https://docs.google.com/document/d/1jux469eMEGdwHh_0Wlf9lUnEH64QzwJ5pbj1mGog0BQ/edit
 - Issue #9: https://github.com/bolehejassolutions/bros-commercial-intelligence/issues/9
 - Draft PR #14: https://github.com/bolehejassolutions/bros-commercial-intelligence/pull/14
+
+## DEMAND_HYPD_PROVIDER_REPLAY_STDIN_20261028_2010_V1 — real connector readback + privacy-minimized offline replay
+
+Observed: 28 Oct 2026 ~20:10 MYT. Source: fresh HYPD Meta Ads connector calls, read-only. Account discovery again returned MYR/Asia-Kuala_Lumpur account act_1997776120879476. Exact campaign-object query for 120250864977630697, 8–27 Oct, again returned one row WITHOUT campaign_id: RM124.93 spend, 3,194 impressions, 2,041 reach, 84 clicks, 63 inline link clicks, 33 LPVs, and overlapping purchase/omni/Pixel aliases of 1 each. This is ONE platform-attributed purchase signal set, not three orders. Query for the same exact campaign, 25–27 Oct, returned rows=[]/nextPageToken=null/missingScopes=null: NO_ROWS_NOT_ZERO. Both are connected-provider observations, not an authenticated DEMAND application receipt.
+
+Added scripts/demand-hypd-readback.mjs and tests/demand-hypd-readback.test.mjs to the existing DEMAND Draft PR #14. CLI accepts exactly one caller-provided JSON {scope,query,response} via stdin; reuses the strict existing HYPD exact-object adapter; emits only a minimal campaign observation/snapshot hash, explicit UNATTESTED status, and null verified paid orders/CPA/outcome/learning. It performs no network, DB, provider writes or ad changes, never echoes raw provider payload/tenant/merchant IDs, and fails closed for wrong scope, conflicting campaign, missing permissions and pagination. Regression uses the redacted metrics/shape observed from the connected provider and an observed no-row case; it is still a fixture replay, NOT a live authenticated BCI application E2E.
+
+No acquisition experiment was executed. Existing Meta→HitPay #1007 identity, payout allocation, entitlement, qualified customer conversion and causal lift remain unverified; do not infer CPA/CAC/ROAS. Four INTERNAL V1 gates remain OPEN. No changes to BCI/Neon, CONTENT/publisher, production, pricing, spending, permissions, paid services or BROS LABS.
