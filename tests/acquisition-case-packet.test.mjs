@@ -184,3 +184,42 @@ test("future-dated collection or preregistration cannot masquerade as a present 
   assert.equal(run().outcomeVerified,false);
   assert.equal(run().verifiedCpaMinor,null);
 });
+
+test("stale historical Meta baseline triggers refresh advisory, not a verified outcome",()=>{
+  const a=run();
+  assert.equal(a.baselineAgeDaysAtPreregistration,19);
+  assert.equal(a.baselineFreshnessAdvisory,"REFRESH_RECOMMENDED");
+  assert.equal(a.diagnosisCode,"OBTAIN_META_EVENT_TO_HITPAY_ORDER_LINK");
+  assert.equal(a.nextBestEvidenceAction,"REFRESH_AUTHENTICATED_ACQUISITION_BASELINE");
+  assert.equal(a.requiredIndependentEvidence.includes(
+    "fresh_authenticated_baseline_before_action"),true);
+  assert.equal(a.ownerApprovalVerified,false);
+  assert.equal(a.verifiedCpaMinor,null);
+  assert.equal(a.outcomeVerified,false);
+  assert.equal(a.executionAllowed,false);
+  assert.equal(a.caseId,run().caseId);
+});
+
+test("completed recent MYT baseline keeps evidence-link diagnosis; seven-day boundary is advisory",()=>{
+  for(const [day,expectedAge,expectedAdvisory] of [
+    ["2026-10-26",2,"RECENT_COMPLETED_WINDOW"],
+    ["2026-10-21",7,"RECENT_COMPLETED_WINDOW"],
+    ["2026-10-20",8,"REFRESH_RECOMMENDED"],
+  ]){
+    const localScope={...scope,since:day,until:day};
+    const localMeta={...meta,date_start:day,date_stop:day};
+    const pair=reviewDemandAcquisitionEvidencePair(
+      localScope,localMeta,order,charge,detail);
+    const localProposal={...proposal,baselineStart:day,baselineEnd:day,
+      evidenceCandidateIds:[pair.pairKey]};
+    const a=run(localScope,localMeta,localProposal);
+    assert.equal(a.baselineAgeDaysAtPreregistration,expectedAge);
+    assert.equal(a.baselineFreshnessAdvisory,expectedAdvisory);
+    assert.equal(a.nextBestEvidenceAction,
+      expectedAge>7 ? "REFRESH_AUTHENTICATED_ACQUISITION_BASELINE"
+        : "OBTAIN_META_EVENT_TO_HITPAY_ORDER_LINK");
+    assert.equal(a.providerAuthenticationVerified,false);
+    assert.equal(a.verifiedPaidOrders,null);
+    assert.equal(a.causalLift,null);
+  }
+});
