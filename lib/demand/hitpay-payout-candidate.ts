@@ -83,7 +83,7 @@ export function assessDemandHitPayPayoutCandidate(
       createdAt: row.created_at,
       // HitPay's 12 Oct payout was created at 11 Oct 16:03 UTC,
       // i.e. 12 Oct MYT. The API's filter basis is NOT attested here.
-      createdMytDate: new Date(Date.parse(row.created_at) + 8 * 60 * 60 * 1000)
+      createdMytDate: new Date(Date.parse(row.created_at as string) + 8 * 60 * 60 * 1000)
         .toISOString().slice(0, 10),
     };
   }).sort((a, b) => a.id.localeCompare(b.id));
