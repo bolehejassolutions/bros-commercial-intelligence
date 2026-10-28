@@ -61,3 +61,20 @@ test('Forged authority, accessors, mixed assets, sparse arrays and unsafe scope 
   const wrong=base();wrong.product='demand';
   assert.throws(()=>inspect(wrong),/INVALID_CONTENT_BUFFER_CAPABILITY_SCOPE/);
 });
+
+test('multiline Buffer caption preserves identity and rejects unsafe controls',()=>{
+  const x=base();x.channelService='instagram';
+  x.caption='Sebelum pelanggan setuju, terangkan proses.\n\nIlustrasi AI.\nApa langkah seterusnya?';
+  const a=inspect(x);
+  assert.equal(a.status,'SCHEMA_PREFLIGHT_ONLY');
+  assert.equal(a.captionDeclaresAi,true);
+  assert.equal(inspect({...x}).capabilityPreflightId,a.capabilityPreflightId);
+  const shorter={...x,caption:x.caption.replace('\n\n','\n')};
+  assert.notEqual(inspect(shorter).capabilityPreflightId,a.capabilityPreflightId);
+  for(const control of ['\r','\t','\u0000','\u007f']){
+    assert.throws(()=>inspect({...x,caption:'Satu'+control+'Dua'}),/INVALID_CONTENT_BUFFER_DISCLOSURE_COPY/);
+  }
+  assert.equal(a.executionAllowed,false);
+  assert.equal(a.authenticatedApprovalVerified,false);
+  assert.equal(a.providerSentVerified,false);
+});
