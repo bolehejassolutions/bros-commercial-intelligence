@@ -101,3 +101,22 @@ test('shared lineage rejects symbol and non-enumerable own metadata', () => {
   assert.throws(() => validateBciLineage(symbolScope, [chain[0]]), denied);
   assert.equal(validateBciLineage(scope, [chain[0]]).counts.evidence, 1);
 });
+
+
+test('shared lineage rejects accessor and hidden allowed fields without invoking getters', () => {
+  let reads = 0;
+  const accessorRecord = Object.defineProperty({ ...chain[0] }, 'sourceRecordKey', {
+    enumerable: true, get() { reads++; return 'synthetic-evidence'; },
+  });
+  const accessorScope = Object.defineProperty({ ...scope }, 'tenantId', {
+    enumerable: true, get() { reads++; return A; },
+  });
+  const hiddenAllowed = Object.defineProperty({ ...chain[0] }, 'sourceRecordKey', {
+    enumerable: false, value: 'synthetic-evidence',
+  });
+  assert.throws(() => validateBciLineage(scope, [accessorRecord]), denied);
+  assert.throws(() => validateBciLineage(accessorScope, [chain[0]]), denied);
+  assert.throws(() => validateBciLineage(scope, [hiddenAllowed]), denied);
+  assert.equal(reads, 0);
+  assert.equal(validateBciLineage(scope, [chain[0]]).counts.evidence, 1);
+});
