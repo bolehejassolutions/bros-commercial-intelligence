@@ -1,0 +1,43 @@
+# BROS DEMAND — Real read-only acquisition baseline and HYPD campaign identity bridge
+
+Checkpoint ID: DEMAND_HYPD_CAMPAIGN_OBJECT_BRIDGE_20261028_1911_V1
+Status: INTERNAL DEV / PROVIDER-CONNECTOR OBSERVATIONS; NOT A VERIFIED EXPERIMENT
+Observed: 2026-10-28 ~19:09–19:12 MYT (11:09–11:12 UTC)
+Authority: Primary owner decision 25 Oct incl. addendum; DEMAND Issue #9. Owner's later portfolio priority (28 Oct ~19:04 MYT): prioritize provider-grounded acceptance work, not synthetic-only regressions.
+
+## Fresh read-only provider evidence (not server-owned app credentials)
+
+1. HYPD Meta Ads account discovery: BOLEHEJAS SOLUTIONS Ads, `act_1997776120879476`, MYR, Asia/Kuala_Lumpur.
+2. HYPD `meta_get_campaigns(accountId)` returned three campaigns, **all PAUSED / effective PAUSED** at read time:
+   - `120251158023300697` — ACQ-V2 7-day, lifetime budget RM140, remaining RM140 (no launch authorized here).
+   - `120250864977630697` — historical Oct 8 campaign, lifetime budget RM1500, remaining RM1375.07.
+   - `120250828102660697` — deprecated Oct 27 campaign, daily budget RM30, remaining RM30.
+   These are **status snapshots**, not future-delivery guarantees; budgets are provider settings, not new spending approval.
+3. HYPD `meta_insights({accountId,objectId:"120250864977630697",level:"campaign",since:"2026-10-08",until:"2026-10-27"})` returned **one** report row, with `date_start/date_stop` and `account_currency=MYR` but **without `campaign_id`**. The actual provider observation: spend **RM124.93**, 3,194 impressions, 2,041 reach, 84 clicks, 63 inline link clicks, 33 landing-page views, and **one overlapping set** of `purchase`, `omni_purchase`, and `offsite_conversion.fb_pixel_purchase` action labels (value 1 each, **not three purchases**). Meta action value RM50. `cost_per_action_type` and `purchase_roas` are **platform calculations, not verified CAC/ROAS**.
+4. HYPD `meta_insights({accountId,level:"campaign",since:"2026-10-25",until:"2026-10-27"})` returned `rows=[]`, `nextPageToken=null`, `missingScopes=null`. **No rows != zero spend/sales/delivery**; the connector has not supplied affirmative zero metrics.
+5. HitPay read-only `list_orders` and `list_charges` with `date_from=2026-10-25,date_to=2026-10-28,per_page=25` returned `data=[]`, `has_more=false` for that **bounded query**. Historical #1007 (9 Oct, RM50) remains an owner-confirmed **real Meta-sourced** BROS SELL customer order with independent paid HitPay evidence; exact pixel-event↔order join, bank payout-item allocation and entitlement are separate unverified claims. No payer PII retained here.
+6. HYPD `google_analytics_list_account_summaries()` returned `accountSummaries=[]`: no GA4 property selected in **HYPD**. This does not negate the owner's confirmation of an existing GA4→Meta connection.
+
+## Concrete integration gap and code-only fix
+
+Existing `normalizeMetaCampaignFunnel` requires a row-level `campaign_id`; actual HYPD exact-object campaign report omits that field. Passing the provider row directly fails even though the read-only request was campaign-scoped. Never infer campaign identity from an **account-level** report.
+
+Added DEMAND-only `lib/demand/hypd-meta-campaign-report.ts` to bind a **single unpaginated row** to the exact `accountId/objectId/level=campaign/since/until` query envelope; validate currency, date range, explicit conflicting row campaign IDs, missing scopes, dropped fields and pagination; then project via existing normalizer. No rows return `NO_ROWS_NOT_ZERO` with `observation=null`. A content-addressed snapshot remains stable on identical rereads and changes on report revision. `providerAuthenticationVerified=false`, `tenantAuthorizationVerified=false`, `verifiedPaidOrders=null`, `verifiedCpaMinor=null`, `causalLift=null` are deliberate: caller-supplied query and HYPD connector data do **not** establish authenticated BCI app ingestion, merchant attribution, or experimental outcome.
+
+Regression coverage: actual HYPD-shaped one-row response, no-row unknown semantics, account-vs-campaign mismatch, foreign campaign, wrong dates/currency, pagination/multiple rows, missing scopes/dropped fields, revision/idempotency and invalid scope. GitHub CI must pass independently before reporting technical PASS.
+
+## Diagnosis, next safe action and experiment gate
+
+- **Observed:** historical paid Meta funnel activity; all three campaigns currently paused; no provider rows for 25–27 Oct; HitPay bounded 25–28 Oct returned no orders/charges. These observations do **not** show causal effectiveness or ineffectiveness of a creative.
+- **Diagnosis:** provider response-shape mismatch prevented reliable exact-campaign normalization. That adapter gap is now addressed in Draft PR #14; app-owned provider authentication, transaction-level join, qualified enquiries, outcome verification and durable BCI learning remain open.
+- **Next action:** use authenticated, product-scoped read-only provider receipts and a separately authorized, preregistered **no-incremental-spend** BROS SELL educational acquisition experiment. Define primary KPI from **verified** qualified enquiries or paid orders with explicit source/denominator, compare a diagnostic seller-first theme with a pre-specified control using existing approved content workflow only if owner authorizes that change. Otherwise retain the plan unexecuted. A sequential comparison without randomized/controlled assignment is observational, **not causal lift**.
+- **Owner approval required before any experiment that changes publisher assets, schedule, Meta ads, landing pages, provider permissions or spending.** No such action performed.
+- **Gate:** DEMAND INTERNAL V1 **OPEN** until diagnosis → authorized action → provider-verified outcome → durable BCI learning, independently replayable. Historical #1007 is a baseline, not a new experiment outcome.
+
+Boundaries: DEMAND product layer only. Shared core/auth/DB owned by BCI/Neon; media/publisher owned by CONTENT. No Neon DDL, Supabase resume, Meta write/spend, new cost, production deployment, merge, price/policy/entitlement changes, customer access, Buffer/Full Publisher modifications or BROS LABS.
+
+References:
+- Canonical owner decision: https://docs.google.com/document/d/1AmnN8agBGkMNCVMzQ6esJ1neWtKVuvqBa-F_j3U7rGM/edit
+- DEMAND spec: https://docs.google.com/document/d/1jux469eMEGdwHh_0Wlf9lUnEH64QzwJ5pbj1mGog0BQ/edit
+- Issue #9: https://github.com/bolehejassolutions/bros-commercial-intelligence/issues/9
+- Draft PR #14: https://github.com/bolehejassolutions/bros-commercial-intelligence/pull/14
