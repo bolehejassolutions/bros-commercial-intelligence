@@ -13,7 +13,7 @@ import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const pins=Object.freeze({
-  demand:'a577ac57964f268916026b0f531f506ba02e1ab1',
+  demand:'60e6bd77a6a416afc7ad76b349c13e31d51f180a',
   bci:'6d870dd16023370de307eb4fe89050c38ecdf9cc'
 });
 const sources=[
@@ -50,7 +50,7 @@ const experiment=(pairKey)=>({
   action:'LANDING_PAGE_TEST',primaryKpi:'verified_paid_orders',
   baselineStart:scope.since,baselineEnd:scope.until,
   experimentStart:'2026-11-01',experimentEnd:'2026-11-07',
-  preRegisteredAt:'2026-10-28T04:00:00Z',
+  preRegisteredAt:'2026-10-28T05:10:00Z',
   evidenceCandidateIds:[pairKey],maxIncrementalSpendMinor:0
 });
 const stageNames=['evidence','signal','case','diagnosis','decision','action','outcome','learning'];
@@ -91,6 +91,14 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       const {prepareDemandAcquisitionCasePacket}=await load(sources[0][1]);
       const {planUntrustedBciAuditAppend}=await load(sources[6][1]);
       const pair=reviewDemandAcquisitionEvidencePair(scope,meta,order,charge,detail);
+      // Coordinator gate: current DEMAND head rejects a provider snapshot
+      // collected after a purported experiment preregistration. The older
+      // coordinator fixture (04:00Z prereg / 05:00Z collection) was invalid.
+      // A rejected packet must never be promoted to shared BCI evidence.
+      assert.throws(()=>prepareDemandAcquisitionCasePacket(
+        scope,meta,order,charge,detail,
+        {...experiment(pair.pairKey),preRegisteredAt:'2026-10-28T04:59:59Z'}),
+        /Invalid BROS DEMAND acquisition case chronology/);
       const packet=prepareDemandAcquisitionCasePacket(scope,meta,order,charge,
         detail,experiment(pair.pairKey));
       const repeated=prepareDemandAcquisitionCasePacket(scope,meta,order,charge,
