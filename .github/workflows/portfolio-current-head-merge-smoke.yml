@@ -59,13 +59,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
 
-      - name: Install from lockfile
-        run: npm ci
+      - name: Install dependencies (repository has no lockfile)
+        run: npm install --no-audit --no-fund
 
       - name: Run integrated Node tests
-        run: node --test tests/*.test.mjs
+        run: node --experimental-strip-types --test tests/*.test.mjs
+
+      - name: Run integrated Neon SDK tests
+        run: node --experimental-strip-types --test tests/sdk/*.test.mjs
 
       - name: Verify integrated TypeScript
         run: npx tsc --noEmit
