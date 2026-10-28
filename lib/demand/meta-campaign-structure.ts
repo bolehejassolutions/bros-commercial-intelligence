@@ -38,7 +38,7 @@ function validateInventory(response: DemandCampaignInventory, kind: ObjectKind):
     if (typeof id !== "string" || !ID.test(id) || seen.has(id) ||
         typeof status !== "string" || !STATUS.test(status) ||
         typeof effectiveStatus !== "string" || !STATUS.test(effectiveStatus)) fail();
-    seen.add(id);
+    seen.add(id as string);
     const parent = kind === "campaign" ? null : row.campaign_id;
     const adset = kind === "ad" ? row.adset_id : null;
     if ((parent !== null && (typeof parent !== "string" || !ID.test(parent))) ||
@@ -50,8 +50,9 @@ function validateInventory(response: DemandCampaignInventory, kind: ObjectKind):
       if (typeof value !== "string" || !ID.test(value)) fail();
       creativeId = value;
     }
-    objects.push({ id, campaignId: parent, adsetId: adset,
-      status, effectiveStatus, creativeId });
+    objects.push({ id: id as string, campaignId: parent as string | null,
+      adsetId: adset as string | null, status: status as string,
+      effectiveStatus: effectiveStatus as string, creativeId });
   }
   return objects;
 }
