@@ -1,0 +1,74 @@
+name: Portfolio current-head integration (read-only merge smoke)
+
+on:
+  push:
+    branches:
+      - feat/portfolio-hitpay-provider-smoke-20261026
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portfolio-merge-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  current-head-merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout disposable main workspace
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Merge current worker heads in disposable runner only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'BROS Integration CI'
+          git config user.email 'ci@users.noreply.github.com'
+          branches=(
+            feat/neon-bci-dev-ledger-20261025
+            feat/demand-meta-funnel-readonly-20261026
+            feat/content-measurement-gate-20261026
+            feat/portfolio-hitpay-provider-smoke-20261026
+          )
+          echo '### Current-head integration merge smoke' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Disposable runner only. No pushes, production deploys, database access, or provider writes.' >> "$GITHUB_STEP_SUMMARY"
+          echo '| Worker branch | SHA fetched | Merge result |' >> "$GITHUB_STEP_SUMMARY"
+          echo '| --- | --- | --- |' >> "$GITHUB_STEP_SUMMARY"
+          for branch in "${branches[@]}"; do
+            git fetch --no-tags origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+            sha="$(git rev-parse "refs/remotes/origin/$branch")"
+            if git merge --no-ff --no-edit "refs/remotes/origin/$branch"; then
+              echo "| \`$branch\` | \`$sha\` | PASS |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| \`$branch\` | \`$sha\` | CONFLICT — integration NOT verified |" >> "$GITHUB_STEP_SUMMARY"
+              git status --short
+              exit 1
+            fi
+          done
+          git status --short
+          echo "Integrated local commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install from lockfile
+        run: npm ci
+
+      - name: Run integrated Node tests
+        run: node --test tests/*.test.mjs
+
+      - name: Verify integrated TypeScript
+        run: npx tsc --noEmit
+
+      - name: Build integrated Next application
+        run: npm run build
