@@ -77,7 +77,13 @@ export function assessDemandMetaCampaignStructure(
   const adsetParents = new Map(adsetRows.map(row => [row.id, row.campaignId]));
   if (adsetRows.some(row => !campaignIds.has(row.campaignId ?? "")) ||
       adRows.some(row => !campaignIds.has(row.campaignId ?? "") ||
-        adsetParents.get(row.adsetId ?? "") !== row.campaignId)) fail();
+        // Target orphans remain an explicit diagnostic state; an ad attached
+        // to a different campaign's adset must never pass as target-ready.
+        (row.campaignId !== campaignId &&
+          adsetParents.get(row.adsetId ?? "") !== row.campaignId) ||
+        (row.campaignId === campaignId &&
+          adsetParents.has(row.adsetId ?? "") &&
+          adsetParents.get(row.adsetId ?? "") !== row.campaignId))) fail();
   const target = campaignRows.find(row => row.id === campaignId) ?? null;
   const targetAdsets = adsetRows.filter(row => row.campaignId === campaignId);
   const targetAds = adRows.filter(row => row.campaignId === campaignId);
