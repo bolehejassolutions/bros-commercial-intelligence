@@ -37,7 +37,7 @@ const toMinor = (v: unknown): number => {
   if (typeof v !== "number" || !Number.isFinite(v) || v < 0 ||
       !Number.isSafeInteger(Math.round(v * 100)) ||
       Math.round(v * 100) / 100 !== v) invalid();
-  return Math.round(v * 100);
+  return Math.round((v as number) * 100);
 };
 const validTimestamp = (v: unknown): v is string => {
   if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(v)) return false;
@@ -73,9 +73,10 @@ export function assessDemandHitPayPayoutCandidate(
         !/^[a-z][a-z0-9_]{1,40}$/.test(row.payment_provider) ||
         !["paid", "succeeded", "processing", "to_be_processed", "requires_admin_action", "reverted"].includes(String(row.status)) ||
         typeof row.status !== "string" || !validTimestamp(row.created_at)) invalid();
-    seen.add(row.id.toLowerCase());
+    const id = row.id as string;
+    seen.add(id.toLowerCase());
     return {
-      id: row.id.toLowerCase(),
+      id: id.toLowerCase(),
       status: row.status as string,
       provider: row.payment_provider,
       amountMinor: toMinor(row.amount),
