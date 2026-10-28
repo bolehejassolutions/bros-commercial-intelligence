@@ -40,7 +40,7 @@ test('tenant, plan revision and visual instruction changes change identity',()=>
   assert.notEqual(base.jobs[0].generationIntentId,prepare(config(),brief(),s).jobs[0].generationIntentId);
 });
 test('duplicate visual objectives are rejected, not called independent',()=>{
-  const s=slots();s[1].visualDistinction='  OPENING SCENE: CHOOSING THE BOUQUET.  ';
+  const s=slots();s[1].visualDistinction='OPENING   SCENE: CHOOSING THE BOUQUET.';
   assert.throws(()=>prepare(config(),brief(),s),/CONTENT_DUPLICATE_VISUAL_OBJECTIVES/);
 });
 test('rejects wrong slot order, missing slots and sparse arrays',()=>{
