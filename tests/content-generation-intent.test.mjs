@@ -43,6 +43,18 @@ test('duplicate visual objectives are rejected, not called independent',()=>{
   const s=slots();s[1].visualDistinction='OPENING   SCENE: CHOOSING THE BOUQUET.';
   assert.throws(()=>prepare(config(),brief(),s),/CONTENT_DUPLICATE_VISUAL_OBJECTIVES/);
 });
+test('distinct objective labels cannot mask duplicated visual generation briefs',()=>{
+  const a=slots();
+  a[1].visualBrief='SHOW  A CUSTOMER CHOOSING FLOWERS IN A SHOP.';
+  assert.throws(()=>prepare(config(),brief(),a),/CONTENT_DUPLICATE_VISUAL_BRIEFS/);
+  const b=slots();
+  b[1].visualBrief='Show a customer choosing flowers in a shop.';
+  assert.throws(()=>prepare(config(),brief(),b),/CONTENT_DUPLICATE_VISUAL_BRIEFS/);
+  const valid=prepare(config(),brief(),slots());
+  assert.equal(valid.status,'GENERATION_REQUEST_ONLY');
+  assert.equal(valid.independentImagesVerified,false);
+  assert.equal(valid.executionAllowed,false);
+});
 test('rejects wrong slot order, missing slots and sparse arrays',()=>{
   const s=slots();s[0].slot=2;
   assert.throws(()=>prepare(config(),brief(),s),/CONTENT_GENERATION_SLOT_ORDER_MISMATCH/);
