@@ -55,6 +55,53 @@ class ContentJpegPixelQaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DUPLICATE_DECODED_PIXELS"):
             audit([first, second])
 
+    def test_visual_near_duplicate_is_advisory_only_with_real_decoded_pixels(self):
+        # Same layout, a small pixel change: cryptographic pixels differ, but
+        # perceptual similarity should request human visual review.
+        base = Image.new("RGB", (32, 32), (120, 120, 120))
+        changed = base.copy()
+        for y in range(2):
+            for x in range(2):
+                changed.putpixel((x, y), (220, 20, 20))
+
+        def encode(image):
+            stream = io.BytesIO()
+            image.save(stream, format="JPEG", quality=95)
+            return stream.getvalue()
+
+        sources = [encode(base), encode(changed)]
+        result = audit_jpeg_sources(sources, SCOPE, expected_width=32, expected_height=32)
+        self.assertNotEqual(result["images"][0]["rgbPixelSha256"],
+                            result["images"][1]["rgbPixelSha256"])
+        self.assertTrue(result["visualSimilarityReviewRequired"])
+        self.assertEqual(len(result["visualSimilarityAdvisories"]), 1)
+        self.assertLessEqual(result["visualSimilarityAdvisories"][0]["distance"], 12)
+        self.assertEqual(result["status"], "SOURCE_JPEG_PIXEL_QA_ONLY")
+        self.assertFalse(result["visualEditorialQaVerified"])
+        self.assertFalse(result["independentGenerationVerified"])
+        self.assertFalse(result["approvalGranted"])
+        self.assertFalse(result["executionAllowed"])
+        self.assertEqual(result["qaManifestId"],
+                         audit_jpeg_sources(sources, SCOPE, expected_width=32,
+                                            expected_height=32)["qaManifestId"])
+
+    def test_distinct_visual_layout_does_not_raise_similarity_advisory(self):
+        # Opposite left-to-right luminance gradients should have very different dHashes.
+        a = Image.new("RGB", (32, 32))
+        b = Image.new("RGB", (32, 32))
+        for y in range(32):
+            for x in range(32):
+                a.putpixel((x, y), (x * 8, x * 8, x * 8))
+                b.putpixel((x, y), ((31 - x) * 8,) * 3)
+        def encode(image):
+            stream = io.BytesIO()
+            image.save(stream, format="JPEG", quality=95)
+            return stream.getvalue()
+        result = audit_jpeg_sources([encode(a), encode(b)], SCOPE,
+                                    expected_width=32, expected_height=32)
+        self.assertFalse(result["visualSimilarityReviewRequired"])
+        self.assertEqual(result["visualSimilarityAdvisories"], [])
+
     def test_corruption_and_mislabeled_bytes_fail_closed(self):
         first = jpeg()
         for invalid in (first[:-2], b"not a jpeg" * 20, b"\x89PNG" + first[4:]):
