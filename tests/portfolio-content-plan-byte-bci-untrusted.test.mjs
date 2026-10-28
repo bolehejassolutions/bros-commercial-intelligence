@@ -7,7 +7,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync} from 'node:fs';
+import {rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -88,7 +89,8 @@ if(process.env.GITHUB_ACTIONS!=='true'){
         'https://github.com/bolehejassolutions/bros-commercial-intelligence.git'],
         {timeout:15000});
       for(const ref of new Set(Object.values(pins)))
-        execFileSync('git',['-C',dir,'fetch','--no-tags','--depth=1','origin',ref],
+        execFileSync('git',['-C',dir,'-c','maintenance.auto=false',
+          '-c','gc.auto=0','fetch','--no-tags','--depth=1','origin',ref],
           {timeout:60000,maxBuffer:2097152,stdio:'pipe'});
       for(const [ref,path] of files){
         const src=execFileSync('git',['-C',dir,'show',ref+':'+path],
@@ -239,7 +241,7 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       assert.notEqual(inspectPlannedContentPngBytes(other,brief(),source,options).mediaSetId,
         qa.mediaSetId);
     }finally{
-      rmSync(dir,{recursive:true,force:true,maxRetries:8,retryDelay:150});
+      await rm(dir,{recursive:true,force:true,maxRetries:20,retryDelay:250});
     }
   });
 }
