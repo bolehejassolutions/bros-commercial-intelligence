@@ -201,7 +201,7 @@ class ContentJpegPixelQaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "INVALID_AI_DISCLOSURE"):
             packet({**copy, "aiDisclosure": "VERIFIED"})
         with self.assertRaisesRegex(ValueError, "INVALID_CAPTION"):
-            packet({**copy, "caption": "Bad\\ncaption"})
+            packet({**copy, "caption": "Bad\ncaption"})
 
     def test_jpeg_review_similarity_and_claims_remain_pending(self):
         sources = [jpeg((10, 20, 30)), jpeg((220, 210, 200))]
