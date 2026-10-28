@@ -29,7 +29,7 @@ const isObject = (x: unknown): x is Record<string, unknown> =>
 export function createNeonDevReadRows(transaction: ScopedTransaction) {
   if (typeof transaction !== "function") deny();
   return async (scope: Scope): Promise<readonly EvidenceRow[]> => {
-    if (!scope || !UUID.test(scope.tenantId) ||
+    if (!scope || typeof scope.tenantId !== "string" || !UUID.test(scope.tenantId) ||
         (scope.product !== "content" && scope.product !== "demand") ||
         !Number.isInteger(scope.limit) || scope.limit < 1 || scope.limit > 50) deny();
 
