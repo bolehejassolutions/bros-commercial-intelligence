@@ -270,3 +270,23 @@ test("HTTP 403 does not reveal whether identity, membership or evidence failed",
     error: "BCI private evidence access denied.",
   }));
 });
+
+
+test("HTTP rejects hidden and symbol DB metadata with generic 403 and no partial evidence", async () => {
+  const symbol = Symbol("secret");
+  const hidden = (value, key) => Object.defineProperty({ ...value }, key, {
+    value: "secret-sentinel", enumerable: false,
+  });
+  for (const bad of [
+    hidden(evidence, "customerEmail"),
+    { ...evidence, [symbol]: "secret-sentinel" },
+    { ...evidence, metrics: hidden(evidence.metrics, "private_key") },
+    { ...evidence, metrics: { ...evidence.metrics, [symbol]: "secret-sentinel" } },
+  ]) {
+    const f = harness({ rows: [evidence, bad] });
+    const response = await f.handler(f.request("product=content&limit=2"));
+    const body = await denied(response, 403);
+    assert.equal(body.includes("offline-synthetic-only"), false);
+    assert.equal(f.calls.filter(c => c.kind === "evidence" && c.step === "begin").length, 1);
+  }
+});
