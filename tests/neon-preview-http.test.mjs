@@ -294,3 +294,23 @@ test("HTTP rejects hidden and symbol DB metadata with generic 403 and no partial
     assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 1);
   }
 });
+
+
+// BCI_ALT_HOST_NATIVE_ENV_FAIL_CLOSED_20261028_V1
+// Regression only: this does not certify Netlify/Cloudflare runtime compatibility,
+// prove host identity, or authorize spoofing VERCEL_* on an alternate host.
+test("native Netlify/Cloudflare Preview markers cannot open BCI without trusted Vercel attestation", async () => {
+  const alternateHosts = [
+    { VERCEL_ENV: undefined, VERCEL_GIT_COMMIT_REF: undefined,
+      NETLIFY: "true", CONTEXT: "deploy-preview", BRANCH },
+    { VERCEL_ENV: undefined, VERCEL_GIT_COMMIT_REF: undefined,
+      CF_PAGES: "1", CF_PAGES_BRANCH: BRANCH },
+    { VERCEL_ENV: undefined, VERCEL_GIT_COMMIT_REF: undefined,
+      GITHUB_ACTIONS: "true", GITHUB_REF_NAME: BRANCH },
+  ];
+  for (const env of alternateHosts) {
+    const f = harness({ env });
+    await denied(await f.handler(f.request()), 404);
+    assert.equal(f.calls.length, 0, "untrusted host must not fetch JWKS or query Neon");
+  }
+});
