@@ -2,6 +2,8 @@
 
 Status: **full campaign workflow implemented; external provider activation PENDING**. This product is NOT currently spending, writing to Meta, automatically creating campaigns, or producing AI text via Gemini.
 
+Continuation checkpoint (9 October 2026 Malaysia): Vercel metadata confirms the recorded first-pilot cap `META_OPERATOR_PORTFOLIO_CAP_MYR=100` across production, preview and development. Meta app identity, portfolio link, use-case access and server credentials remain unverified. Local credential preflight preparation is documented in [META_DEVELOPER_CONNECTION.md](META_DEVELOPER_CONNECTION.md); it has not been deployed by this continuation.
+
 ## Production workspace
 
 - Protected BCI application: https://bros-commercial-intelligence-bolehejassolutions-8492.vercel.app/operator
@@ -36,9 +38,11 @@ Server-only Vercel environment variables:
 | `NEXT_PUBLIC_SUPABASE_URL` | Dedicated BCI instance | Yes |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | BCI public client key | Yes |
 | `META_ADS_READ_TOKEN` | Read-only Meta Insights scope | No |
+| `META_APP_ID` | Verified existing app ID; no default or name-based selection | No |
+| `META_APP_SECRET` | Private app credential for server-side token verification | No |
 | `GEMINI_API_KEY` | Optional AI drafting; separate from Google AI consumer subscription | No |
 | `META_ADS_MANAGEMENT_TOKEN` | Write service credential, server-only | No |
-| `META_OPERATOR_PORTFOLIO_CAP_MYR` | Explicit owner-approved cumulative account authorization ceiling (per-flight guard) | No |
+| `META_OPERATOR_PORTFOLIO_CAP_MYR` | Per-flight ceiling; recorded first-pilot cap only | Yes: 100 |
 | `META_OPERATOR_WRITE_ENABLED` | Must equal `approved-v1` only AFTER external verification and approval | No |
 | `CRON_SECRET` | Secures scheduled endpoint | No |
 | `BCI_SUPABASE_SERVICE_KEY` | Cron-only server-side DB connection; keep private | No |
@@ -46,6 +50,8 @@ Server-only Vercel environment variables:
 Setting Meta and backend service keys requires credential access to the actual user-owned accounts. Do not paste credentials into chat or GitHub.
 
 **Account-spend limitation:** `META_OPERATOR_PORTFOLIO_CAP_MYR` bounds the BCI-managed plan's lifetime budget, but is **not** a hard Meta account-wide cap. Existing campaigns or independent changes outside BCI may spend separately. The system now fails closed on activation if any other campaign is ACTIVE during inventory preflight. For a true account-wide financial ceiling, set and verify Meta Ads Manager's own account spending controls. Provider inventory may change after preflight; absolute limits require Meta-side enforcement.
+
+It also does not track cumulative budgets across sequential plans. The first-pilot RM100 record is not standing permission for multiple pilots. Credentials and connection checks cannot approve a plan or unlock the independent write flag. The local preflight checks token app, validity, scopes and expiry, plus the expected app/account portfolio ownership, before each read/write operation; sanitized readiness must be verified against Meta after deployment.
 
 ### Activation checklist
 

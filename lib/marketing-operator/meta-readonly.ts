@@ -1,4 +1,5 @@
 import { validateSnapshot } from "./engine.ts";
+import {metaProviderRequest,metaProviderJson,safeMetaProviderCode} from "./meta-provider.ts";
 import type { CampaignSnapshot } from "./contracts";
 
 /** Meta retrieval is GET-only. Do not add POST/PATCH/DELETE to this module. */
@@ -114,19 +115,19 @@ export async function fetchMetaReadOnlyInsights(
 
   const items: MetaInsightRow[] = [];
   for (let page = 0; page < 3; page++) {
-    const response = await transport(url.toString(), {
+    const response = await metaProviderRequest(url.toString(), {
       method: "GET",
       headers: { Authorization: "Bearer " + readToken, Accept: "application/json" },
       cache: "no-store",
       signal: AbortSignal.timeout(12000),
-    });
+    }, transport);
     if (!response.ok) failWith(response.status);
-    const data = await response.json() as {
+    const data = await metaProviderJson(response) as {
       data?: MetaInsightRow[];
       error?: { code?: number };
       paging?: { next?: string };
     };
-    if (data.error) failWith(data.error.code ?? 502);
+    if (data.error) failWith(safeMetaProviderCode(data.error.code, 502));
     if (!Array.isArray(data.data)) throw new Error("Meta returned an invalid insights payload.");
     items.push(...data.data);
     if (items.length > 300) throw new Error("Meta result cap exceeded.");

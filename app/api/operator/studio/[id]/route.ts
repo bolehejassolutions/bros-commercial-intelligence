@@ -1,6 +1,6 @@
 import {NextRequest,NextResponse} from "next/server";
 import {adminSession,forbidden,NO_STORE,validOrigin} from "@/lib/marketing-operator/server-auth";
-import {readWriteGate,validateApprovedPlan,makePausedObjects,metaCreatePaused,metaSetStatus,FIXED_META_ACCOUNT,requireExclusiveCampaignDelivery,type ApprovedPlan} from "@/lib/marketing-operator/meta-write";
+import {readVerifiedWriteGate,validateApprovedPlan,makePausedObjects,metaCreatePaused,metaSetStatus,FIXED_META_ACCOUNT,requireExclusiveCampaignDelivery,type ApprovedPlan} from "@/lib/marketing-operator/meta-write";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -35,10 +35,10 @@ export async function POST(req:NextRequest,{params}:Context){
  }
 
  // Even after a draft is approved, all Meta writes require independently stored
- // server-side credentials and a finite account-wide spending limit.
- let gate:ReturnType<typeof readWriteGate>;
+ // provider-verified server-side credentials and a finite per-flight spending limit.
+ let gate:Awaited<ReturnType<typeof readVerifiedWriteGate>>;
  try{
-   gate=readWriteGate();
+   gate=await readVerifiedWriteGate();
    if(action==="pause"){
      if(plan.account_id!==FIXED_META_ACCOUNT||!plan.meta_campaign_id)
        throw new Error("Campaign identity cannot be verified for emergency pause.");

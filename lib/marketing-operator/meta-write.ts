@@ -4,7 +4,9 @@
  * No arbitrary endpoint, objective, account, budget mutation or URL input.
  * All initial objects are created PAUSED.
  */
-export const FIXED_META_ACCOUNT="act_1997776120879476";
+import {FIXED_META_ACCOUNT,requireVerifiedMetaCredential} from "./meta-connection.ts";
+import {metaProviderRequest,metaProviderJson,safeMetaProviderCode} from "./meta-provider.ts";
+export {FIXED_META_ACCOUNT} from "./meta-connection.ts";
 export const FIXED_DESTINATION="https://bros.bolehejas.com/";
 const GRAPH="https://graph.facebook.com/v24.0";
 export type ApprovedPlan={
@@ -24,6 +26,14 @@ export function readWriteGate(environment:NodeJS.ProcessEnv=process.env) {
  if(!Number.isFinite(max)||max<5||max>10000)
    throw new Error("No finite portfolio spending cap has been authorized in the deployment.");
  return {token,portfolioCapMYR:max};
+}
+
+/** Deployment configuration alone is insufficient: verify actual provider credentials before writes. */
+export async function readVerifiedWriteGate(environment:NodeJS.ProcessEnv=process.env,transport:typeof fetch=fetch) {
+ const captured={...environment};
+ const gate=readWriteGate(captured);
+ await requireVerifiedMetaCredential("write",captured,transport);
+ return gate;
 }
 
 export function validateApprovedPlan(plan:ApprovedPlan,portfolioCapMYR:number,at=Date.now()) {
@@ -56,13 +66,13 @@ export async function metaCreatePaused(
   if(value===undefined||value===null)continue;
   form.set(key,typeof value==="string"?value:JSON.stringify(value));
  }
- const response=await transport(GRAPH+"/"+accountId+"/"+operation,{
+ const response=await metaProviderRequest(GRAPH+"/"+accountId+"/"+operation,{
   method:"POST",headers:{"Authorization":"Bearer "+token,
    "Content-Type":"application/x-www-form-urlencoded"},
   body:form.toString(),cache:"no-store",signal:AbortSignal.timeout(16000),
- });
- const result=await response.json() as {id?:string;error?:{message?:string;code?:number}};
- if(!response.ok||result.error)throw new Error("Meta "+operation+" failed (code "+(result.error?.code??response.status)+"). Review account status and permissions.");
+ },transport);
+ const result=await metaProviderJson(response) as {id?:string;error?:{message?:string;code?:number}};
+ if(!response.ok||result.error)throw new Error("Meta "+operation+" failed (code "+safeMetaProviderCode(result.error?.code,response.status)+"). Review account status and permissions.");
  if(!/^[0-9]{6,}$/.test(result.id??""))throw new Error("Meta response missing object ID; do not retry automatically.");
  return result.id!;
 }
@@ -70,13 +80,13 @@ export async function metaSetStatus(
  objectId:string,status:"ACTIVE"|"PAUSED",token:string,transport:typeof fetch=fetch
 ) {
  if(!/^[0-9]{6,}$/.test(objectId)||!token)throw new Error("Invalid Meta object or credential.");
- const response=await transport(GRAPH+"/"+objectId,{
+ const response=await metaProviderRequest(GRAPH+"/"+objectId,{
   method:"POST",headers:{"Authorization":"Bearer "+token,
    "Content-Type":"application/x-www-form-urlencoded"},
   body:new URLSearchParams({status}).toString(),cache:"no-store",signal:AbortSignal.timeout(16000),
- });
- const result=await response.json() as {success?:boolean,error?:{code?:number}};
- if(!response.ok||result.success!==true)throw new Error("Meta status update failed (code "+(result.error?.code??response.status)+"). Confirm provider state before any retry.");
+ },transport);
+ const result=await metaProviderJson(response) as {success?:boolean,error?:{code?:number}};
+ if(!response.ok||result.success!==true)throw new Error("Meta status update failed (code "+safeMetaProviderCode(result.error?.code,response.status)+"). Confirm provider state before any retry.");
 }
 export function makePausedObjects(plan:ApprovedPlan,at=Date.now()){
  const validated=validateApprovedPlan(plan,Number(plan.budget_cap_myr),at);
@@ -132,12 +142,12 @@ export async function requireExclusiveCampaignDelivery(
  base.searchParams.set("limit","100");
  const url=new URL(base.toString());
  for(let page=0;page<3;page++){
-  const response=await transport(url.toString(),{
+  const response=await metaProviderRequest(url.toString(),{
    method:"GET",headers:{Authorization:"Bearer "+token},
    cache:"no-store",signal:AbortSignal.timeout(14000)
-  });
+  },transport);
   if(!response.ok)throw new Error("Cannot verify other campaigns; launch blocked.");
-  const body=await response.json() as {
+  const body=await metaProviderJson(response) as {
    data?:Array<{id?:string;status?:string;effective_status?:string}>;
    error?:{code?:number};paging?:{next?:string}
   };

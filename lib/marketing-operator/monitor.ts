@@ -4,7 +4,8 @@
  * - Lifetime Meta budget remains the primary financial ceiling
  * - Auto-pause only when campaign-level spend is unambiguously measurable.
  */
-import {FIXED_META_ACCOUNT,metaSetStatus,readWriteGate} from "./meta-write.ts";
+import {FIXED_META_ACCOUNT,metaSetStatus,readVerifiedWriteGate} from "./meta-write.ts";
+import {metaProviderRequest,metaProviderJson} from "./meta-provider.ts";
 export const PAUSE_RATIO=0.95;
 export function shouldPauseAtCap(spendMYR:unknown,authorizedMYR:unknown):boolean{
  const spend=Number(spendMYR),limit=Number(authorizedMYR);
@@ -26,11 +27,11 @@ export async function metaCampaignSpend(
  const url=new URL("https://graph.facebook.com/v24.0/"+campaignId+"/insights");
  url.searchParams.set("fields","spend");
  url.searchParams.set("time_range",JSON.stringify({since:startDay,until:endDay}));
- const res=await transport(url.toString(),{
+ const res=await metaProviderRequest(url.toString(),{
   method:"GET",headers:{Authorization:"Bearer "+token},cache:"no-store",signal:AbortSignal.timeout(12000)
- });
+ },transport);
  if(!res.ok)throw Error("Cannot measure Meta campaign spend (HTTP "+res.status+").");
- const body=await res.json() as {data?:Array<{spend?:string}>,error?:{code?:number}};
+ const body=await metaProviderJson(res) as {data?:Array<{spend?:string}>,error?:{code?:number}};
  if(body.error||!Array.isArray(body.data)||body.data.length>1)
    throw Error("Ambiguous Meta spend response; no automatic optimization.");
  if(body.data.length===0||body.data[0].spend===undefined)return null;
@@ -45,7 +46,7 @@ export async function pauseOnlyWhenAtCap(
 ):Promise<{paused:boolean;spendMYR:number|null}> {
  if(campaign.account_id!==FIXED_META_ACCOUNT)throw Error("Unapproved campaign account.");
  if(!/^[0-9]{6,}$/.test(campaign.meta_campaign_id))throw Error("Unverified campaign ID.");
- const gate=readWriteGate(env);
+ const gate=await readVerifiedWriteGate(env,transport);
  const cap=Number(campaign.budget_cap_myr);
  if(!Number.isFinite(cap)||cap>gate.portfolioCapMYR||cap<5)
    throw Error("Campaign cap exceeds deployment authority.");
