@@ -99,3 +99,19 @@ test('rejects invalid and retrospective MYT window, including local midnight cut
     {preRegisteredAt:'not a timestamp'},
   ]) assert.throws(()=>propose({...valid,...patch}),invalid);
 });
+
+test('concurrent control scope IDs must be primitive strings',()=>{
+  for(const patch of [
+    {tenantId:[valid.tenantId]},{metaAccountId:[valid.metaAccountId]},
+    {campaignId:[valid.campaignId]},
+    {tenantId:{toString:()=>valid.tenantId}},
+    {metaAccountId:{toString:()=>valid.metaAccountId}},
+    {campaignId:{toString:()=>valid.campaignId}},
+    {tenantId:null},{metaAccountId:null},{campaignId:null},
+    {tenantId:1},{metaAccountId:1},{campaignId:1},
+  ]) assert.throws(()=>propose({...valid,...patch}),invalid);
+  const first=propose(valid),replayed=propose({...valid});
+  assert.equal(first.candidateId,replayed.candidateId);
+  assert.equal(first.executionAllowed,false);
+  assert.equal(first.verifiedPaidOrders,null);
+});
