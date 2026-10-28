@@ -98,3 +98,19 @@ test("corrupted media or duplicate slides cannot create an approval request",()=
   const one=png(20);
   assert.throws(()=>prepare(config(),brief(),[one,one],creative(),dims),/PNG_QA_DUPLICATE_BYTES/);
 });
+
+test("multiline provider-style caption is accepted with exact identity; unsafe controls and multiline alt fail closed",()=>{
+  const c=creative();
+  c.caption="Pelanggan mahu semak ukuran.\n\nTanya dahulu:\nBoleh saya hubungi semula?";
+  const a=prepare(config(),brief(),bytes(),c,dims);
+  assert.equal(a.copy.caption,c.caption);
+  assert.equal(prepare(config(),brief(),bytes(),c,dims).approvalRequestId,a.approvalRequestId);
+  const edited={...c,caption:c.caption.replace("\n\n","\n")};
+  assert.notEqual(prepare(config(),brief(),bytes(),edited,dims).approvalRequestId,a.approvalRequestId);
+  for(const control of ["\r","\t","\u0000","\u007f"]){
+    const unsafe={...c,caption:"First paragraph"+control+"Second paragraph"};
+    assert.throws(()=>prepare(config(),brief(),bytes(),unsafe,dims),/INVALID_CONTENT_CAPTION/);
+  }
+  const badAlt={...c,altTexts:["First\nSecond",c.altTexts[1]]};
+  assert.throws(()=>prepare(config(),brief(),bytes(),badAlt,dims),/INVALID_CONTENT_ALT_TEXT/);
+});
