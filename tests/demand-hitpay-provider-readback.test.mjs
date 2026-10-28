@@ -24,6 +24,7 @@ test("provider-observed order/charge/refund values reconcile without inventing a
   assert.equal(result.orderDisplayNumber,1007);
   assert.equal(result.observation,"PROVIDER_REPORTED_PAID");
   assert.equal(result.refundObservation,"NO_REFUNDS_REPORTED_AT_READBACK");
+  assert.equal(result.chargePayoutFieldState,"NULL_UNLINKED");
   assert.equal(result.grossMinor,5000);
   assert.equal(result.feeMinor,170);
   assert.equal(result.netAfterFeesMinor,4830);
@@ -71,4 +72,25 @@ test("refund revisions remain review-only and alter snapshot identity",()=>{
   assert.notEqual(result.snapshotKey,run().snapshotKey);
   assert.equal(result.verifiedSettledOrders,null);
   assert.equal(result.verifiedCpaMinor,null);
+});
+
+// Provider-backed shape: the real historical #1007 charge detail returned
+// payout:null while an independent paid payout matched its net amount.
+// No amount coincidence or opaque non-null payout field proves allocation.
+test("payout field presence changes evidence identity without implying settlement",()=>{
+  const absent=run(orders,charges,(({payout,...rest})=>rest)(detail));
+  const nullValue=run();
+  const opaque=run(orders,charges,{...detail,payout:{id:"private-provider-reference"}});
+  assert.equal(absent.chargePayoutFieldState,"NOT_RETURNED");
+  assert.equal(nullValue.chargePayoutFieldState,"NULL_UNLINKED");
+  assert.equal(opaque.chargePayoutFieldState,"PRESENT_UNVERIFIED");
+  assert.equal(new Set([absent.snapshotKey,nullValue.snapshotKey,opaque.snapshotKey]).size,3);
+  for (const result of [absent,nullValue,opaque]) {
+    assert.equal(result.payoutAllocationVerified,false);
+    assert.equal(result.bankSettlementVerified,false);
+    assert.equal(result.verifiedSettledOrders,null);
+    assert.equal(result.verifiedAcquisitionOutcome,null);
+    assert.equal(result.verifiedCpaMinor,null);
+    assert.equal(JSON.stringify(result).includes("private-provider-reference"),false);
+  }
 });

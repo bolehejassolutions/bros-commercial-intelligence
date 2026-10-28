@@ -58,9 +58,17 @@ export function reviewDemandHitPayProviderReadback(
   const refundObservation = payment.refundedMinor === 0
     ? "NO_REFUNDS_REPORTED_AT_READBACK" as const
     : "REFUND_REVIEW_REQUIRED" as const;
+  // A live HitPay charge detail may return payout:null even when an
+  // independently listed payout has a coincident net amount. Distinguish
+  // missing, explicit null and non-null provider fields without interpreting
+  // a non-null value as an allocation or exposing its raw contents.
+  const chargePayoutFieldState = !Object.hasOwn(detail, "payout") ||
+    detail.payout === undefined ? "NOT_RETURNED" as const :
+    detail.payout === null ? "NULL_UNLINKED" as const :
+    "PRESENT_UNVERIFIED" as const;
   const snapshotKey = "demand:hitpay-provider-readback:sha256:" + createHash("sha256")
-    .update(JSON.stringify(["v1", payment.candidateKey, refundObservation,
-      refundReadback.refunds.length, payment.refundedMinor]))
+    .update(JSON.stringify(["v2", payment.candidateKey, refundObservation,
+      refundReadback.refunds.length, payment.refundedMinor, chargePayoutFieldState]))
     .digest("hex");
 
   return Object.freeze({
@@ -68,6 +76,7 @@ export function reviewDemandHitPayProviderReadback(
     orderIdentityDigest: payment.orderIdentityDigest,
     observation: payment.status,
     refundObservation,
+    chargePayoutFieldState,
     providerOrderChargeReferenceConsistent: true as const,
     orderDisplayNumber: order.order_display_number,
     currency: "MYR" as const,
