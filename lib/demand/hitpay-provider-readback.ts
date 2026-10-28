@@ -64,8 +64,8 @@ export function reviewDemandHitPayProviderReadback(
     if (!refund || typeof refund !== "object" || Array.isArray(refund)) invalid();
     const row = refund as Record<string, unknown>;
     const status = row.status;
-    if (typeof status !== "string" ||
-        !/^[A-Za-z][A-Za-z0-9_-]{1,49}$/.test(status)) invalid();
+    if (typeof status !== "string") return invalid();
+    if (!/^[A-Za-z][A-Za-z0-9_-]{1,49}$/.test(status)) return invalid();
     const reportedAmount = row.amount_refunded ?? row.amount ?? null;
     const amountMinor = reportedAmount === null ? null : toMinor(reportedAmount);
     if (amountMinor !== null && amountMinor > payment.grossMinor) invalid();
