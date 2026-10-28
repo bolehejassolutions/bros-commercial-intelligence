@@ -76,3 +76,93 @@ export function assessDemandCampaignExecutionEvidence(
     durableBciLearningVerified: false as const,
   });
 }
+
+
+/**
+ * DEMAND_META_ACTIVITY_CANDIDATE_GUARD_20261028_2304_V1
+ * A real HYPD Meta account activity feed can report a campaign's NAME and
+ * status-change event, but omit campaign ID, previous/new status and action
+ * authorization. Never turn a name match into proof of a specific campaign
+ * activation, experiment execution, spend, outcome or causal lift.
+ *
+ * This is a privacy-minimized candidate projection only; BCI owns trusted
+ * authenticated object-level receipts and durable tenant-scoped lineage.
+ */
+export type DemandMetaActivityInventory = Readonly<{
+  rows: readonly Readonly<Record<string, unknown>>[];
+  nextPageToken: string | null;
+  missingScopes: readonly string[] | null;
+  droppedFields?: readonly string[] | null;
+}>;
+
+export function assessDemandCampaignActivityCandidates(
+  accountId: string,
+  campaignId: string,
+  exactCampaignName: string,
+  since: string,
+  until: string,
+  response: DemandMetaActivityInventory,
+) {
+  const validDay = (day: string) => /^\\d{4}-\\d{2}-\\d{2}$/.test(day) &&
+    Number.isFinite(Date.parse(day + "T00:00:00Z")) &&
+    new Date(day + "T00:00:00Z").toISOString().slice(0, 10) === day;
+  if (typeof accountId !== "string" || !accountIdPattern.test(accountId) ||
+      typeof campaignId !== "string" || !campaignIdPattern.test(campaignId) ||
+      typeof exactCampaignName !== "string" ||
+      exactCampaignName.length < 8 || exactCampaignName.length > 250 ||
+      typeof since !== "string" || typeof until !== "string" ||
+      !validDay(since) || !validDay(until) || since > until ||
+      !response || !Array.isArray(response.rows) ||
+      response.rows.length > 500 || response.nextPageToken !== null ||
+      (response.missingScopes !== null &&
+        (!Array.isArray(response.missingScopes) || response.missingScopes.length > 0)) ||
+      (response.droppedFields != null &&
+        (!Array.isArray(response.droppedFields) || response.droppedFields.length > 0))) fail();
+
+  const matching: string[] = [];
+  const matchedTypes: string[] = [];
+  for (const row of response.rows) {
+    if (!row || typeof row !== "object" || Array.isArray(row) ||
+        typeof row.event_type !== "string" ||
+        !/^[a-z_]{3,80}$/.test(row.event_type) ||
+        typeof row.object_name !== "string" ||
+        row.object_name.length > 250 ||
+        typeof row.event_time !== "string" ||
+        !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+0000$/.test(row.event_time) ||
+        !Number.isFinite(Date.parse(row.event_time)) ||
+        new Date(Date.parse(row.event_time)).toISOString().slice(0, 19) !==
+          row.event_time.slice(0, 19)) fail();
+    if (row.object_name === exactCampaignName) {
+      matching.push(JSON.stringify([row.event_type, row.event_time]));
+      matchedTypes.push(row.event_type);
+    }
+  }
+  const statusChangeCandidates = matchedTypes.filter(
+    eventType => eventType === "update_campaign_run_status").length;
+  const state = matching.length === 0 ? "NO_MATCHING_ACTIVITY_ROWS_NOT_ZERO" :
+    statusChangeCandidates > 0 ? "NAME_MATCHED_STATUS_ACTIVITY_UNATTESTED" :
+      "NAME_MATCHED_OTHER_ACTIVITY_UNATTESTED";
+  const snapshotKey = "demand:campaign-activity:sha256:" + createHash("sha256")
+    .update(JSON.stringify(["v1", accountId, campaignId, exactCampaignName,
+      since, until, matching.sort()])).digest("hex");
+  return Object.freeze({
+    snapshotKey, state,
+    matchingNameActivityRows: matching.length,
+    statusChangeCandidates,
+    nextBestEvidenceAction: "OBTAIN_OBJECT_ID_BOUND_BEFORE_AFTER_ACTION_RECEIPT" as const,
+    identityBinding: "CAMPAIGN_NAME_ONLY_UNATTESTED" as const,
+    providerAuthenticationVerified: false as const,
+    appTenantAuthorizationVerified: false as const,
+    ownerApprovalVerified: false as const,
+    experimentActionVerified: false as const,
+    verifiedSpendMinor: null,
+    verifiedPaidOrders: null,
+    verifiedSettledOrders: null,
+    verifiedCpaMinor: null,
+    verifiedCacMinor: null,
+    verifiedConversionRate: null,
+    causalLift: null,
+    verifiedOutcome: null,
+    durableBciLearningVerified: false as const,
+  });
+}
