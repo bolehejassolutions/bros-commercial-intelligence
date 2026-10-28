@@ -13,8 +13,8 @@ import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const pins=Object.freeze({
-  demand:'84f21f4411a05be2293df10ff64587a192171ff6',
-  bci:'5a4a55c5cee58c1adf5bb9a98f91075f0e73bfbb'
+  demand:'5aa0ec2647f721aa5f11d50792f7e73a406522cb',
+  bci:'1a0a9e6413e75a5e8c479b83e18d0cfb5be72298'
 });
 const sources=[
   [pins.demand,'lib/demand/acquisition-case-packet.ts'],
@@ -106,6 +106,25 @@ if(process.env.GITHUB_ACTIONS!=='true'){
           experiment('demand:acquisition-evidence-pair:sha256:'+'a'.repeat(64))),
           /Invalid BROS DEMAND HitPay order-charge evidence/);
       }
+      // PORTFOLIO_DEMAND_FUTURE_CASE_TO_BCI_REJECTION_20261028_V1
+      // Cross-product current-head gate: a case packet citing a future
+      // caller-asserted collection/preregistration cannot be created, and
+      // therefore cannot be treated as a BCI decision/action/outcome.
+      // These are synthetic clocks; no provider timestamp attestation.
+      const futureExperiment={
+        ...experiment('demand:acquisition-evidence-pair:sha256:'+'a'.repeat(64)),
+        experimentStart:'2030-02-01',experimentEnd:'2030-02-07',
+        preRegisteredAt:'2030-01-01T00:10:00Z',
+      };
+      assert.throws(()=>prepareDemandAcquisitionCasePacket(
+        scope,meta,order,charge,detail,futureExperiment),
+        /Invalid BROS DEMAND acquisition case chronology/);
+      const futureScope={...scope,collectedAt:'2030-01-01T00:00:00Z'};
+      assert.throws(()=>prepareDemandAcquisitionCasePacket(
+        futureScope,meta,order,charge,detail,futureExperiment),
+        /Invalid BROS DEMAND acquisition case chronology/);
+      // An independently validated current-time candidate still stays
+      // UNATTESTED, with no BCI durable write or verified business learning.
       const pair=reviewDemandAcquisitionEvidencePair(scope,meta,order,charge,detail);
       // Coordinator gate: current DEMAND head rejects a provider snapshot
       // collected after a purported experiment preregistration. The older
