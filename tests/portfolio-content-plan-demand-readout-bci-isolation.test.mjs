@@ -144,7 +144,7 @@ if(process.env.GITHUB_ACTIONS!=='true'){
         /Invalid BCI evidence lineage/);
       assert.throws(()=>planUntrustedBciAuditAppend(cScope,[],[d]),
         /Invalid BCI evidence lineage/);
-      assert.throws(()=>planUntrustedBciAuditAppend(cScope,[],[c,{...d,product:'content'}]),
+      assert.throws(()=>planUntrustedBciAuditAppend(cScope,[],[c,{...d,product:'content',sourceRecordKey:c.sourceRecordKey}]),
         /Invalid BCI evidence lineage/);
       assert.throws(()=>planUntrustedBciAuditAppend(cScope,[],[
         {...c,verification:'verified'}]),/Invalid BCI audit append/);
