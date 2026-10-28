@@ -38,7 +38,7 @@ export function assessDemandProviderSourceCoverage(
   }
   const meta = byPlatform.get("meta_ads");
   const ga4 = byPlatform.get("google_analytics");
-  if (!meta || !ga4) fail();
+  if (!meta || !ga4) return fail();
   const selectedMeta = meta.accounts.filter(account =>
     account.adAccountId === requestedMetaAccountId);
   if (selectedMeta.length > 1) fail();
