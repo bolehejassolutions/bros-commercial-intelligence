@@ -53,13 +53,27 @@ const denied = (): never => { throw new PrivateEvidenceAccessDenied(); };
 const validUuid = (value: unknown) => typeof value === "string" && UUID.test(value);
 const validProduct = (value: unknown): value is BciProduct => value === "content" || value === "demand";
 const evidenceFields = new Set(["id", "tenantId", "product", "provider", "providerRecordKey", "metrics"]);
+/** Fail closed on symbol, hidden and accessor metadata at the HTTP evidence boundary. */
+const ownDataKeys = (value: object): readonly string[] | null => {
+  const result: string[] = [];
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") return null;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable || !("value" in descriptor)) return null;
+    result.push(key);
+  }
+  return result;
+};
 const metricKey = /^[a-z][a-z0-9_]{0,63}$/;
-const validMetrics = (data: unknown): data is Record<string, number | null> =>
-  data !== null && typeof data === "object" && !Array.isArray(data) &&
-  Object.keys(data).length <= 100 &&
-  Object.entries(data).every(([key, value]) =>
-    metricKey.test(key) && value !== undefined &&
-    (value === null || (typeof value === "number" && Number.isFinite(value))));
+const validMetrics = (data: unknown): data is Record<string, number | null> => {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return false;
+  const keys = ownDataKeys(data);
+  return keys !== null && keys.length <= 100 && keys.every(key => {
+    const value = (data as Record<string, unknown>)[key];
+    return metricKey.test(key) &&
+      (value === null || (typeof value === "number" && Number.isFinite(value)));
+  });
+};
 
 /**
  * Create a policy gate using ONLY server-injected dependencies.
@@ -75,7 +89,8 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
     if (!request || typeof request !== "object" || Array.isArray(request)) denied();
     // Prevent an API adapter from accidentally accepting a client-declared
     // tenant/user or future unreviewed parameters.
-    if (Object.keys(request).some(k => k !== "product" && k !== "limit")) denied();
+    const requestKeys = ownDataKeys(request);
+    if (!requestKeys || requestKeys.some(k => k !== "product" && k !== "limit")) denied();
     if (!validProduct(request.product)) denied();
     const limit = request.limit === undefined ? 25 : request.limit;
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) denied();
@@ -103,8 +118,10 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
       // Fail the entire response rather than silently filtering DB cross-tenant leakage.
       // An adapter may accidentally return sensitive or unreviewed fields.
       // Reject the entire response instead of serializing extra DB columns.
-      if (!row || Object.keys(row).length !== evidenceFields.size ||
-          Object.keys(row).some(key => !evidenceFields.has(key)) ||
+      const rowKeys = row && typeof row === "object" && !Array.isArray(row)
+        ? ownDataKeys(row) : null;
+      if (!rowKeys || rowKeys.length !== evidenceFields.size ||
+          rowKeys.some(key => !evidenceFields.has(key)) ||
           !validUuid(row.id) || row.tenantId !== authorizedTenantId ||
           row.product !== request.product || typeof row.provider !== "string" ||
           !row.provider || typeof row.providerRecordKey !== "string" ||
