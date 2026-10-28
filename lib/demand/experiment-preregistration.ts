@@ -81,9 +81,14 @@ function validUtc(v: unknown): v is string {
 export function preregisterDemandExperiment(
   input: DemandExperimentProposalInput,
 ): DemandExperimentProposal {
-  if (!input || !UUID.test(input.tenantId) || input.product !== "demand" ||
-      input.pilotProduct !== "bros_sell" || !/^act_\d+$/.test(input.metaAccountId) ||
-      !/^\d+$/.test(input.campaignId) ||
+  // RegExp.test coerces arrays/objects into strings; never let an untrusted
+  // tenant, account or campaign identity cross this proposal boundary.
+  if (!input || typeof input.tenantId !== "string" ||
+      !UUID.test(input.tenantId) || input.product !== "demand" ||
+      input.pilotProduct !== "bros_sell" ||
+      typeof input.metaAccountId !== "string" ||
+      !/^act_\d+$/.test(input.metaAccountId) ||
+      typeof input.campaignId !== "string" || !/^\d+$/.test(input.campaignId) ||
       typeof input.hypothesis !== "string" ||
       input.hypothesis.trim().length < 20 || input.hypothesis.length > 500 ||
       !["CREATIVE_TEST", "LANDING_PAGE_TEST", "AUDIENCE_TEST"].includes(input.action) ||
