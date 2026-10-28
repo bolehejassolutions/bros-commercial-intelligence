@@ -14,11 +14,12 @@ import {pathToFileURL} from 'node:url';
 import {deflateSync} from 'node:zlib';
 
 const pins=Object.freeze({
-  content:'e4b9d15364132379da5adada335c39df295ffce6',
+  content:'58953c5a097f3c1f43d962f8bdf1dad6ed94b9fe',
   bci:'6d870dd16023370de307eb4fe89050c38ecdf9cc'
 });
 const files=[
   [pins.content,'lib/content/plan-source-byte-gate.mjs'],
+  [pins.content,'lib/content/approval-request.mjs'],
   [pins.content,'lib/content/instance-plan.mjs'],
   [pins.content,'lib/content/png-source-qa.mjs'],
   [pins.bci,'lib/bci/audit-append-plan.ts'],
@@ -96,8 +97,9 @@ if(process.env.GITHUB_ACTIONS!=='true'){
         writeFileSync(target,src,{mode:0o600});
       }
       const load=async path=>import(pathToFileURL(join(dir,path)).href);
-      const {inspectPlannedContentPngBytes}=await load(files[0][1]);
-      const {planUntrustedBciAuditAppend}=await load(files[3][1]);
+      const {inspectPlannedContentPngBytes}=await load('lib/content/plan-source-byte-gate.mjs');
+      const {prepareContentApprovalRequest}=await load('lib/content/approval-request.mjs');
+      const {planUntrustedBciAuditAppend}=await load('lib/bci/audit-append-plan.ts');
       const source=[png(20),png(30)],options={expectedWidth:2,expectedHeight:2};
       const qa=inspectPlannedContentPngBytes(config(),brief(),source,options);
       const repeat=inspectPlannedContentPngBytes(config(),brief(),source,options);
@@ -113,6 +115,50 @@ if(process.env.GITHUB_ACTIONS!=='true'){
         'providerCapabilityVerified','providerSentVerified','measurementVerified',
         'sharedBciAuditVerified','executionAllowed','customerSaasReady'])
         assert.equal(qa[flag],false,flag);
+
+      // PORTFOLIO_CONTENT_REVIEW_TO_BCI_UNTRUSTED_20261028_V1
+      // Latest CONTENT review request binds source bytes, media order, copy and
+      // disclosure, but is NOT an authenticated approval or provider event.
+      const copy={schemaVersion:1,caption:'Choose a bouquet in two steps.',
+        altTexts:['Step one: ask about the occasion.',
+          'Step two: confirm preferred colours.'],
+        aiDisclosure:'DECLARED_AI',claimEvidenceRefs:[]};
+      const review=prepareContentApprovalRequest(config(),brief(),source,copy,options);
+      assert.equal(review.status,'REVIEW_REQUEST_ONLY');
+      assert.equal(review.planId,qa.planId);
+      assert.equal(review.mediaSetId,qa.mediaSetId);
+      assert.equal(review.imageDigests.length,qa.images.length);
+      assert.equal(review.approvalRequestId,
+        prepareContentApprovalRequest(config(),brief(),source,copy,options).approvalRequestId);
+      const changedCopy={...copy,caption:'Choose a bouquet in three steps.'};
+      assert.notEqual(review.approvalRequestId,
+        prepareContentApprovalRequest(config(),brief(),source,changedCopy,options).approvalRequestId);
+      for(const flag of ['independentGenerationVerified','editorialQaVerified',
+        'aiDisclosureVerified','claimEvidenceVerified','approvalAuthenticated',
+        'approvalGranted','providerCapabilityVerified','providerSentVerified',
+        'measurementVerified','learningVerified','sharedBciAuditVerified',
+        'executionAllowed','customerSaasReady'])
+        assert.equal(review[flag],false,flag);
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[],[review]),/Invalid BCI audit append/);
+      const reviewCandidate={...root(review.approvalRequestId),
+        sourceSystem:'content_review_request'};
+      const reviewPlan=planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[],[reviewCandidate]);
+      assert.equal(reviewPlan.toInsert.length,1);
+      assert.equal(reviewPlan.toInsert[0].verification,'unverified');
+      assert.equal(reviewPlan.authenticated,false);
+      assert.equal(reviewPlan.providerAttested,false);
+      assert.equal(reviewPlan.persisted,false);
+      assert.equal(reviewPlan.structurallyLinkedLearnings,0);
+      assert.equal(planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[reviewCandidate],[reviewCandidate]).toInsert.length,0);
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[],[{...reviewCandidate,verification:'verified'}]),
+        /Invalid BCI audit append/);
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'demand'},[],[reviewCandidate]),
+        /Invalid BCI evidence lineage/);
 
       const candidate=root(qa.mediaSetId),scope={tenantId,product:'content'};
       const append=planUntrustedBciAuditAppend(scope,[],[candidate]);
