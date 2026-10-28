@@ -277,11 +277,13 @@ test("HTTP rejects hidden and symbol DB metadata with generic 403 and no partial
   const hidden = (value, key) => Object.defineProperty({ ...value }, key, {
     value: "secret-sentinel", enumerable: false,
   });
+  const second = { ...evidence, id: "55555555-5555-4555-8555-555555555555",
+    providerRecordKey: "offline-synthetic-second" };
   for (const bad of [
-    hidden(evidence, "customerEmail"),
-    { ...evidence, [symbol]: "secret-sentinel" },
-    { ...evidence, metrics: hidden(evidence.metrics, "private_key") },
-    { ...evidence, metrics: { ...evidence.metrics, [symbol]: "secret-sentinel" } },
+    hidden(second, "customerEmail"),
+    { ...second, [symbol]: "secret-sentinel" },
+    { ...second, metrics: hidden(second.metrics, "private_key") },
+    { ...second, metrics: { ...second.metrics, [symbol]: "secret-sentinel" } },
   ]) {
     const f = harness({ rows: [evidence, bad] });
     const response = await f.handler(f.request("product=content&limit=2"));
