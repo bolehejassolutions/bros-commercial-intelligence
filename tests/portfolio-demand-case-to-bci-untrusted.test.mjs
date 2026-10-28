@@ -13,8 +13,8 @@ import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 const pins=Object.freeze({
-  demand:'5aa0ec2647f721aa5f11d50792f7e73a406522cb',
-  bci:'1a0a9e6413e75a5e8c479b83e18d0cfb5be72298'
+  demand:'fa4f03b71564547aa40029351dd044f39a52899e',
+  bci:'17ecd94f7686f71150a2c936cf4dcc2f0c8fb0db'
 });
 const sources=[
   [pins.demand,'lib/demand/acquisition-case-packet.ts'],
@@ -153,6 +153,52 @@ if(process.env.GITHUB_ACTIONS!=='true'){
       assert.equal(packet.maxIncrementalSpendMinor,0);
       assert.equal(JSON.stringify(packet).includes(order.id),false);
       assert.equal(JSON.stringify(packet).includes(charge.id),false);
+      // PORTFOLIO_DEMAND_INDEPENDENT_COST_CASH_BCI_20261028_V1
+      // Current DEMAND product layer exposes cost and cash as *parallel*
+      // observations. A same-period Meta Purchase and HitPay paid charge
+      // must not be interpreted as the same transaction, CPA, or learning.
+      const observations=packet.independentProviderObservations;
+      assert.deepEqual(observations.meta,{
+        currency:'MYR',spendMinor:432,inlineLinkClicks:1,
+        landingPageViews:1,attributedPurchaseEvents:1,pixelPurchaseEvents:1
+      });
+      assert.deepEqual(observations.hitpay,{
+        currency:'MYR',paymentStatus:'PROVIDER_REPORTED_PAID',
+        grossMinor:5000,feeMinor:170,netAfterFeesMinor:4830,refundedMinor:0
+      });
+      assert.equal(observations.crossProviderAttribution,'UNVERIFIED_UNJOINED');
+      assert.equal(observations.paymentSettlement,'UNVERIFIED');
+      assert.equal(observations.brosSellProductIdentity,'UNVERIFIED');
+      for(const key of ['verifiedCpaMinor','verifiedCacMinor',
+        'verifiedConversionRate','verifiedPaidOrders','verifiedSettledOrders',
+        'verifiedOutcome','recordedLearning','causalLift'])
+        assert.equal(packet[key],null,key);
+      assert.equal(packet.actionExecutedVerified,false);
+      assert.equal(packet.controlledExperimentVerified,false);
+      assert.equal(packet.executionAllowed,false);
+      // Independently changing merchant fees must preserve the Meta
+      // snapshot identity while changing the HitPay evidence identity.
+      const feeChanged={...detail,amount_without_fees:48.2};
+      const feePair=reviewDemandAcquisitionEvidencePair(
+        scope,meta,order,charge,feeChanged);
+      assert.equal(feePair.metaSnapshotKey,pair.metaSnapshotKey);
+      assert.notEqual(feePair.hitpayCandidateKey,pair.hitpayCandidateKey);
+      assert.notEqual(feePair.pairKey,pair.pairKey);
+      const feePacket=prepareDemandAcquisitionCasePacket(
+        scope,meta,order,charge,feeChanged,experiment(feePair.pairKey));
+      assert.equal(feePacket.independentProviderObservations.meta.spendMinor,432);
+      assert.deepEqual([
+        feePacket.independentProviderObservations.hitpay.feeMinor,
+        feePacket.independentProviderObservations.hitpay.netAfterFeesMinor
+      ],[180,4820]);
+      assert.equal(feePacket.metaEventToOrderJoinVerified,false);
+      assert.equal(feePacket.learningVerified,false);
+      assert.notEqual(feePacket.caseId,packet.caseId);
+      // Neither the combined packet nor its nested financial observation
+      // is a valid BCI lineage node. Only explicit unverified evidence
+      // references may enter the non-persisting audit planner.
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'demand'},[],[observations]),/Invalid BCI audit append/);
       const bciScope={tenantId,product:'demand'};
       assert.throws(()=>planUntrustedBciAuditAppend(bciScope,[],[packet]),
         /Invalid BCI audit append/);
