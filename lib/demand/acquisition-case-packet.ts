@@ -91,6 +91,31 @@ export function prepareDemandAcquisitionCasePacket(
     experimentProposalCandidateId: proposal.candidateId,
     diagnosisCode: diagnosis.nextAction,
     metaPurchaseAliasConflict: diagnosis.metaPurchaseAliasConflict,
+    // DEMAND_COST_TO_CASH_OBSERVATION_20261028: present campaign cost and
+    // merchant payment as TWO independent observations. These are not a
+    // transaction-level join, a matched time cohort, or verified sales ROI.
+    // The shared BCI worker owns trusted provider receipts and persistence.
+    independentProviderObservations: Object.freeze({
+      meta: Object.freeze({
+        currency: "MYR" as const,
+        spendMinor: diagnosis.metaObservedSpendMinor,
+        inlineLinkClicks: diagnosis.metaObservedInlineLinkClicks,
+        landingPageViews: diagnosis.metaObservedLandingPageViews,
+        attributedPurchaseEvents: diagnosis.metaAttributedPurchaseEvents,
+        pixelPurchaseEvents: diagnosis.pixelPurchaseEvents,
+      }),
+      hitpay: Object.freeze({
+        currency: "MYR" as const,
+        paymentStatus: diagnosis.hitpayPaymentObservation,
+        grossMinor: diagnosis.hitpayGrossMinor,
+        feeMinor: diagnosis.hitpayFeeMinor,
+        netAfterFeesMinor: diagnosis.hitpayNetMinor,
+        refundedMinor: diagnosis.hitpayRefundedMinor,
+      }),
+      crossProviderAttribution: "UNVERIFIED_UNJOINED" as const,
+      paymentSettlement: "UNVERIFIED" as const,
+      brosSellProductIdentity: "UNVERIFIED" as const,
+    }),
     proposedAction: proposal.action,
     hypothesis: proposal.hypothesis,
     primaryKpi: proposal.primaryKpi,
