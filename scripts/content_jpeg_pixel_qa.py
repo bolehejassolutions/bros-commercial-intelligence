@@ -161,16 +161,19 @@ def prepare_jpeg_editorial_review_request(sources, scope, proposed_copy, *,
             proposed_copy["schemaVersion"] != 1):
         _fail("INVALID_REVIEW_COPY_FIELDS")
 
-    def valid_text(value, minimum, maximum):
+    def valid_text(value, minimum, maximum, *, allow_newlines=False):
+        # Real social captions are multi-paragraph. Allow LF only for captions;
+        # reject CR, tabs, NUL and other controls, including in alt text.
         return (type(value) is str and minimum <= len(value) <= maximum and
                 value == value.strip() and
-                not any(ord(ch) < 32 or ord(ch) == 127 for ch in value))
+                not any((ord(ch) < 32 and (ch != "\n" or not allow_newlines))
+                        or ord(ch) == 127 for ch in value))
 
     caption = proposed_copy["caption"]
     alt = proposed_copy["altTexts"]
     disclosure = proposed_copy["aiDisclosure"]
     refs = proposed_copy["claimEvidenceRefs"]
-    if not valid_text(caption, 2, 5000):
+    if not valid_text(caption, 2, 5000, allow_newlines=True):
         _fail("INVALID_CAPTION")
     if (type(alt) is not list or len(alt) != len(qa["images"]) or
             not all(valid_text(x, 2, 500) for x in alt)):

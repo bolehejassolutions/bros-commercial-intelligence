@@ -201,7 +201,30 @@ class ContentJpegPixelQaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "INVALID_AI_DISCLOSURE"):
             packet({**copy, "aiDisclosure": "VERIFIED"})
         with self.assertRaisesRegex(ValueError, "INVALID_CAPTION"):
-            packet({**copy, "caption": "Bad\ncaption"})
+            packet({**copy, "caption": "Bad\rcaption"})
+        with self.assertRaisesRegex(ValueError, "INVALID_CAPTION"):
+            packet({**copy, "caption": "Bad\tcaption"})
+        with self.assertRaisesRegex(ValueError, "INVALID_CAPTION"):
+            packet({**copy, "caption": "Bad\x00caption"})
+        with self.assertRaisesRegex(ValueError, "INVALID_ALT_TEXTS"):
+            packet({**copy, "altTexts": ["Bad\nalt", "Valid second alt"]})
+
+    def test_realistic_multiline_caption_preserves_copy_and_stable_identity(self):
+        sources = [jpeg((10, 20, 30)), jpeg((220, 210, 200))]
+        copy = {"schemaVersion": 1,
+                "caption": "Pelanggan mahu semak ukuran.\n\nTanya izin susulan.\n#BROSSell",
+                "altTexts": ["Pelanggan menyemak ukuran.", "Penjual meminta izin."],
+                "aiDisclosure": "DECLARED_AI", "claimEvidenceRefs": []}
+        def packet(c):
+            return prepare_jpeg_editorial_review_request(
+                sources, SCOPE, c, expected_width=4, expected_height=4)
+        first = packet(copy)
+        self.assertEqual(first["status"], "EDITORIAL_REVIEW_PENDING")
+        self.assertEqual(first["copy"]["caption"], copy["caption"])
+        self.assertEqual(first["reviewPacketId"], packet(copy)["reviewPacketId"])
+        self.assertNotEqual(first["reviewPacketId"], packet({**copy, "caption": copy["caption"].replace("\n\n", "\n")})["reviewPacketId"])
+        self.assertFalse(first["approvalGranted"])
+        self.assertFalse(first["executionAllowed"])
 
     def test_jpeg_review_similarity_and_claims_remain_pending(self):
         sources = [jpeg((10, 20, 30)), jpeg((220, 210, 200))]
