@@ -100,10 +100,12 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           (request.product !== "content" && request.product !== "demand") ||
           !Array.isArray(request.records) || request.records.length < 1 || request.records.length > 100) deny();
       const principal = await deps.authenticate();
-      if (!principal || !exact(principal, ["userId", "authenticated"]) ||
+      if (principal === null) throw new BciLineageWriteDenied();
+      if (!exact(principal, ["userId", "authenticated"]) ||
           principal.authenticated !== true || !UUID.test(principal.userId)) deny();
-      const tenantId = scopeOf(await deps.membershipsFor(principal.userId, request.product),
-        principal.userId, request.product);
+      const verifiedPrincipalId: string = principal.userId;
+      const tenantId = scopeOf(await deps.membershipsFor(verifiedPrincipalId, request.product),
+        verifiedPrincipalId, request.product);
       const scope = { tenantId, product: request.product };
       return await deps.transaction(async query => {
         const role = await query(
@@ -189,8 +191,8 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
         }
         await query("SET CONSTRAINTS ALL IMMEDIATE", []);
         // Revocation between initial membership lookup and append must roll back.
-        const fresh = scopeOf(await deps.membershipsFor(principal.userId, request.product),
-          principal.userId, request.product);
+        const fresh = scopeOf(await deps.membershipsFor(verifiedPrincipalId, request.product),
+          verifiedPrincipalId, request.product);
         if (fresh !== tenantId) deny();
         return Object.freeze({
           insertedIds: Object.freeze(plan.toInsert.map(node => node.id)),
