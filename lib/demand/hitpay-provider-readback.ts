@@ -55,6 +55,25 @@ export function reviewDemandHitPayProviderReadback(
       (payment.refundedMinor === 0 && refundReadback.refunds.length !== 0) ||
       (payment.refundedMinor > 0 && refundReadback.refunds.length === 0)) invalid();
 
+  // Refund totals can stay unchanged while individual refund states change
+  // (e.g. pending -> succeeded). Do not reuse an immutable evidence key for
+  // materially different provider readbacks. Project only bounded lifecycle
+  // fields; never expose refund IDs, payer information or card metadata.
+  if (refundReadback.refunds.length > 100) invalid();
+  const refundLifecycle = refundReadback.refunds.map(refund => {
+    if (!refund || typeof refund !== "object" || Array.isArray(refund)) invalid();
+    const row = refund as Record<string, unknown>;
+    if (typeof row.status !== "string" ||
+        !/^[A-Za-z][A-Za-z0-9_-]{1,49}$/.test(row.status)) invalid();
+    const reportedAmount = row.amount_refunded ?? row.amount ?? null;
+    const amountMinor = reportedAmount === null ? null : toMinor(reportedAmount);
+    if (amountMinor !== null && amountMinor > payment.grossMinor) invalid();
+    if (row.id !== undefined &&
+        (typeof row.id !== "string" || row.id.length < 8 || row.id.length > 128)) invalid();
+    const idDigest = typeof row.id === "string"
+      ? createHash("sha256").update(row.id).digest("hex") : null;
+    return [row.status.toLowerCase(), amountMinor, idDigest] as const;
+  }).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   const refundObservation = payment.refundedMinor === 0
     ? "NO_REFUNDS_REPORTED_AT_READBACK" as const
     : "REFUND_REVIEW_REQUIRED" as const;
@@ -67,8 +86,8 @@ export function reviewDemandHitPayProviderReadback(
     detail.payout === null ? "NULL_UNLINKED" as const :
     "PRESENT_UNVERIFIED" as const;
   const snapshotKey = "demand:hitpay-provider-readback:sha256:" + createHash("sha256")
-    .update(JSON.stringify(["v2", payment.candidateKey, refundObservation,
-      refundReadback.refunds.length, payment.refundedMinor, chargePayoutFieldState]))
+    .update(JSON.stringify(["v3", payment.candidateKey, refundObservation,
+      refundLifecycle, payment.refundedMinor, chargePayoutFieldState]))
     .digest("hex");
 
   return Object.freeze({

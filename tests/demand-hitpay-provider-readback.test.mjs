@@ -94,3 +94,44 @@ test("payout field presence changes evidence identity without implying settlemen
     assert.equal(JSON.stringify(result).includes("private-provider-reference"),false);
   }
 });
+
+test("refund lifecycle revisions cannot collide at identical refund totals and counts",()=>{
+  const o={...orders,data:[{...orders.data[0],payment_status:"partially_refunded"}]};
+  const d={...detail,refunded_amount:10};
+  const base={...refunds,total_refunded:10};
+  const pending=run(o,charges,d,{...base,refunds:[
+    {id:"refund-identity-0001",status:"pending",amount_refunded:10},
+  ]});
+  const succeeded=run(o,charges,d,{...base,refunds:[
+    {id:"refund-identity-0001",status:"succeeded",amount_refunded:10},
+  ]});
+  const replaced=run(o,charges,d,{...base,refunds:[
+    {id:"refund-identity-0002",status:"succeeded",amount_refunded:10},
+  ]});
+  assert.equal(new Set([pending.snapshotKey,succeeded.snapshotKey,replaced.snapshotKey]).size,3);
+  for(const result of [pending,succeeded,replaced]){
+    assert.equal(result.refundObservation,"REFUND_REVIEW_REQUIRED");
+    assert.equal(result.verifiedSettledOrders,null);
+    assert.equal(result.verifiedAcquisitionOutcome,null);
+    assert.equal(result.durableBciLearningVerified,false);
+    assert.equal(JSON.stringify(result).includes("refund-identity-000"),false);
+  }
+});
+
+test("refund row ordering is stable, malformed lifecycle details fail closed",()=>{
+  const o={...orders,data:[{...orders.data[0],payment_status:"partially_refunded"}]};
+  const d={...detail,refunded_amount:10};
+  const base={...refunds,total_refunded:10};
+  const a={id:"refund-identity-0001",status:"succeeded",amount_refunded:10};
+  const b={id:"refund-identity-0002",status:"pending"};
+  const first=run(o,charges,d,{...base,refunds:[a,b]});
+  const reversed=run(o,charges,d,{...base,refunds:[b,a]});
+  assert.equal(first.snapshotKey,reversed.snapshotKey);
+  for(const row of [{}, {status:""}, {status:4},
+    {status:"succeeded",amount_refunded:-1},
+    {status:"succeeded",amount_refunded:50.001},
+    {status:"succeeded",id:22}]){
+    assert.throws(()=>run(o,charges,d,{...base,refunds:[row]}));
+  }
+  assert.throws(()=>run(o,charges,d,{...base,refunds:Array(101).fill(a)}));
+});
