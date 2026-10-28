@@ -44,7 +44,14 @@ const exactFields = (value: object, fields: ReadonlySet<string>): boolean => {
   // can otherwise reflect unreviewed symbol metadata into the result.
   const keys = Reflect.ownKeys(value);
   return keys.length === fields.size &&
-    keys.every(key => typeof key === "string" && fields.has(key));
+    keys.every(key => {
+      if (typeof key !== "string" || !fields.has(key)) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      // Reject accessor and hidden properties before any caller-controlled getter
+      // can run or be copied into a shared audit result.
+      return !!descriptor && descriptor.enumerable === true &&
+        Object.prototype.hasOwnProperty.call(descriptor, "value");
+    });
 };
 const deny = (): never => { throw new Error("Invalid BCI evidence lineage"); };
 const validTime = (x: unknown): x is string =>
