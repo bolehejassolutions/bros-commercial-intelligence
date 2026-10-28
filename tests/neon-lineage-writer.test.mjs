@@ -125,3 +125,21 @@ test("pinned SQL transaction commits only success, rolls back and destroys on fa
   assert.equal(statements.at(-1).sql, "ROLLBACK");
   assert.deepEqual(releases, [false, true]);
 });
+
+test("idempotent replay accepts equivalent UTC timestamps with different precision", async () => {
+  const stored = { ...evidence, recordedAt: "2026-10-29T00:00:00.000Z" };
+  const h = harness({ transaction: async fn => fn(async (sql, params) => {
+    h.calls.push({ sql, params });
+    if (sql.includes('AS "roleName"')) return { rows: [role] };
+    if (sql.includes('AS "forcedRls"')) return { rows: [posture] };
+    if (sql.includes("FROM bci_dev.lineage_nodes WHERE")) return { rows: [stored] };
+    return { rows: [] };
+  }) });
+  const result = await h.write({ product: "content", records: [evidence] });
+  assert.deepEqual(result.insertedIds, []);
+  assert.deepEqual(result.replayedIds, [rootId]);
+  assert.ok(!h.calls.some(c => c.sql.includes("INSERT INTO")));
+  await assert.rejects(h.write({ product: "content", records: [
+    { ...evidence, recordedAt: "2026-10-29T00:00:00+00:00" },
+  ] }), denied);
+});
