@@ -44,7 +44,7 @@ const proposal = {
   action: "LANDING_PAGE_TEST", primaryKpi: "verified_paid_orders",
   baselineStart: scope.since, baselineEnd: scope.until,
   experimentStart: "2026-11-01", experimentEnd: "2026-11-07",
-  preRegisteredAt: "2026-10-28T04:00:00Z",
+  preRegisteredAt: "2026-10-28T04:20:00Z",
   evidenceCandidateIds: [evidence.pairKey],
   maxIncrementalSpendMinor: 0,
 };
@@ -127,4 +127,37 @@ test("candidate packet contains no raw order/charge IDs, buyer details or approv
   assert.equal(serialized.includes(charge.id),false);
   assert.equal(serialized.includes("customer_email"),false);
   assert.equal(serialized.includes("approvalToken"),false);
+});
+
+
+test("rejects evidence collected after claimed preregistration, even for an old baseline",()=>{
+  assert.throws(()=>run(scope,meta,{...proposal,
+    preRegisteredAt:"2026-10-28T04:00:00Z",
+  }),/Invalid BROS DEMAND acquisition case chronology/);
+  // Equal timestamps are structurally possible, but never provider attestation.
+  const equal=run(scope,meta,{...proposal,
+    preRegisteredAt:scope.collectedAt,
+  });
+  assert.equal(equal.providerAuthenticationVerified,false);
+  assert.equal(equal.executionAllowed,false);
+});
+
+test("rejects incomplete MYT calendar baseline even when UTC collection date differs",()=>{
+  const currentScope={...scope,
+    since:"2026-10-28",until:"2026-10-28",
+    collectedAt:"2026-10-27T17:00:00Z", // 01:00 MYT on 28 Oct
+  };
+  const currentMeta={...meta,
+    date_start:currentScope.since,date_stop:currentScope.until,
+  };
+  const currentPair=reviewDemandAcquisitionEvidencePair(
+    currentScope,currentMeta,order,charge,detail,
+  );
+  const currentProposal={...proposal,
+    baselineStart:currentScope.since,baselineEnd:currentScope.until,
+    evidenceCandidateIds:[currentPair.pairKey],
+  };
+  assert.throws(()=>run(currentScope,currentMeta,currentProposal),
+    /Invalid BROS DEMAND acquisition case chronology/);
+  assert.equal(run().verifiedOutcome,null);
 });
