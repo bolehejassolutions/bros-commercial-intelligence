@@ -169,3 +169,38 @@ test("unreviewed DB columns and noncanonical metric payloads are denied before s
   ].sort());
   assert.deepEqual(row.metrics, { clicks: 0 });
 });
+
+
+test("rejects hidden, symbol and accessor payload metadata before private evidence serialization", async () => {
+  const secret = Symbol("private-credential");
+  const base = { id: ROW, tenantId: A, product: "demand",
+    provider: "manual", providerRecordKey: "synthetic-a", metrics: { clicks: 0 } };
+  const hidden = (value, name) => Object.defineProperty({ ...value }, name, {
+    value: "secret-sentinel", enumerable: false,
+  });
+  const accessor = (value, name) => Object.defineProperty({ ...value }, name, {
+    enumerable: true, get() { throw new Error("untrusted getter must not execute"); },
+  });
+  for (const request of [
+    hidden({ product: "demand" }, "tenantId"),
+    { product: "demand", [secret]: "secret-sentinel" },
+    accessor({ product: "demand" }, "limit"),
+  ]) {
+    const { read, calls } = harness();
+    await assert.rejects(read(request), denied);
+    assert.equal(calls.length, 0, "reject unreviewed request metadata before auth");
+  }
+  for (const row of [
+    hidden(base, "customerEmail"),
+    { ...base, [secret]: "secret-sentinel" },
+    accessor(base, "metrics"),
+    { ...base, metrics: hidden(base.metrics, "private_key") },
+    { ...base, metrics: { ...base.metrics, [secret]: "secret-sentinel" } },
+    { ...base, metrics: accessor(base.metrics, "clicks") },
+  ]) {
+    const { read } = harness({ rows: [row] });
+    await assert.rejects(read({ product: "demand" }), denied);
+  }
+  const { read } = harness({ rows: [base] });
+  assert.deepEqual((await read({ product: "demand" }))[0].metrics, { clicks: 0 });
+});
