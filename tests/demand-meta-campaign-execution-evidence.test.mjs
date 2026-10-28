@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assessDemandCampaignExecutionEvidence as assess } from '../lib/demand/meta-campaign-execution-evidence.ts';
+import { assessDemandCampaignExecutionEvidence as assess, assessDemandCampaignActivityCandidates as assessActivity } from '../lib/demand/meta-campaign-execution-evidence.ts';
 
 const account='act_1997776120879476';
 const target='120251158023300697';
@@ -57,4 +57,58 @@ test('reject incomplete, conflicting or malformed provider envelopes',()=>{
   ]) assert.throws(()=>assess(account,target,{...response,...patch}));
   assert.throws(()=>assess('1997776120879476',target,response));
   assert.throws(()=>assess(account,[target],response));
+});
+
+
+// DEMAND_META_ACTIVITY_CANDIDATE_GUARD_20261028_2304_V1: real HYPD 27 Oct 2026 account activity SHAPE,
+// privacy-minimized: no actor IDs or names retained.
+const activityName='BROSSELL | SALES | MY | RM100 | ACQ-V2 | 20261027 | TEST7D';
+const activityFeed={
+  rows:[
+    {event_type:'update_campaign_run_status',event_time:'2026-10-27T10:55:00+0000',object_name:activityName},
+    {event_type:'update_campaign_run_status',event_time:'2026-10-27T10:49:55+0000',object_name:activityName},
+    {event_type:'create_campaign_group',event_time:'2026-10-27T05:06:35+0000',object_name:activityName},
+    {event_type:'update_campaign_name',event_time:'2026-10-27T05:06:01+0000',object_name:'[DEPRECATED 2026-10-27] OTHER CAMPAIGN'},
+  ],nextPageToken:null,missingScopes:null,
+};
+const activity=(r=activityFeed,name=activityName)=>assessActivity(
+  account,target,name,'2026-10-25','2026-10-28',r);
+
+test('actual HYPD activity shape is only a name-matched candidate, not campaign action proof',()=>{
+  const a=activity();
+  assert.equal(a.state,'NAME_MATCHED_STATUS_ACTIVITY_UNATTESTED');
+  assert.equal(a.matchingNameActivityRows,3);
+  assert.equal(a.statusChangeCandidates,2);
+  assert.equal(a.identityBinding,'CAMPAIGN_NAME_ONLY_UNATTESTED');
+  assert.equal(a.experimentActionVerified,false);
+  assert.equal(a.ownerApprovalVerified,false);
+  assert.equal(a.verifiedSpendMinor,null);
+  assert.equal(a.verifiedPaidOrders,null);
+  assert.equal(a.verifiedCpaMinor,null);
+  assert.equal(a.causalLift,null);
+  assert.equal(a.durableBciLearningVerified,false);
+  assert.equal(activity({...activityFeed,rows:[...activityFeed.rows].reverse()}).snapshotKey,a.snapshotKey);
+});
+
+test('name mismatch is unknown, and activity revisions change stable candidate ID',()=>{
+  assert.equal(activity(activityFeed,'BROSSELL | OTHER CAMPAIGN').state,
+    'NO_MATCHING_ACTIVITY_ROWS_NOT_ZERO');
+  const revision=structuredClone(activityFeed);
+  revision.rows[0].event_time='2026-10-27T10:56:00+0000';
+  assert.notEqual(activity(revision).snapshotKey,activity().snapshotKey);
+  const createOnly={...activityFeed,rows:[activityFeed.rows[2]]};
+  assert.equal(activity(createOnly).state,'NAME_MATCHED_OTHER_ACTIVITY_UNATTESTED');
+  assert.equal(activity(createOnly).statusChangeCandidates,0);
+});
+
+test('activity readback rejects incomplete, paginated, or malformed provider envelopes',()=>{
+  for(const patch of [
+    {nextPageToken:'more'},
+    {missingScopes:['ads_read']},
+    {droppedFields:['event_time']},
+    {rows:[...activityFeed.rows,{event_type:'update_campaign_run_status',event_time:'invalid',object_name:activityName}]},
+    {rows:[...activityFeed.rows,{event_type:22,event_time:'2026-10-27T10:55:00+0000',object_name:activityName}]},
+  ]) assert.throws(()=>activity({...activityFeed,...patch}));
+  assert.throws(()=>assessActivity(account,[target],activityName,'2026-10-25','2026-10-28',activityFeed));
+  assert.throws(()=>assessActivity(account,target,activityName,'2026-02-30','2026-10-28',activityFeed));
 });
