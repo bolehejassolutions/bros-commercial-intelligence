@@ -150,8 +150,21 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
            FROM bci_dev.lineage_nodes WHERE tenant_id=$1::uuid AND product=$2::text
            ORDER BY id LIMIT 1001`, [tenantId, request.product]);
         if (found.rows.length > 1000) deny();
-        const persisted = found.rows as BciLineageRecord[];
-        const plan = planUntrustedBciAuditAppend(scope, persisted, request.records);
+        // PostgreSQL preserves the instant but not the input's fractional-second
+        // spelling. Canonicalize only after rejecting accessors/unknown fields,
+        // otherwise an exact idempotent replay could falsely conflict.
+        const fields = ["id", "tenantId", "product", "stage", "sourceSystem",
+          "sourceRecordKey", "recordedAt", "parentIds", "verification"];
+        const canonical = request.records.map(record => {
+          if (!exact(record, fields) || typeof record.recordedAt !== "string" ||
+              !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$/.test(record.recordedAt)) deny();
+          const instant = new Date(record.recordedAt);
+          if (!Number.isFinite(instant.getTime()) ||
+              instant.toISOString().slice(0, 19) !== record.recordedAt.slice(0, 19)) deny();
+          return { ...record, recordedAt: instant.toISOString() };
+        });
+        const persisted = found.rows as readonly BciLineageRecord[];
+        const plan = planUntrustedBciAuditAppend(scope, persisted, canonical);
         for (const node of plan.toInsert) {
           const inserted = await query(
             `INSERT INTO bci_dev.lineage_nodes
