@@ -39,9 +39,10 @@ export function assessDemandCampaignExecutionEvidence(
     if (typeof rowId !== "string" || !campaignIdPattern.test(rowId) ||
         typeof row.status !== "string" || typeof row.effective_status !== "string" ||
         !/^[A-Z_]+$/.test(row.status) || !/^[A-Z_]+$/.test(row.effective_status) ||
-        seen.has(rowId)) fail();
-    seen.add(rowId);
-    if (rowId === campaignId) target = row;
+        seen.has(rowId as string)) fail();
+    const validatedId = rowId as string; // Runtime string validation above.
+    seen.add(validatedId);
+    if (validatedId === campaignId) target = row;
   }
 
   // Both configured and effective PAUSED are required for this narrow finding.
