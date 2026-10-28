@@ -103,7 +103,7 @@ export function assessDemandCampaignActivityCandidates(
   until: string,
   response: DemandMetaActivityInventory,
 ) {
-  const validDay = (day: string) => /^\\d{4}-\\d{2}-\\d{2}$/.test(day) &&
+  const validDay = (day: string) => /^\d{4}-\d{2}-\d{2}$/.test(day) &&
     Number.isFinite(Date.parse(day + "T00:00:00Z")) &&
     new Date(day + "T00:00:00Z").toISOString().slice(0, 10) === day;
   if (typeof accountId !== "string" || !accountIdPattern.test(accountId) ||
@@ -128,7 +128,7 @@ export function assessDemandCampaignActivityCandidates(
         typeof row.object_name !== "string" ||
         row.object_name.length > 250 ||
         typeof row.event_time !== "string" ||
-        !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+0000$/.test(row.event_time) ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+0000$/.test(row.event_time) ||
         !Number.isFinite(Date.parse(row.event_time)) ||
         new Date(Date.parse(row.event_time)).toISOString().slice(0, 19) !==
           row.event_time.slice(0, 19)) fail();
