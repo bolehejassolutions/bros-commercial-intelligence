@@ -63,8 +63,9 @@ export function reviewDemandHitPayProviderReadback(
   const refundLifecycle = refundReadback.refunds.map(refund => {
     if (!refund || typeof refund !== "object" || Array.isArray(refund)) invalid();
     const row = refund as Record<string, unknown>;
-    if (typeof row.status !== "string" ||
-        !/^[A-Za-z][A-Za-z0-9_-]{1,49}$/.test(row.status)) invalid();
+    const status = row.status;
+    if (typeof status !== "string" ||
+        !/^[A-Za-z][A-Za-z0-9_-]{1,49}$/.test(status)) invalid();
     const reportedAmount = row.amount_refunded ?? row.amount ?? null;
     const amountMinor = reportedAmount === null ? null : toMinor(reportedAmount);
     if (amountMinor !== null && amountMinor > payment.grossMinor) invalid();
@@ -72,7 +73,7 @@ export function reviewDemandHitPayProviderReadback(
         (typeof row.id !== "string" || row.id.length < 8 || row.id.length > 128)) invalid();
     const idDigest = typeof row.id === "string"
       ? createHash("sha256").update(row.id).digest("hex") : null;
-    return [row.status.toLowerCase(), amountMinor, idDigest] as const;
+    return [status.toLowerCase(), amountMinor, idDigest] as const;
   }).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   const refundObservation = payment.refundedMinor === 0
     ? "NO_REFUNDS_REPORTED_AT_READBACK" as const
