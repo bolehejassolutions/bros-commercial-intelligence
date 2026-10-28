@@ -157,7 +157,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           "sourceRecordKey", "recordedAt", "parentIds", "verification"];
         const canonical = request.records.map(record => {
           if (!exact(record, fields) || typeof record.recordedAt !== "string" ||
-              !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$/.test(record.recordedAt)) deny();
+              !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(record.recordedAt)) deny();
           const instant = new Date(record.recordedAt);
           if (!Number.isFinite(instant.getTime()) ||
               instant.toISOString().slice(0, 19) !== record.recordedAt.slice(0, 19)) deny();
