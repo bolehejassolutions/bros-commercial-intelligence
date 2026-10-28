@@ -66,17 +66,17 @@ def audit_jpeg_sources(sources, scope, *, expected_width=1080, expected_height=1
                     b"RGB\0" + expected_width.to_bytes(4, "big")
                     + expected_height.to_bytes(4, "big") + decoded.tobytes()
                 )
+                # Perceptual dHash is a similarity REVIEW cue, not image-independence proof.
+                # A sequential carousel may intentionally reuse a scene; never auto-reject it.
+                gray = decoded.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
+                dhash_bits = 0
+                for row in range(8):
+                    for col in range(8):
+                        dhash_bits = (dhash_bits << 1) | int(
+                            gray.getpixel((col, row)) > gray.getpixel((col + 1, row))
+                        )
         except (OSError, SyntaxError, UnidentifiedImageError) as exc:
             raise ValueError("CONTENT_JPEG_QA_DECODE_FAILED") from exc
-        # Perceptual dHash is a similarity REVIEW cue, not image-independence proof.
-        # A sequential carousel may intentionally reuse a scene; never auto-reject it.
-        gray = decoded.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
-        dhash_bits = 0
-        for row in range(8):
-            for col in range(8):
-                dhash_bits = (dhash_bits << 1) | int(
-                    gray.getpixel((col, row)) > gray.getpixel((col + 1, row))
-                )
         images.append({"slot": slot, "format": "JPEG", "width": expected_width,
                        "height": expected_height, "bytes": len(data),
                        "sha256": _digest(data), "rgbPixelSha256": pixel_digest,
