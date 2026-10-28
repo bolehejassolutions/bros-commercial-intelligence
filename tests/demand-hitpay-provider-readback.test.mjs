@@ -5,8 +5,8 @@ import { reviewDemandHitPayProviderReadback as review } from "../lib/demand/hitp
 // PII-free provider response SHAPES, with monetary values and status observed
 // from the real #1007 HitPay readback on 29 Oct 2026 MYT. UUIDs are fabricated.
 // This replay is NOT an authenticated DEMAND application integration.
-const orderId="a2efb175-1f5a-4743-a3e7-13937c317f04";
-const chargeId="a2efb178-85c3-4c29-9ff0-9edfd0ae5cfc";
+const orderId="11111111-1111-4111-8111-111111111111";
+const chargeId="22222222-2222-4222-8222-222222222222";
 const orders={data:[{id:orderId,order_display_number:1007,amount:5000,currency:"myr",
   status:"completed",payment_status:"paid",fulfilment_status:"completed"}],
   has_more:false,next_cursor:null};
