@@ -92,8 +92,15 @@ function validUtc(v: unknown): v is string {
 export function proposeDemandConcurrentControl(
   input: DemandConcurrentControlInput,
 ): DemandConcurrentControlProposal {
-  if (!input || !UUID.test(input.tenantId) || input.product !== "demand" ||
-      input.pilotProduct !== "bros_sell" || !/^act_\d+$/.test(input.metaAccountId) ||
+  // Never allow RegExp.test to coerce arrays or custom objects into a
+  // tenant, account or campaign ID. Such identities must remain primitive
+  // strings for deterministic audit scope and collision-free replay.
+  if (!input || typeof input.tenantId !== "string" ||
+      !UUID.test(input.tenantId) || input.product !== "demand" ||
+      input.pilotProduct !== "bros_sell" ||
+      typeof input.metaAccountId !== "string" ||
+      !/^act_\d+$/.test(input.metaAccountId) ||
+      typeof input.campaignId !== "string" ||
       !/^\d+$/.test(input.campaignId) ||
       typeof input.hypothesis !== "string" || input.hypothesis.trim().length < 20 ||
       input.hypothesis.length > 500 || input.action !== "LANDING_PAGE_TEST" ||
