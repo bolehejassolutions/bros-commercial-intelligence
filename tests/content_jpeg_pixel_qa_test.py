@@ -1,13 +1,14 @@
 """Synthetic JPEG fixtures: tests do not attest live content or providers."""
 import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from content_jpeg_pixel_qa import audit_jpeg_sources
+from content_jpeg_pixel_qa import audit_jpeg_sources, read_bounded_local_sources, MAX_SOURCE_BYTES
 
 SCOPE = {"tenantId": "tenant-A", "instanceId": "internal-pilot", "planId": "plan-001"}
 
@@ -71,6 +72,35 @@ class ContentJpegPixelQaTests(unittest.TestCase):
             audit([jpeg(exif=exif)])
         with self.assertRaisesRegex(ValueError, "UNSUPPORTED_RENDERING_METADATA"):
             audit([jpeg(icc_profile=b"example-profile")])
+
+    def test_cli_preflight_bounds_allocation_and_rejects_nonregular_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            valid = root / "small.jpg"
+            valid.write_bytes(b"0" * 64)
+            self.assertEqual(read_bounded_local_sources([str(valid)]), [b"0" * 64])
+            with self.assertRaisesRegex(ValueError, "INVALID_SOURCE_SET"):
+                read_bounded_local_sources([str(valid)] * 21)
+            with self.assertRaisesRegex(ValueError, "INVALID_SOURCE_PATH"):
+                read_bounded_local_sources([str(root)])
+            symlink = root / "symlink.jpg"
+            symlink.symlink_to(valid)
+            with self.assertRaisesRegex(ValueError, "INVALID_SOURCE_PATH"):
+                read_bounded_local_sources([str(symlink)])
+            too_large = root / "oversized.jpg"
+            with too_large.open("wb") as handle:
+                handle.truncate(MAX_SOURCE_BYTES + 1)
+            with self.assertRaisesRegex(ValueError, "SOURCE_BYTE_LIMIT"):
+                read_bounded_local_sources([str(too_large)])
+            # Seven sparse 12 MiB files exceed the 80 MiB aggregate cap.
+            sparse_paths = []
+            for index in range(7):
+                sparse = root / f"sparse-{index}.jpg"
+                with sparse.open("wb") as handle:
+                    handle.truncate(MAX_SOURCE_BYTES)
+                sparse_paths.append(str(sparse))
+            with self.assertRaisesRegex(ValueError, "SOURCE_BYTE_LIMIT"):
+                read_bounded_local_sources(sparse_paths)
 
     def test_scope_and_source_type_cannot_be_forged(self):
         with self.assertRaisesRegex(ValueError, "INVALID_SCOPE"):
