@@ -148,6 +148,100 @@ def read_bounded_local_sources(file_names):
     return sources
 
 
+
+# CONTENT_JPEG_REVIEW_PACKET_V1: bridge fully decoded source JPEGs to a
+# non-authoritative editorial packet. No reviewer identity or approval is inferred.
+def prepare_jpeg_editorial_review_request(sources, scope, proposed_copy, *,
+                                         expected_width=1080, expected_height=1350):
+    qa = audit_jpeg_sources(sources, scope, expected_width=expected_width,
+                            expected_height=expected_height)
+    required = {"schemaVersion", "caption", "altTexts", "aiDisclosure", "claimEvidenceRefs"}
+    if type(proposed_copy) is not dict or set(proposed_copy) != required or (
+            type(proposed_copy["schemaVersion"]) is not int or
+            proposed_copy["schemaVersion"] != 1):
+        _fail("INVALID_REVIEW_COPY_FIELDS")
+
+    def valid_text(value, minimum, maximum):
+        return (type(value) is str and minimum <= len(value) <= maximum and
+                value == value.strip() and
+                not any(ord(ch) < 32 or ord(ch) == 127 for ch in value))
+
+    caption = proposed_copy["caption"]
+    alt = proposed_copy["altTexts"]
+    disclosure = proposed_copy["aiDisclosure"]
+    refs = proposed_copy["claimEvidenceRefs"]
+    if not valid_text(caption, 2, 5000):
+        _fail("INVALID_CAPTION")
+    if (type(alt) is not list or len(alt) != len(qa["images"]) or
+            not all(valid_text(x, 2, 500) for x in alt)):
+        _fail("INVALID_ALT_TEXTS")
+    if disclosure not in ("DECLARED_AI", "DECLARED_NON_AI", "UNKNOWN"):
+        _fail("INVALID_AI_DISCLOSURE")
+    if (type(refs) is not list or len(refs) > 20 or
+            not all(type(x) is str and ID.fullmatch(x) for x in refs) or
+            len(set(refs)) != len(refs)):
+        _fail("INVALID_CLAIM_REFS")
+    copy = {"schemaVersion": 1, "caption": caption, "altTexts": alt,
+            "aiDisclosure": disclosure, "claimEvidenceRefs": refs}
+    copy_sha = _digest(json.dumps(copy, ensure_ascii=False,
+                                  separators=(",", ":")).encode("utf-8"))
+    identity = [1, scope["tenantId"], scope["instanceId"], scope["planId"],
+                qa["qaManifestId"], copy_sha]
+    review_id = "content-jpeg-review-" + _digest(
+        json.dumps(identity, separators=(",", ":")).encode("utf-8"))
+    flags = []
+    if qa["visualSimilarityReviewRequired"]:
+        flags.append("VISUAL_SIMILARITY_HUMAN_REVIEW")
+    if disclosure == "UNKNOWN":
+        flags.append("AI_DISCLOSURE_UNRESOLVED")
+    if refs:
+        flags.append("CLAIM_EVIDENCE_REFERENCES_UNVERIFIED")
+    if len({x.casefold().strip() for x in alt}) != len(alt):
+        flags.append("DUPLICATE_ALT_TEXT_REVIEW")
+    return {"schemaVersion": 1, "product": "content", **scope,
+            "reviewPacketId": review_id, "qaManifestId": qa["qaManifestId"],
+            "copySha256": copy_sha, "copy": copy,
+            "imageDigests": [{"slot": x["slot"], "sha256": x["sha256"],
+                              "rgbPixelSha256": x["rgbPixelSha256"]}
+                             for x in qa["images"]],
+            "automatedReviewFlags": sorted(flags),
+            "status": "EDITORIAL_REVIEW_PENDING",
+            "sourceBytesDecoded": True, "distinctDecodedPixelHashes": True,
+            "independentGenerationVerified": False, "visualEditorialQaVerified": False,
+            "claimEvidenceVerified": False, "aiDisclosureVerified": False,
+            "reviewerAuthenticated": False, "approvalGranted": False,
+            "providerCapabilityVerified": False, "providerSentVerified": False,
+            "measurementVerified": False, "learningVerified": False,
+            "sharedBciAuditVerified": False, "executionAllowed": False,
+            "customerSaasReady": False}
+
+
+def read_bounded_review_copy(path):
+    file = Path(path)
+    info = file.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_size > 32768:
+        _fail("INVALID_REVIEW_COPY_PATH")
+    fd = os.open(file, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 32768:
+            _fail("INVALID_REVIEW_COPY_PATH")
+        data = handle.read(32769)
+    if len(data) > 32768:
+        _fail("INVALID_REVIEW_COPY_PATH")
+    def unique_pairs(pairs):
+        out = {}
+        for key, value in pairs:
+            if key in out:
+                _fail("DUPLICATE_REVIEW_COPY_KEY")
+            out[key] = value
+        return out
+    try:
+        return json.loads(data.decode("utf-8"), object_pairs_hook=unique_pairs,
+                          parse_constant=lambda _: _fail("INVALID_REVIEW_COPY_JSON"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("CONTENT_JPEG_QA_INVALID_REVIEW_COPY_JSON") from exc
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tenant-id", required=True)
@@ -155,13 +249,20 @@ def main():
     parser.add_argument("--plan-id", required=True)
     parser.add_argument("--width", type=int, default=1080)
     parser.add_argument("--height", type=int, default=1350)
+    parser.add_argument("--review-copy-file", default=None, help="Local bounded JSON editorial copy; does not approve or publish")
     parser.add_argument("files", nargs="+")
     args = parser.parse_args()
     try:
-        result = audit_jpeg_sources(read_bounded_local_sources(args.files),
-                                    {"tenantId": args.tenant_id, "instanceId": args.instance_id,
-                                     "planId": args.plan_id},
-                                    expected_width=args.width, expected_height=args.height)
+        sources = read_bounded_local_sources(args.files)
+        scope = {"tenantId": args.tenant_id, "instanceId": args.instance_id,
+                 "planId": args.plan_id}
+        if args.review_copy_file:
+            result = prepare_jpeg_editorial_review_request(
+                sources, scope, read_bounded_review_copy(args.review_copy_file),
+                expected_width=args.width, expected_height=args.height)
+        else:
+            result = audit_jpeg_sources(sources, scope,
+                                        expected_width=args.width, expected_height=args.height)
     except (ValueError, OSError) as exc:
         parser.exit(2, f"QA failed: {exc}\n")
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
