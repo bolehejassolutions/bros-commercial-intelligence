@@ -629,3 +629,45 @@ test("Drive view/download reference parity remains unverified and query addition
   assert.equal(held.status,"REVIEW_REQUIRED");
   assert.ok(held.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"));
 });
+
+
+// CONTENT_COMPARABLE_POST_AGE_AND_COHORT_GUARD_20261029
+// Buffer-observed timestamps/counts with synthetic IDs and source references.
+// Historical SELL data only; never CONTENT-owned publishing or causal learning.
+test("2019 posts refreshed in 2026 cannot be compared as current pilot evidence",()=>{
+  const a=make({id:"old-2019-a",assets:[post.assets[0]],
+    sentAt:"2019-07-30T06:47:13.000Z",metricsUpdatedAt:"2026-10-23T16:29:27.280Z",
+    metrics:[{type:"views",unit:"count",value:0},{type:"reach",unit:"count",value:0}]},
+    {expectedAssetCount:1});
+  const b=make({id:"old-2019-b",assets:[post.assets[1]],
+    sentAt:"2019-07-30T06:51:08.000Z",metricsUpdatedAt:"2026-10-23T16:29:27.152Z",
+    metrics:[{type:"views",unit:"count",value:0},{type:"reach",unit:"count",value:0}]},
+    {expectedAssetCount:1});
+  assert.equal(a.status,"MEASURED");assert.equal(b.status,"MEASURED");
+  assert.ok(a.measurementAgeSeconds>7*86400);
+  const result=next([a,b]);
+  assert.equal(result.reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+  assert.equal(result.executionAllowed,false);assert.equal(result.causalLiftProven,false);
+});
+test("recent same-format same-cohort five-day posts remain review candidates only",()=>{
+  const a=make({id:"recent-a",sentAt:"2026-10-23T18:23:09.484Z",
+    metricsUpdatedAt:"2026-10-28T15:35:15.551Z",
+    metrics:[{type:"views",unit:"count",value:4},{type:"reach",unit:"count",value:2}]});
+  const b=make({id:"recent-b",sentAt:"2026-10-23T18:23:00.546Z",
+    metricsUpdatedAt:"2026-10-28T15:35:15.578Z",
+    metrics:[{type:"views",unit:"count",value:5},{type:"reach",unit:"count",value:2}]});
+  assert.equal(a.status,"MEASURED");assert.equal(b.status,"MEASURED");
+  const result=next([a,b]);
+  assert.equal(result.reason,"SAME_CHANNEL_CANDIDATES");
+  assert.equal(result.evidenceStatus,"UNATTESTED_PROVIDER_PROJECTION");
+  assert.equal(result.executionAllowed,false);assert.equal(result.causalLiftProven,false);
+});
+test("equal two-day measurement ages across different months fail cohort gate",()=>{
+  const a=make({id:"month-a",sentAt:"2026-10-01T01:00:00.000Z",
+    metricsUpdatedAt:"2026-10-03T01:00:00.000Z"});
+  const b=make({id:"month-b",sentAt:"2026-10-23T01:00:00.000Z",
+    metricsUpdatedAt:"2026-10-25T01:00:00.000Z"});
+  assert.equal(a.status,"MEASURED");assert.equal(b.status,"MEASURED");
+  assert.equal(a.measurementAgeSeconds,b.measurementAgeSeconds);
+  assert.equal(next([a,b]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+});
