@@ -100,8 +100,8 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           (request.product !== "content" && request.product !== "demand") ||
           !Array.isArray(request.records) || request.records.length < 1 || request.records.length > 100) deny();
       const principal = await deps.authenticate();
-      if (!exact(principal, ["userId", "authenticated"]) ||
-          principal?.authenticated !== true || !UUID.test(principal.userId)) deny();
+      if (!principal || !exact(principal, ["userId", "authenticated"]) ||
+          principal.authenticated !== true || !UUID.test(principal.userId)) deny();
       const tenantId = scopeOf(await deps.membershipsFor(principal.userId, request.product),
         principal.userId, request.product);
       const scope = { tenantId, product: request.product };
