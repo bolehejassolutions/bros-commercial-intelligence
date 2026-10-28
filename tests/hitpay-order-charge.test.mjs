@@ -91,3 +91,15 @@ test('coercible provider IDs cannot masquerade as order/charge identities',()=>{
   assert.equal(baseline.bankSettlementVerified,false);
   assert.equal(baseline.acquisitionAttributionVerified,false);
 });
+
+test('sub-cent HitPay major-unit values fail closed instead of silently rounding fees or refunds',()=>{
+  for(const patch of [
+    {amount_without_fees:48.30000000001},
+    {refunded_amount:0.000000001},
+    {amount:50.0000000001},
+  ]) assert.throws(()=>reconcile(order,charge,{...detail,...patch}),invalid);
+  const exact=reconcile({...order},{...charge},{...detail,refunded_amount:0.29});
+  assert.equal(exact.refundedMinor,29);
+  assert.equal(exact.status,'REFUND_OBSERVED');
+  assert.equal(exact.settledOrders,null);
+});

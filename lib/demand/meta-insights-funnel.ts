@@ -95,7 +95,7 @@ function money(v: unknown): number | null {
   if (typeof v !== "number" && (typeof v !== "string" || !/^(0|[1-9]\d*)(?:\.\d{1,2})?$/.test(v))) fail();
   const n = Number(v);
   if (!Number.isFinite(n) || n < 0 || !Number.isSafeInteger(Math.round(n * 100)) ||
-      Math.abs(n * 100 - Math.round(n * 100)) > 0.000001) fail();
+      Math.round(n * 100) / 100 !== n) fail();
   return Math.round(n * 100);
 }
 export function normalizeMetaCampaignFunnel(

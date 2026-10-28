@@ -237,3 +237,11 @@ test('Meta scope IDs reject array-to-string coercion before building tenant or c
   assert.equal(baseline.hitpaySettledOrders,null);
   assert.equal(baseline.verifiedCacMinor,null);
 });
+
+test('sub-cent numeric Meta spend is rejected rather than rounded into a fabricated sen value',()=>{
+  for(const spend of [0.0000000001, 0.0000009, 1.0000000000000002])
+    assert.throws(()=>normalizeMetaCampaignFunnel(scope,{...row,spend}),invalid);
+  assert.equal(normalizeMetaCampaignFunnel(scope,{...row,spend:0}).spendMinor,0);
+  assert.equal(normalizeMetaCampaignFunnel(scope,{...row,spend:0.29}).spendMinor,29);
+  assert.equal(normalizeMetaCampaignFunnel(scope,{...row,spend:'0.29'}).spendMinor,29);
+});

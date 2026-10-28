@@ -39,7 +39,7 @@ function majorToMinor(value: unknown): number {
   if (typeof value !== "number") return fail();
   if (!Number.isFinite(value) || value < 0 ||
       !Number.isSafeInteger(Math.round(value * 100)) ||
-      Math.abs(value * 100 - Math.round(value * 100)) > 0.000001) return fail();
+      Math.round(value * 100) / 100 !== value) return fail();
   return Math.round(value * 100);
 }
 function minor(value: unknown): value is number {
