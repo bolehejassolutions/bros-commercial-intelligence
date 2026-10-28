@@ -91,3 +91,27 @@ test("rejects coercible IDs, malformed text, and client attestation injection",(
   const d=brief();d.approvalVerified=true;
   assert.throws(()=>planContentJobCandidate(config(),d),/INVALID_CONTENT_BRIEF_FIELDS/);
 });
+
+test("accessor-backed config, nested brand, channel and brief fields fail before getter execution",()=>{
+  const cases=[
+    ()=>{const c=config();Object.defineProperty(c,"tenantId",{enumerable:true,get(){throw Error("EXECUTED_GETTER");}});return ()=>normalizeContentInstanceConfig(c);},
+    ()=>{const c=config();Object.defineProperty(c.brand,"voice",{enumerable:true,get(){throw Error("EXECUTED_GETTER");}});return ()=>normalizeContentInstanceConfig(c);},
+    ()=>{const c=config();Object.defineProperty(c.channels[0],"service",{enumerable:true,get(){throw Error("EXECUTED_GETTER");}});return ()=>normalizeContentInstanceConfig(c);},
+    ()=>{const b=brief();Object.defineProperty(b,"revisionId",{enumerable:true,get(){throw Error("EXECUTED_GETTER");}});return ()=>planContentJobCandidate(config(),b);}
+  ];
+  for(const make of cases)
+    assert.throws(make(),/INVALID_CONTENT_(CONFIG|BRAND|CHANNEL|BRIEF)_FIELDS/);
+});
+test("accessor-backed array elements and hidden required fields cannot influence stable IDs",()=>{
+  const a=config();Object.defineProperty(a.goals,"0",{enumerable:true,configurable:true,
+    get(){throw Error("EXECUTED_GETTER");}});
+  assert.throws(()=>normalizeContentInstanceConfig(a),/INVALID_CONTENT_GOALS/);
+  const b=config();Object.defineProperty(b.channels,"0",{enumerable:true,configurable:true,
+    get(){throw Error("EXECUTED_GETTER");}});
+  assert.throws(()=>normalizeContentInstanceConfig(b),/INVALID_CONTENT_CHANNELS/);
+  const c=config();Object.defineProperty(c.policy,"requiresContentApproval",{
+    enumerable:false,configurable:true,value:true});
+  assert.throws(()=>normalizeContentInstanceConfig(c),/INVALID_CONTENT_POLICY_FIELDS/);
+  assert.equal(planContentJobCandidate(config(),brief()).planId,
+    planContentJobCandidate(config(),brief()).planId);
+});
