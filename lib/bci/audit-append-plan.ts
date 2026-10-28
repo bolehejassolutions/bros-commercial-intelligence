@@ -39,7 +39,12 @@ const exactShape = (value: unknown): value is BciLineageRecord => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const ownKeys = Reflect.ownKeys(value);
   return ownKeys.length === keys.size &&
-    ownKeys.every(key => typeof key === "string" && keys.has(key));
+    ownKeys.every(key => {
+      if (typeof key !== "string" || !keys.has(key)) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      return !!descriptor && descriptor.enumerable === true &&
+        Object.prototype.hasOwnProperty.call(descriptor, "value");
+    });
 };
 
 /**
