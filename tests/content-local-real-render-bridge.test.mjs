@@ -104,6 +104,30 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
     assert.equal(candidate.approvalRequestId,handoff.approvalRequestId);
     assert.equal(candidate.mediaSetId,bound.mediaSetId);
     assert.match(candidate.dispatchIntentId,/^content-buffer-dispatch-[a-f0-9]{64}$/);
+    // Cross-branch BCI private contract shape; no database adapter, approval
+    // persistence or provider action is supplied by this CONTENT mapping.
+    const bciRequest=candidate.bciReservationRequestCandidate;
+    const dispatch=prepareContentBufferDispatchIntent(config,brief,buffers,copy,dispatchOptions);
+    assert.deepEqual(Object.keys(bciRequest),['dispatchIntentId','binding']);
+    assert.deepEqual(Object.keys(bciRequest.binding),[
+      'reviewPacketId','handoffId','signedReviewEvidenceId','planId',
+      'mediaSetId','copySha256','providerOrganizationId','channelId']);
+    assert.deepEqual(bciRequest,{
+      dispatchIntentId:dispatch.dispatchIntentId,
+      binding:{
+        reviewPacketId:handoff.reviewPacketId,handoffId:handoff.handoffId,
+        signedReviewEvidenceId:candidate.signedReviewEvidenceId,
+        planId:handoff.planId,mediaSetId:handoff.mediaSetId,
+        copySha256:dispatch.copySha256,
+        providerOrganizationId:dispatchOptions.providerOrganizationId,
+        channelId:brief.channelId
+      }
+    });
+    assert.equal(Object.isFrozen(bciRequest),true);
+    assert.equal(Object.isFrozen(bciRequest.binding),true);
+    assert.ok(Object.entries(bciRequest.binding).every(([key,value])=>
+      key==='copySha256' ? /^[a-f0-9]{64}$/.test(value) :
+      /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(value)));
     for(const key of ['providerOrganizationAuthenticated','reviewerAuthenticatedByThisModule',
       'visualEditorialQaVerified','approvalGranted','durableApprovalRecorded',
       'atomicReservationVerified','providerAccountCapabilityVerified',
