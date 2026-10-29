@@ -32,6 +32,38 @@ function parseMetaTime(value: unknown): string {
   return new Date(date.getTime() - offsetMinutes * 60_000).toISOString();
 }
 
+/** Meta's event_stats may be an opaque JSON string. Even nonempty values are
+ * NOT authenticated event-type, test/live, Purchase, or order evidence.
+ * Fingerprint revisions without exposing raw provider payloads. */
+function digestOpaqueEventStats(value: unknown): { state: string; digest: string | null } {
+  if (value === undefined) return { state: "NOT_RETURNED", digest: null };
+  if (value === null) return { state: "NULL_RETURNED", digest: null };
+  if (typeof value !== "string" || value.length > 8192) fail();
+  let parsed: unknown;
+  try { parsed = JSON.parse(value as string); } catch { return fail(); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) fail();
+  const canonical = (v: unknown, depth = 0): unknown => {
+    if (depth > 16) return fail();
+    if (Array.isArray(v)) {
+      if (v.length > 1000) return fail();
+      return v.map(x => canonical(x, depth + 1));
+    }
+    if (v !== null && typeof v === "object") {
+      const obj = v as Record<string, unknown>;
+      const keys = Object.keys(obj).sort();
+      if (keys.length > 1000) return fail();
+      return Object.fromEntries(keys.map(k => [k, canonical(obj[k], depth + 1)]));
+    }
+    return v;
+  };
+  const stable = JSON.stringify(canonical(parsed));
+  return {
+    state: Object.keys(parsed as Record<string, unknown>).length === 0
+      ? "EMPTY_OBJECT_UNVERIFIED" : "OPAQUE_OBJECT_UNVERIFIED",
+    digest: createHash("sha256").update(stable).digest("hex"),
+  };
+}
+
 export function assessDemandMetaDatasetActivity(
   accountId: string,
   datasetId: string,
@@ -45,7 +77,7 @@ export function assessDemandMetaDatasetActivity(
         (!Array.isArray(inventory.droppedFields) || inventory.droppedFields.length > 0))) fail();
 
   const seen = new Set<string>();
-  let target: { unavailable: boolean; createdAt: string; lastFiredAt: string | null } | null = null;
+  let target: { unavailable: boolean; createdAt: string; lastFiredAt: string | null; eventStats: { state: string; digest: string | null } } | null = null;
   for (const row of inventory.rows) {
     if (!row || typeof row !== "object" || Array.isArray(row) ||
         typeof row.id !== "string" || !ID.test(row.id) || seen.has(row.id) ||
@@ -56,7 +88,7 @@ export function assessDemandMetaDatasetActivity(
       ? null : parseMetaTime(row.last_fired_time);
     if (lastFiredAt !== null && lastFiredAt < createdAt) fail();
     if (row.id === datasetId) {
-      target = { unavailable: row.is_unavailable as boolean, createdAt, lastFiredAt };
+      target = { unavailable: row.is_unavailable as boolean, createdAt, lastFiredAt, eventStats: digestOpaqueEventStats(row.event_stats) };
     }
   }
 
@@ -65,14 +97,18 @@ export function assessDemandMetaDatasetActivity(
     target.lastFiredAt === null ? "NO_ACTIVITY_TIMESTAMP_RETURNED" :
     "ACTIVITY_TIMESTAMP_REPORTED_EVENT_UNVERIFIED";
   const snapshotKey = "demand:meta-dataset-activity:sha256:" + createHash("sha256")
-    .update(JSON.stringify(["v1", accountId, datasetId, state,
+    .update(JSON.stringify(["v2", accountId, datasetId, state,
       target?.createdAt ?? null, target?.lastFiredAt ?? null,
-      target?.unavailable ?? null])).digest("hex");
+      target?.unavailable ?? null, target?.eventStats.state ?? null,
+      target?.eventStats.digest ?? null])).digest("hex");
   return Object.freeze({
     snapshotKey, state,
     datasetCreationTimeUtc: target?.createdAt ?? null,
     lastDatasetActivityTimeUtc: target?.lastFiredAt ?? null,
     datasetAvailableAtReadback: target === null ? null : !target.unavailable,
+    eventStatsFieldState: target?.eventStats.state ?? null,
+    // Opaque content digest changes on provider revision, never an event count.
+    eventStatsOpaqueDigest: target?.eventStats.digest ?? null,
     nextBestEvidenceAction: target === null
       ? "VERIFY_DATASET_ACCOUNT_SELECTION" as const :
       "OBTAIN_EVENT_TYPE_ENVIRONMENT_AND_CAMPAIGN_BOUND_RECEIPTS" as const,
