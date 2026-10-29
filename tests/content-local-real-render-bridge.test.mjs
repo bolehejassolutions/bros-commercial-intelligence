@@ -11,6 +11,7 @@ import {prepareLocalContentEditorialHandoff} from '../lib/content/local-render-e
 import {generateKeyPairSync,sign} from 'node:crypto';
 import {contentSignedReviewSigningBytes,verifyContentSignedEditorialDecision} from '../lib/content/signed-editorial-decision.mjs';
 import {prepareContentReviewDispatchPreflight} from '../lib/content/review-dispatch-binding.mjs';
+import {prepareContentBufferDispatchIntent} from '../lib/content/buffer-dispatch-intent.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const config={
@@ -123,6 +124,36 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
       copy,dispatchOptions,scopedReceipt,new Map([['test-only',publicKey]]),
       crossTenant,Date.parse('2026-10-29T07:00:00.000Z')),
       /CONTENT_REVIEW_DISPATCH_BINDING_DENIED/);
+    // A valid signature and stubbed membership must not launder unresolved
+    // automated editorial warnings into a dispatch candidate. The Buffer
+    // capability gate alone does not see claim references or duplicate alt text.
+    for(const [flaggedCopy,expectedFlag] of [
+      [{...copy,claimEvidenceRefs:['source-1']},'CLAIM_EVIDENCE_REFERENCES_UNVERIFIED'],
+      [{...copy,altTexts:[copy.altTexts[0],copy.altTexts[0]]},'DUPLICATE_ALT_TEXT_REVIEW']
+    ]){
+      const flaggedHandoff=prepareLocalContentEditorialHandoff(config,brief,manifest,
+        buffers,flaggedCopy);
+      assert.ok(flaggedHandoff.automatedReviewFlags.includes(expectedFlag));
+      const flaggedDispatch=prepareContentBufferDispatchIntent(config,brief,buffers,
+        flaggedCopy,dispatchOptions);
+      assert.equal(flaggedDispatch.status,'ATOMIC_RESERVATION_AND_APPROVAL_REQUIRED');
+      assert.deepEqual(flaggedDispatch.reviewFlags,[]);
+      const flaggedPayload={...scopedPayload,
+        approvalRequestId:flaggedHandoff.approvalRequestId,
+        reviewPacketId:flaggedHandoff.reviewPacketId,
+        handoffId:flaggedHandoff.handoffId,nonce:'e'.repeat(32)};
+      const flaggedReceipt={schemaVersion:1,keyId:'test-only',payload:flaggedPayload,
+        signature:sign(null,contentSignedReviewSigningBytes(flaggedPayload),
+          privateKey).toString('base64url')};
+      assert.equal(verifyContentSignedEditorialDecision(flaggedHandoff,flaggedReceipt,
+        new Map([['test-only',publicKey]]),
+        Date.parse('2026-10-29T07:00:00.000Z')).signatureVerified,true);
+      await assert.rejects(prepareContentReviewDispatchPreflight(config,brief,manifest,
+        buffers,flaggedCopy,dispatchOptions,flaggedReceipt,
+        new Map([['test-only',publicKey]]),authDeps,
+        Date.parse('2026-10-29T07:00:00.000Z')),
+        /CONTENT_REVIEW_DISPATCH_BINDING_DENIED/);
+    }
     assert.equal(signed.signatureVerified,true);
     assert.equal(signed.approvalGranted,false);
     assert.equal(signed.executionAllowed,false);
