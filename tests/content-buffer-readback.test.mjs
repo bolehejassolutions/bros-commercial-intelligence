@@ -123,3 +123,30 @@ test('bad envelope and scope fail closed; redacted output cannot assert provider
   assert.throws(()=>summarizeBufferReadback({post:ig,scope:{...igScope,product:'demand'}}),/INVALID_TRUSTED_SCOPE/);
   assert.equal(Object.hasOwn(summarizeBufferReadback({post:ig,scope:igScope}),'nativeUrl'),false);
 });
+
+test('live-shaped Instagram carousel readback flags duplicate published alt text without claiming failed SENT',()=>{
+  const repeated={...ig,id:'ig-alttext-duplicate',
+    assets:ig.assets.map((asset,i)=>({...asset,
+      image:{altText:i===0?'Ilustrasi AI: penjual bertanya kepada pelanggan.':
+        '  ILUSTRASI   AI:  PENJUAL BERTANYA KEPADA PELANGGAN.  '}}))};
+  const reviewed=summarizeBufferReadback({post:repeated,scope:igScope});
+  assert.equal(reviewed.status,'REVIEW_REQUIRED');
+  assert.ok(reviewed.flags.includes('DUPLICATE_PUBLISHED_ALT_TEXT'));
+  assert.equal(reviewed.metrics.views,0);
+  assert.equal(reviewed.contentPublisherVerified,false);
+  assert.equal(reviewed.providerMediaBytesVerified,false);
+  assert.equal(reviewed.learningVerified,false);
+  assert.equal(reviewed.executionAllowed,false);
+  const proposed=proposeContentNextStep([projectBufferContentObservation(repeated,igScope)]);
+  assert.equal(proposed.reason,'EVIDENCE_QA_REVIEW');
+  assert.equal(proposed.executionAllowed,false);
+
+  const distinct={...repeated,assets:repeated.assets.map((asset,i)=>({
+    ...asset,image:{altText:i===0?'Penjual bertanya soalan.':'Pelanggan menunjuk bahagian jahitan.'}
+  }))};
+  const clean=summarizeBufferReadback({post:distinct,scope:igScope});
+  assert.equal(clean.status,'MEASURED');
+  assert.equal(clean.flags.includes('DUPLICATE_PUBLISHED_ALT_TEXT'),false);
+  // Older provider assets without altText do not get a fabricated duplicate.
+  assert.equal(summarizeBufferReadback({post:ig,scope:igScope}).status,'MEASURED');
+});
