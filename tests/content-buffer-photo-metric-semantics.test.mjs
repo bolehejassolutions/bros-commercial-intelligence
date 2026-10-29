@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {projectBufferContentObservation, proposeContentNextStep} from '../lib/content/buffer-observation.mjs';
+import {projectBufferContentObservation, proposeContentNextStep,
+  buildContentBciEvidenceHandoff} from '../lib/content/buffer-observation.mjs';
 
 // Sanitized, provider-observed Buffer 28 Oct TikTok PHOTO carousel metric shape.
 // IDs and URLs are synthetic; this is not authenticated provider ingestion.
@@ -49,4 +50,45 @@ test('pre-SENT metric snapshot remains unmeasured and does not invent a learning
   assert.equal(o.metrics.views,null);
   assert.ok(o.flags.includes('METRICS_PRECEDE_SENT'));
   assert.equal(proposeContentNextStep([o]).executionAllowed,false);
+});
+
+test('live 29 Oct TikTok photo pre-SENT all-zero metric rows remain unknown, not zero engagement',()=>{
+  // Observed Buffer shape: SENT at 10:02:47Z; metrics timestamp 06:32:23Z
+  // with eight zero-valued rows, including engagementRate percentage.
+  // Synthetic IDs/URL; timestamps, units, media type and zero values are real-shaped.
+  const sentAt='2026-10-29T10:02:47.290Z';
+  const metricsUpdatedAt='2026-10-29T06:32:23.171Z';
+  const zeroRows=[
+    ['reactions','count'],['comments','count'],['engagementRate','percentage'],
+    ['views','count'],['shares','count'],['reach','count'],
+    ['totalTimeWatched','count'],['averageTimeWatched','count']
+  ].map(([type,unit])=>({type,unit,value:0}));
+  const liveShape={...post,sentAt,metricsUpdatedAt,metrics:zeroRows};
+  const scoped={...scope,asOf:'2026-10-29T11:00:00.000Z'};
+  const observed=projectBufferContentObservation(liveShape,scoped);
+  assert.equal(observed.status,'SENT_UNMEASURED');
+  assert.equal(observed.metricsUpdatedAt,null);
+  assert.equal(observed.measurementAgeSeconds,null);
+  assert.ok(observed.flags.includes('PRE_SENT_ALL_ZERO_METRICS_TIMESTAMP'));
+  assert.ok(Object.values(observed.metrics).every(x=>x===null));
+  assert.equal(proposeContentNextStep([observed]).reason,'INSUFFICIENT_MEASURED_POSTS');
+  const evidenceScope={product:'content',tenantId:scoped.tenantId,
+    instanceId:scoped.instanceId,contentId:scoped.contentId,
+    channelService:scoped.channelService,channelId:scoped.channelId};
+  const evidence=buildContentBciEvidenceHandoff(observed,evidenceScope,scoped.asOf);
+  assert.equal(evidence.metrics.views,null);
+  assert.ok(evidence.unknowns.includes('PRE_SENT_METRIC_TIMESTAMP_NOT_A_MEASUREMENT'));
+  assert.equal(buildContentBciEvidenceHandoff(observed,evidenceScope,scoped.asOf).evidenceId,
+    evidence.evidenceId);
+  for(const badRows of [
+    zeroRows.map((row,i)=>i===0?{...row,value:1}:row),
+    [...zeroRows,{...zeroRows[0]}],
+    zeroRows.map((row,i)=>i===0?{...row,unit:'invalid'}:row)
+  ]){
+    const bad=projectBufferContentObservation({...liveShape,metrics:badRows},scoped);
+    assert.equal(bad.status,'REVIEW_REQUIRED');
+    assert.ok(bad.flags.includes('METRICS_PRECEDE_SENT'));
+    assert.equal(bad.metrics.views,null);
+    assert.equal(bad.metricsUpdatedAt,metricsUpdatedAt);
+  }
 });
