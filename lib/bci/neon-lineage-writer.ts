@@ -223,6 +223,43 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           }
         }
         await query("SET CONSTRAINTS ALL IMMEDIATE", []);
+        // Transactional read-after-write checks actual persisted graph before COMMIT.
+        // This is not independent authenticated provider or post-commit evidence.
+        if (plan.toInsert.length) {
+          const ids = plan.toInsert.map(node => node.id);
+          const rows = await query(
+            `SELECT id::text AS "id", tenant_id::text AS "tenantId", product, stage,
+                    source_system AS "sourceSystem", source_record_key AS "sourceRecordKey",
+                    to_char(recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "recordedAt",
+                    parent_ids::text[] AS "parentIds", assertion_status AS "verification"
+             FROM bci_dev.lineage_nodes
+             WHERE tenant_id=$1::uuid AND product=$2::text AND id = ANY($3::uuid[])`,
+            [tenantId, request.product, ids]);
+          if (rows.rows.length !== ids.length) deny();
+          const byId = new Map<string, Record<string, unknown>>();
+          for (const row of rows.rows) {
+            if (!exact(row, fields) || typeof row.id !== "string" || byId.has(row.id)) deny();
+            byId.set(row.id, row);
+          }
+          for (const expected of plan.toInsert) {
+            const actual = byId.get(expected.id);
+            if (!actual || fields.some(field =>
+              JSON.stringify(actual[field]) !== JSON.stringify(expected[field]))) deny();
+          }
+          const edges = await query(
+            `SELECT parent_id::text AS "parentId", child_id::text AS "childId"
+             FROM bci_dev.lineage_edges
+             WHERE tenant_id=$1::uuid AND product=$2::text AND child_id = ANY($3::uuid[])`,
+            [tenantId, request.product, ids]);
+          const expectedEdges = plan.toInsert.flatMap(node =>
+            node.parentIds.map(parent => parent + ":" + node.id)).sort();
+          const actualEdges = edges.rows.map(row => {
+            if (!exact(row, ["parentId", "childId"]) ||
+                typeof row.parentId !== "string" || typeof row.childId !== "string") deny();
+            return row.parentId + ":" + row.childId;
+          }).sort();
+          if (JSON.stringify(actualEdges) !== JSON.stringify(expectedEdges)) deny();
+        }
         // Revocation between initial membership lookup and append must roll back.
         const fresh = scopeOf(await deps.membershipsFor(verifiedPrincipalId, request.product),
           verifiedPrincipalId, request.product);

@@ -48,6 +48,13 @@ function harness(overrides = {}) {
       calls.push({ sql, params });
       if (sql.includes('AS "roleName"')) return { rows: [role] };
       if (sql.includes('AS "forcedRls"')) return { rows: [posture] };
+      if (sql.includes("AND id = ANY($3::uuid[])")) {
+        if (sql.includes("FROM bci_dev.lineage_nodes")) return { rows: params[2].map(id =>
+          ({ ...(id === rootId ? evidence : signal),
+            recordedAt: (id === rootId ? evidence : signal).recordedAt.replace("Z", ".000Z") })) };
+        if (sql.includes("FROM bci_dev.lineage_edges")) return { rows: params[2].includes(childId)
+          ? [{ parentId: rootId, childId }] : [] };
+      }
       if (sql.includes("FROM bci_dev.lineage_nodes WHERE")) return { rows: [] };
       if (sql.includes("INSERT INTO bci_dev.lineage_nodes")) return { rows: [{ id: params[0] }] };
       if (sql.includes("INSERT INTO bci_dev.lineage_edges")) return { rows: [{ childId: params[3] }] };
@@ -72,6 +79,31 @@ test("authenticated membership scopes unverified node+edge inserts, with final r
   assert.ok(inserts.every(c => !c.sql.includes("ON CONFLICT")));
   assert.ok(h.calls.some(c => c.sql === "SET CONSTRAINTS ALL IMMEDIATE"));
   assert.ok(!h.calls.some(c => c.sql.includes("UPDATE ") || c.sql.includes("DELETE ")));
+});
+
+test("writer rejects incomplete or altered transaction readback before commit", async () => {
+  for (const fault of ["missing-node", "altered-node", "missing-edge"]) {
+    const h = harness({ transaction: async fn => fn(async (sql, params) => {
+      h.calls.push({ sql, params });
+      if (sql.includes('AS "roleName"')) return { rows: [role] };
+      if (sql.includes('AS "forcedRls"')) return { rows: [posture] };
+      if (sql.includes("AND id = ANY($3::uuid[])")) {
+        if (sql.includes("FROM bci_dev.lineage_nodes")) return { rows: fault === "missing-node" ? []
+          : params[2].map(id => ({ ...(id === rootId ? evidence : signal),
+            recordedAt: (id === rootId ? evidence : signal).recordedAt.replace("Z", ".000Z"),
+            sourceRecordKey: fault === "altered-node" ? "tampered" :
+              (id === rootId ? evidence : signal).sourceRecordKey })) };
+        if (sql.includes("FROM bci_dev.lineage_edges")) return { rows: [] };
+      }
+      if (sql.includes("FROM bci_dev.lineage_nodes WHERE")) return { rows: [] };
+      if (sql.includes("INSERT INTO bci_dev.lineage_nodes")) return { rows: [{ id: params[0] }] };
+      if (sql.includes("INSERT INTO bci_dev.lineage_edges")) return { rows: [{ childId: params[3] }] };
+      return { rows: [] };
+    }) });
+    await assert.rejects(h.write({ product: "content",
+      records: fault === "missing-edge" ? [evidence, signal] : [evidence] }), denied, fault);
+    assert.ok(h.calls.some(c => c.sql.includes("AND id = ANY($3::uuid[])")), fault);
+  }
 });
 
 test("unverified input is mandatory and caller cannot select tenant, product or admin role", async () => {
