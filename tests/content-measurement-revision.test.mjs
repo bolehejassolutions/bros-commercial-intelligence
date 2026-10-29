@@ -66,3 +66,38 @@ test('measurement lineage accepts only canonical supported FB, IG and TikTok pos
     assert.equal(result.executionAllowed,false);
   }
 });
+
+// CONTENT_MEASUREMENT_REVISION_LIFETIME_AGE_GUARD_20261029:
+// Real Buffer post timeline from 2019, refreshed in 2026; scoped IDs synthetic.
+test('2019 lifetime metrics refreshed in 2026 are held from current pilot learning',()=>{
+  const sentAt='2019-07-30T06:47:13.000Z';
+  const first='2026-10-23T16:29:27.280Z';
+  const second='2026-10-24T16:29:27.280Z';
+  const age=timestamp=>Math.floor((Date.parse(timestamp)-Date.parse(sentAt))/1000);
+  const old={...previous,sentAt,metricsUpdatedAt:first,measurementAgeSeconds:age(first),
+    nativeUrl:'https://www.instagram.com/p/B0iAfc0JwWV/',metrics:metrics(0,0)};
+  const later={...old,metricsUpdatedAt:second,measurementAgeSeconds:age(second),metrics:metrics(1,0)};
+  const result=propose(old,later,scope);
+  assert.equal(result.status,'REVIEW_REQUIRED');
+  assert.equal(result.reason,'STALE_LIFETIME_MEASUREMENT_REVIEW');
+  assert.equal(result.nextAction,'REVIEW_PROVIDER_METRICS');
+  assert.equal(result.learningVerified,false);
+  assert.equal(result.executionAllowed,false);
+  assert.equal(propose(old,later,scope).candidateId,result.candidateId);
+});
+test('seven-day revision boundary permits candidate, one second later requires review',()=>{
+  const sentAt='2026-10-20T01:00:00.000Z';
+  const first='2026-10-26T23:00:00.000Z';
+  const boundary='2026-10-27T01:00:00.000Z';
+  const over='2026-10-27T01:00:01.000Z';
+  const age=timestamp=>Math.floor((Date.parse(timestamp)-Date.parse(sentAt))/1000);
+  const old={...previous,sentAt,metricsUpdatedAt:first,measurementAgeSeconds:age(first)};
+  const atBoundary={...old,metricsUpdatedAt:boundary,measurementAgeSeconds:age(boundary),metrics:metrics(8,5)};
+  const beyond={...atBoundary,metricsUpdatedAt:over,measurementAgeSeconds:age(over),metrics:metrics(9,5)};
+  const at=propose(old,atBoundary,{...scope,asOf:over});
+  assert.equal(at.status,'CANDIDATE_UNATTESTED');
+  assert.equal(at.executionAllowed,false);
+  const held=propose(atBoundary,beyond,{...scope,asOf:over});
+  assert.equal(held.status,'REVIEW_REQUIRED');
+  assert.equal(held.reason,'STALE_LIFETIME_MEASUREMENT_REVIEW');
+});
