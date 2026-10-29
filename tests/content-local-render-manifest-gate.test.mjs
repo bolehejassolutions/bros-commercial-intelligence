@@ -40,7 +40,8 @@ function manifest(c=config(),b=brief(),images=buffers()) {
     editorialApprovalVerified:false,bufferSentVerified:false,
     sharedBciAuditVerified:false,executionAllowed:false,customerSaasReady:false,
     images:images.map((x,i)=>({slot:i+1,filename:'content_card_0'+(i+1)+'.png',
-      byteLength:x.length,sourceSha256:sha(x),decodedRgbSha256:'a'.repeat(64)}))};
+      byteLength:x.length,sourceSha256:sha(x),
+      decodedRgbSha256:sha(Buffer.alloc(12,i===0?25:65))}))};
 }
 const dims={expectedWidth:2,expectedHeight:2};
 test('canonical plan and actual PNG bytes bind without publishing or generation attestation',()=>{
@@ -69,6 +70,9 @@ test('altered PNG bytes, corrupt source, false length and forged approvals fail 
   assert.throws(()=>bind(c,b,m,[png(26),bytes[1]],dims),/CONTENT_LOCAL_RENDER_BYTES_OR_ORDER_MISMATCH/);
   const corrupt=Buffer.from(bytes[0]);corrupt[29]^=1;
   assert.throws(()=>bind(c,b,m,[corrupt,bytes[1]],dims),/PNG_QA_BAD_CRC/);
+  const falsePixelClaim=structuredClone(m);
+  falsePixelClaim.images[0].decodedRgbSha256='0'.repeat(64);
+  assert.throws(()=>bind(c,b,falsePixelClaim,bytes,dims),/CONTENT_LOCAL_RENDER_BYTES_OR_ORDER_MISMATCH/);
   const bad=structuredClone(m);bad.images[0].byteLength+=1;
   assert.throws(()=>bind(c,b,bad,bytes,dims),/CONTENT_LOCAL_RENDER_BYTES_OR_ORDER_MISMATCH/);
   const forged=structuredClone(m);forged.editorialApprovalVerified=true;
