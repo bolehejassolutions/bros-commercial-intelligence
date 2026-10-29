@@ -8,6 +8,8 @@ import {fileURLToPath} from 'node:url';
 import {planContentJobCandidate} from '../lib/content/instance-plan.mjs';
 import {bindLocalContentRenderToPlan} from '../lib/content/local-render-manifest-gate.mjs';
 import {prepareLocalContentEditorialHandoff} from '../lib/content/local-render-editorial-handoff.mjs';
+import {generateKeyPairSync,sign} from 'node:crypto';
+import {contentSignedReviewSigningBytes,verifyContentSignedEditorialDecision} from '../lib/content/signed-editorial-decision.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const config={
@@ -66,6 +68,28 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
       aiDisclosure:'DECLARED_NON_AI',claimEvidenceRefs:[]};
     const handoff=prepareLocalContentEditorialHandoff(config,brief,manifest,buffers,copy);
     assert.equal(handoff.status,'LOCAL_MEDIA_EDITORIAL_REVIEW_PENDING');
+    // Real Pillow source bytes -> editorial handoff -> cryptographically signed
+    // review evidence. Test-only key; NEVER a human auth or publish grant.
+    const {privateKey,publicKey}=generateKeyPairSync('ed25519');
+    const reviewedAt='2026-10-29T06:59:00.000Z',expiresAt='2026-10-29T08:00:00.000Z';
+    const payload={schemaVersion:1,product:'content',tenantId:handoff.tenantId,
+      instanceId:handoff.instanceId,planId:handoff.planId,mediaSetId:handoff.mediaSetId,
+      approvalRequestId:handoff.approvalRequestId,reviewPacketId:handoff.reviewPacketId,
+      handoffId:handoff.handoffId,reviewerSubject:'test-reviewer',reviewerProvider:'test',
+      reviewedAt,expiresAt,nonce:'c'.repeat(32),decision:'APPROVE',
+      checkResults:handoff.requiredHumanChecks.map(check=>({check,passed:true}))};
+    const receipt={schemaVersion:1,keyId:'test-only',payload,
+      signature:sign(null,contentSignedReviewSigningBytes(payload),privateKey).toString('base64url')};
+    const signed=verifyContentSignedEditorialDecision(handoff,receipt,
+      new Map([['test-only',publicKey]]),Date.parse('2026-10-29T07:00:00.000Z'));
+    assert.equal(signed.signatureVerified,true);
+    assert.equal(signed.approvalGranted,false);
+    assert.equal(signed.executionAllowed,false);
+    assert.equal(signed.reviewerAuthenticated,false);
+    const tampered={...receipt,payload:{...payload,mediaSetId:'content-media-'+'0'.repeat(64)}};
+    assert.throws(()=>verifyContentSignedEditorialDecision(handoff,tampered,
+      new Map([['test-only',publicKey]]),Date.parse('2026-10-29T07:00:00.000Z')),
+      /SCOPE_MISMATCH/);
     assert.equal(handoff.mediaSetId,bound.mediaSetId);
     assert.match(handoff.approvalRequestId,/^content-review-[0-9a-f]{64}$/);
     assert.match(handoff.reviewPacketId,/^content-editorial-[0-9a-f]{64}$/);
