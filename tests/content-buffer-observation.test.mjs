@@ -671,3 +671,49 @@ test("equal two-day measurement ages across different months fail cohort gate",(
   assert.equal(a.measurementAgeSeconds,b.measurementAgeSeconds);
   assert.equal(next([a,b]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
 });
+
+
+// CONTENT_BUFFER_PRE_SENT_EMPTY_METRIC_TIMESTAMP_20261029: actual connected
+// Buffer Instagram SENT payload shape, with synthetic trusted CONTENT scope.
+// Historical SELL publisher proof only; no CONTENT publication or attestation.
+test("Buffer SENT with pre-SENT empty metrics timestamp remains SENT_UNMEASURED, not failed or measured",()=>{
+  const channelId="6ac9e9716a5c39ccb66e9544";
+  const o=make({
+    id:"6ae1ee5c8f09daaaac15a6c0",channelId,
+    sentAt:"2026-10-29T01:01:28.747Z",
+    externalLink:"https://www.instagram.com/p/DfDx1X_gK_L/",
+    assets:[
+      {type:"image",id:"18639592846001152",source:"https://drive.google.com/uc?export=download&id=1FaJTzxi8EntveRYQB515gZHuacPZsP6g"},
+      {type:"image",id:"18639592873001152",source:"https://drive.google.com/uc?export=download&id=1D4K_5NlniFAefAnB1-wWKsVKBMOFadrc"}
+    ],
+    metricsUpdatedAt:"2026-10-28T12:45:16.092Z",metrics:null
+  },{channelId,asOf:"2026-10-29T02:00:00.000Z"});
+  assert.equal(o.status,"SENT_UNMEASURED");
+  assert.equal(o.nativeUrl,"https://www.instagram.com/p/DfDx1X_gK_L/");
+  assert.equal(o.metricsUpdatedAt,null);
+  assert.equal(o.measurementAgeSeconds,null);
+  assert.equal(o.metrics.views,null);
+  assert.deepEqual(o.flags,["PRE_SENT_EMPTY_METRICS_TIMESTAMP"]);
+  assert.equal(next([o]).reason,"INSUFFICIENT_MEASURED_POSTS");
+  assert.deepEqual(next([o]).evidence,[]);
+  const h=handoff(o,{...scope,channelId},"2026-10-29T02:00:00.000Z");
+  assert.equal(h.metrics.views,null);
+  assert.ok(h.unknowns.includes("PRE_SENT_METRIC_TIMESTAMP_NOT_A_MEASUREMENT"));
+  assert.ok(h.unknowns.includes("MEASUREMENT_UNAVAILABLE"));
+  assert.equal(h.provenance.completeness,"unverified");
+});
+
+test("pre-SENT nonempty metrics stay REVIEW_REQUIRED; empty array is unmeasured",()=>{
+  const stamp="2026-10-21T00:00:00.000Z";
+  const invalid=make({metricsUpdatedAt:stamp,metrics:[{type:"views",unit:"count",value:12}]});
+  assert.equal(invalid.status,"REVIEW_REQUIRED");
+  assert.ok(invalid.flags.includes("METRICS_PRECEDE_SENT"));
+  assert.equal(invalid.metrics.views,null);
+  const empty=make({metricsUpdatedAt:stamp,metrics:[]});
+  assert.equal(empty.status,"SENT_UNMEASURED");
+  assert.equal(empty.metricsUpdatedAt,null);
+  assert.equal(empty.metrics.views,null);
+  const malformed=make({metricsUpdatedAt:"2026-02-30T00:00:00.000Z",metrics:null});
+  assert.equal(malformed.status,"REVIEW_REQUIRED");
+  assert.ok(malformed.flags.includes("INVALID_METRIC_TIMESTAMP"));
+});
