@@ -7,7 +7,7 @@ const target='120251158023300697';
 // Privacy-minimized campaign status shape read from HYPD on 28 Oct 2026.
 const response={
   rows:[
-    {id:target,status:'PAUSED',effective_status:'PAUSED'},
+    {id:target,status:'PAUSED',effective_status:'PAUSED',lifetime_budget:'14000'},
     {id:'120250864977630697',status:'PAUSED',effective_status:'PAUSED'},
     {id:'120250828102660697',status:'PAUSED',effective_status:'PAUSED'},
   ],nextPageToken:null,missingScopes:null,
@@ -16,6 +16,11 @@ const response={
 test('provider-observed 28 Oct paused acquisition campaign is not a verified experiment',()=>{
   const result=assess(account,target,response);
   assert.equal(result.state,'PAUSED_AT_READBACK');
+  assert.equal(result.configuredLifetimeBudgetMinorUnits,14000);
+  assert.equal(result.configuredDailyBudgetMinorUnits,null);
+  assert.equal(result.budgetConfigurationObserved,true);
+  assert.equal(result.budgetConfigurationIsSpendEvidence,false);
+  assert.equal(result.measuredSpendMinorUnits,null);
   assert.equal(result.experimentActionVerified,false);
   assert.equal(result.statusProviderAuthenticationVerified,false);
   assert.equal(result.verifiedProviderOutcome,null);
@@ -24,6 +29,30 @@ test('provider-observed 28 Oct paused acquisition campaign is not a verified exp
   assert.equal(result.causalLift,null);
   assert.equal(result.durableBciLearningVerified,false);
   assert.equal(assess(account,target,structuredClone(response)).snapshotKey,result.snapshotKey);
+});
+
+test('actual RM140 lifetime budget configuration is not spend; budget revisions change immutable evidence identity',()=>{
+  const baseline=assess(account,target,response);
+  const revised=structuredClone(response);
+  revised.rows[0].lifetime_budget='15000';
+  assert.equal(assess(account,target,revised).configuredLifetimeBudgetMinorUnits,15000);
+  assert.notEqual(assess(account,target,revised).snapshotKey,baseline.snapshotKey);
+  const missing=structuredClone(response);
+  delete missing.rows[0].lifetime_budget;
+  assert.equal(assess(account,target,missing).configuredLifetimeBudgetMinorUnits,null);
+  assert.equal(assess(account,target,missing).budgetConfigurationObserved,false);
+  assert.notEqual(assess(account,target,missing).snapshotKey,baseline.snapshotKey);
+  const daily=structuredClone(response);
+  daily.rows[0].daily_budget='3000';
+  assert.equal(assess(account,target,daily).configuredDailyBudgetMinorUnits,3000);
+  assert.notEqual(assess(account,target,daily).snapshotKey,baseline.snapshotKey);
+  for(const invalid of ['-1','140.00','1e4','0900','9007199254740992',{},42]){
+    const malformed=structuredClone(response);
+    malformed.rows[0].lifetime_budget=invalid;
+    assert.throws(()=>assess(account,target,malformed));
+  }
+  assert.equal(baseline.experimentActionVerified,false);
+  assert.equal(baseline.verifiedProviderOutcome,null);
 });
 
 test('active configuration is never promoted to confirmed delivery or sales',()=>{

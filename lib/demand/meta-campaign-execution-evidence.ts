@@ -45,6 +45,24 @@ export function assessDemandCampaignExecutionEvidence(
     if (validatedId === campaignId) target = row;
   }
 
+  // Meta campaign budgets are configuration in minor currency units, NOT
+  // measured spend. Missing is unknown, never zero. Budget revisions must
+  // change evidence identity even when campaign status stays PAUSED.
+  const budgetMinorUnits = (value: unknown): number | null => {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== "string" || !/^(0|[1-9][0-9]*)$/.test(value)) fail();
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed)) fail();
+    return parsed;
+  };
+  const configuredDailyBudgetMinorUnits = target === null
+    ? null : budgetMinorUnits(target.daily_budget);
+  const configuredLifetimeBudgetMinorUnits = target === null
+    ? null : budgetMinorUnits(target.lifetime_budget);
+  const budgetConfigurationObserved =
+    configuredDailyBudgetMinorUnits !== null ||
+    configuredLifetimeBudgetMinorUnits !== null;
+
   // Both configured and effective PAUSED are required for this narrow finding.
   // ACTIVE is not proof of delivery; no insights/HitPay join is supplied here.
   const state = target === null ? "TARGET_NOT_IN_INVENTORY" :
@@ -57,12 +75,17 @@ export function assessDemandCampaignExecutionEvidence(
     state === "TARGET_NOT_IN_INVENTORY" ? "VERIFY_EXACT_CAMPAIGN_INVENTORY" :
     "OBTAIN_AUTHENTICATED_CAMPAIGN_ACTION_AND_INSIGHTS_RECEIPTS";
   const snapshotKey = "demand:campaign-status:sha256:" + createHash("sha256")
-    .update(JSON.stringify(["v1", accountId, campaignId, state,
-      target?.status ?? null, target?.effective_status ?? null]))
+    .update(JSON.stringify(["v2", accountId, campaignId, state,
+      target?.status ?? null, target?.effective_status ?? null,
+      configuredDailyBudgetMinorUnits, configuredLifetimeBudgetMinorUnits]))
     .digest("hex");
 
   return Object.freeze({
     snapshotKey, state, nextBestEvidenceAction,
+    configuredDailyBudgetMinorUnits, configuredLifetimeBudgetMinorUnits,
+    budgetConfigurationObserved,
+    budgetConfigurationIsSpendEvidence: false as const,
+    measuredSpendMinorUnits: null,
     // Status from an external connector is an observation, not a trusted receipt.
     statusProviderAuthenticationVerified: false as const,
     appTenantAuthorizationVerified: false as const,
