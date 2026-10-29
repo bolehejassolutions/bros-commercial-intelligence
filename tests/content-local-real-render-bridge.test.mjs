@@ -7,6 +7,7 @@ import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {planContentJobCandidate} from '../lib/content/instance-plan.mjs';
 import {bindLocalContentRenderToPlan} from '../lib/content/local-render-manifest-gate.mjs';
+import {prepareLocalContentEditorialHandoff} from '../lib/content/local-render-editorial-handoff.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const config={
@@ -58,10 +59,37 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
       assert.equal(bound.images[i].decodedRgbSha256,manifest.images[i].decodedRgbSha256);
       assert.ok(buffers[i].length>10000);
     }
+    const copy={schemaVersion:1,
+      caption:'Tanya dahulu apa yang pelanggan perlukan.\n\nKemudian jelaskan pilihan yang sesuai.',
+      altTexts:['Slide pertama menerangkan soalan pelanggan.',
+        'Slide kedua menerangkan semakan keperluan pelanggan.'],
+      aiDisclosure:'DECLARED_NON_AI',claimEvidenceRefs:[]};
+    const handoff=prepareLocalContentEditorialHandoff(config,brief,manifest,buffers,copy);
+    assert.equal(handoff.status,'LOCAL_MEDIA_EDITORIAL_REVIEW_PENDING');
+    assert.equal(handoff.mediaSetId,bound.mediaSetId);
+    assert.match(handoff.approvalRequestId,/^content-review-[0-9a-f]{64}$/);
+    assert.match(handoff.reviewPacketId,/^content-editorial-[0-9a-f]{64}$/);
+    assert.equal(prepareLocalContentEditorialHandoff(config,brief,manifest,buffers,copy).handoffId,
+      handoff.handoffId);
+    const changedCopy={...copy,caption:'Berikan penjelasan baharu untuk pelanggan.'};
+    assert.notEqual(prepareLocalContentEditorialHandoff(config,brief,manifest,buffers,
+      changedCopy).handoffId,handoff.handoffId);
+    const unsafeCopy={...copy,approvalGranted:true};
+    assert.throws(()=>prepareLocalContentEditorialHandoff(config,brief,manifest,buffers,
+      unsafeCopy),/INVALID_CONTENT_REVIEW_COPY_FIELDS/);
+    for(const key of ['rendererManifestAttested','planAuthenticated',
+      'localGenerationAuthenticated','independentAiGenerationVerified',
+      'visualEditorialQaVerified','claimEvidenceVerified','aiDisclosureVerified',
+      'reviewerAuthenticated','approvalGranted','atomicReservationVerified',
+      'providerCapabilityVerified','providerSentVerified','measurementVerified',
+      'learningVerified','sharedBciAuditVerified','executionAllowed','customerSaasReady'])
+      assert.equal(handoff[key],false,key);
     const replay=bindLocalContentRenderToPlan(config,brief,manifest,buffers);
     assert.equal(bound.mediaSetId,replay.mediaSetId);
     const forged=structuredClone(manifest);
     forged.images[0].decodedRgbSha256='0'.repeat(64);
+    assert.throws(()=>prepareLocalContentEditorialHandoff(config,brief,forged,buffers,copy),
+      /CONTENT_LOCAL_RENDER_BYTES_OR_ORDER_MISMATCH/);
     assert.throws(()=>bindLocalContentRenderToPlan(config,brief,forged,buffers),
       /CONTENT_LOCAL_RENDER_BYTES_OR_ORDER_MISMATCH/);
     const revised={...brief,revisionId:'rev-2'};
