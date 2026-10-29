@@ -5,8 +5,10 @@ on:
     paths:
       - "lib/content/**"
       - "scripts/content_jpeg_pixel_qa.py"
+      - "scripts/content_local_card_renderer.py"
       - "tests/content-*.test.mjs"
       - "tests/content_jpeg_pixel_qa_test.py"
+      - "tests/content_local_card_renderer_test.py"
       - ".github/workflows/content-observation-tests.yml"
   pull_request:
     paths:
@@ -31,3 +33,4 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install "Pillow>=12,<13"
       - run: python -m unittest discover -s tests -p "content_jpeg_pixel_qa_test.py" -v
+      - run: python -m unittest discover -s tests -p "content_local_card_renderer_test.py" -v
