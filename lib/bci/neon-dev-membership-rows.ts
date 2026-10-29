@@ -114,12 +114,12 @@ export function createNeonDevMembershipLookup(transaction: MembershipTransaction
                       AND has_table_privilege(current_user, outside_table.oid,
                         'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
                 )) AS no_external_table_access,
-                (SELECT COUNT(*) = 3 AND bool_and(
+                (SELECT COUNT(*) = 5 AND bool_and(
                     NOT has_table_privilege(current_user, extra.oid,
                       'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN'))
                  FROM pg_class extra JOIN pg_namespace extra_ns ON extra_ns.oid = extra.relnamespace
                  WHERE extra_ns.nspname = 'bci_dev'
-                   AND extra.relname IN ('cases', 'case_evidence', 'proposals')
+                   AND extra.relname IN ('cases', 'case_evidence', 'proposals', 'lineage_nodes', 'lineage_edges')
                    AND extra.relkind IN ('r', 'p')) AS other_bci_tables_denied
          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE n.nspname = 'bci_dev' AND c.relname = 'tenant_memberships' AND c.relkind IN ('r', 'p')`, []);

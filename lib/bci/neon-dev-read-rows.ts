@@ -109,14 +109,18 @@ export function createNeonDevReadRows(transaction: ScopedTransaction) {
                       AND has_table_privilege(current_user, outside_table.oid,
                         'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
                 )) AS no_external_table_access,
-                (SELECT COUNT(*) = 3 AND bool_and(
+                (SELECT COUNT(*) = 5 AND bool_and(
                     extra.relrowsecurity AND extra.relforcerowsecurity AND
-                    has_table_privilege(current_user, extra.oid, 'SELECT') AND
-                    NOT has_table_privilege(current_user, extra.oid,
-                      'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN'))
+                    CASE WHEN extra.relname IN ('lineage_nodes', 'lineage_edges')
+                      THEN NOT has_table_privilege(current_user, extra.oid,
+                        'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
+                      ELSE has_table_privilege(current_user, extra.oid, 'SELECT') AND
+                        NOT has_table_privilege(current_user, extra.oid,
+                          'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
+                    END)
                  FROM pg_class extra JOIN pg_namespace extra_ns ON extra_ns.oid = extra.relnamespace
                  WHERE extra_ns.nspname = 'bci_dev'
-                   AND extra.relname IN ('cases', 'case_evidence', 'proposals')
+                   AND extra.relname IN ('cases', 'case_evidence', 'proposals', 'lineage_nodes', 'lineage_edges')
                    AND extra.relkind IN ('r', 'p')) AS lineage_tables_readonly
          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE n.nspname = 'bci_dev' AND c.relname = 'evidence' AND c.relkind IN ('r', 'p')`,

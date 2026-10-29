@@ -218,3 +218,16 @@ test("membership LOGIN enforces PostgreSQL MAINTAIN privilege separation before 
   assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
   assert.equal(calls.at(-1).sql, "ROLLBACK");
 });
+
+
+test("membership reader fails closed if either private lineage graph table is granted", async () => {
+  const { calls, lookup } = fixture({ posture: { other_bci_tables_denied: false } });
+  await assert.rejects(lookup(USER, "content"), NeonMembershipAccessDenied);
+  const posture = calls.find(c => c.sql?.includes("other_bci_tables_denied"));
+  assert.ok(posture);
+  assert.match(posture.sql, /COUNT\(\*\) = 5/);
+  assert.match(posture.sql, /'lineage_nodes', 'lineage_edges'/);
+  assert.match(posture.sql, /'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN'/);
+  assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
+  assert.equal(calls.at(-1).sql, "ROLLBACK");
+});

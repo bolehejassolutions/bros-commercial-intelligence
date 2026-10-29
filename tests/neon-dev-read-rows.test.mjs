@@ -217,12 +217,14 @@ test("malformed provider metric keys and unbounded JSONB maps fail closed", asyn
 });
 
 
-test("evidence reader requires RLS-forced read-only access to all three shared lineage tables", async () => {
+test("evidence reader permits three core read tables but denies both lineage graph tables", async () => {
   const { calls, read } = mock({ safety: { lineage_tables_readonly: false } });
   await assert.rejects(read(scope), /access denied/i);
   const posture = calls.find(x => x.sql.includes("lineage_tables_readonly"));
   assert.ok(posture, "the real posture SQL must verify lineage tables");
-  assert.match(posture.sql, /COUNT\(\*\) = 3/);
+  assert.match(posture.sql, /COUNT\(\*\) = 5/);
+  assert.match(posture.sql, /'lineage_nodes', 'lineage_edges'/);
+  assert.match(posture.sql, /CASE WHEN extra\.relname IN/);
   assert.match(posture.sql, /extra\.relforcerowsecurity/);
   assert.match(posture.sql, /'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN'/);
   assert.equal(calls.some(x => x.sql.includes("set_config")), false);
