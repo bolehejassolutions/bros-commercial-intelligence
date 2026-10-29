@@ -238,7 +238,9 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           if (rows.rows.length !== ids.length) deny();
           const byId = new Map<string, Record<string, unknown>>();
           for (const row of rows.rows) {
-            if (!obj(row) || !exact(row, fields) || typeof row.id !== "string" || byId.has(row.id)) deny();
+            if (!obj(row)) throw new BciLineageWriteDenied();
+            if (!exact(row, fields) || typeof row.id !== "string" || byId.has(row.id))
+              throw new BciLineageWriteDenied();
             byId.set(row.id, row);
           }
           for (const expected of plan.toInsert) {
@@ -254,8 +256,10 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           const expectedEdges = plan.toInsert.flatMap(node =>
             node.parentIds.map(parent => parent + ":" + node.id)).sort();
           const actualEdges = edges.rows.map(row => {
-            if (!obj(row) || !exact(row, ["parentId", "childId"]) ||
-                typeof row.parentId !== "string" || typeof row.childId !== "string") deny();
+            if (!obj(row)) throw new BciLineageWriteDenied();
+            if (!exact(row, ["parentId", "childId"]) ||
+                typeof row.parentId !== "string" || typeof row.childId !== "string")
+              throw new BciLineageWriteDenied();
             return row.parentId + ":" + row.childId;
           }).sort();
           if (JSON.stringify(actualEdges) !== JSON.stringify(expectedEdges)) deny();
