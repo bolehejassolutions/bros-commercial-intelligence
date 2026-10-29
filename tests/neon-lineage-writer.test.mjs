@@ -52,9 +52,9 @@ function harness(overrides = {}) {
         if (sql.includes("FROM bci_dev.lineage_nodes")) return { rows: params[2].map(id =>
           ({ ...(id === rootId ? evidence : signal),
             recordedAt: (id === rootId ? evidence : signal).recordedAt.replace("Z", ".000Z") })) };
-        if (sql.includes("FROM bci_dev.lineage_edges")) return { rows: params[2].includes(childId)
-          ? [{ parentId: rootId, childId }] : [] };
       }
+      if (sql.includes("FROM bci_dev.lineage_edges") && sql.includes("AND child_id = ANY($3::uuid[])"))
+        return { rows: params[2].includes(childId) ? [{ parentId: rootId, childId }] : [] };
       if (sql.includes("FROM bci_dev.lineage_nodes WHERE")) return { rows: [] };
       if (sql.includes("INSERT INTO bci_dev.lineage_nodes")) return { rows: [{ id: params[0] }] };
       if (sql.includes("INSERT INTO bci_dev.lineage_edges")) return { rows: [{ childId: params[3] }] };
