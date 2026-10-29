@@ -21,6 +21,17 @@ test("candidate identity stable under tag reordering; status and creative change
  assert.notEqual(assess().snapshotId,assess(scope,{...ad,effective_status:"ACTIVE"}).snapshotId);
  assert.notEqual(assess().snapshotId,assess(scope,ad,{...response,rows:[{...creative,url_tags:url_tags.replace("premium05","premium06")}]}).snapshotId);
 });
+test("changing the expected tracking policy changes the evidence ID even when the Meta creative is unchanged",()=>{
+ const baseline=assess();
+ const changedCampaign=assess({...scope,expectedUtmCampaign:"brossell_rm100_ugc_20261009"});
+ const changedContent=assess({...scope,expectedUtmContent:"premium06"});
+ assert.equal(baseline.trackingTemplateReady,true);
+ assert.equal(changedCampaign.trackingTemplateReady,false);
+ assert.equal(changedContent.trackingTemplateReady,false);
+ assert.notEqual(baseline.snapshotId,changedCampaign.snapshotId);
+ assert.notEqual(baseline.snapshotId,changedContent.snapshotId);
+ assert.notEqual(changedCampaign.snapshotId,changedContent.snapshotId);
+});
 test("missing or changed UTM and dynamic tokens are not verified",()=>{
  for(const changed of [url_tags.replace("premium05","premium06"),url_tags.replace("{{ad.id}}","120250875287780697"),url_tags.replace("&utm_medium=paid_social","")]){
   const x=assess(scope,ad,{...response,rows:[{...creative,url_tags:changed}]});

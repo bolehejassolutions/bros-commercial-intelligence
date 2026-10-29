@@ -76,9 +76,10 @@ export function assessDemandMetaCreativeTracking(
     .filter(key => !required.includes(key as typeof required[number])).sort();
   const trackingTemplateReady = missingOrMismatchedTags.length === 0 && extraTags.length === 0;
   const snapshotId = "demand:meta-creative-tracking:sha256:" + createHash("sha256")
-    .update(JSON.stringify(["v1",scope.tenantId.toLowerCase(),scope.accountId,
-      scope.campaignId,scope.adId,ad.adset_id,creative.id,
-      ad.status,ad.effective_status,landing.href,
+    .update(JSON.stringify(["v2",scope.tenantId.toLowerCase(),scope.product,
+      scope.accountId,scope.campaignId,scope.adId,scope.expectedLandingUrl,
+      scope.expectedUtmCampaign,scope.expectedUtmContent,
+      ad.adset_id,creative.id,ad.status,ad.effective_status,landing.href,
       entries.sort(([a],[b]) => a.localeCompare(b))])).digest("hex");
   return Object.freeze({
     snapshotId, status: trackingTemplateReady ? "TEMPLATE_READY_UNATTESTED" as const :
