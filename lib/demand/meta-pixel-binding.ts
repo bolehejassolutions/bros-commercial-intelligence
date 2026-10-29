@@ -50,9 +50,9 @@ export function assessDemandMetaPixelBinding(
       typeof row.id !== "string" || !digits.test(row.id) ||
       inventoryIds.has(row.id) ||
       (row.is_unavailable !== undefined && typeof row.is_unavailable !== "boolean")) invalid();
-    inventoryIds.add(row.id);
+    inventoryIds.add(row.id as string);
     inventoryObservations.push({
-      id: row.id, available: row.is_unavailable === undefined ? null : !row.is_unavailable,
+      id: row.id as string, available: row.is_unavailable === undefined ? null : !row.is_unavailable,
     });
   }
   inventoryObservations.sort((a,b) => a.id.localeCompare(b.id));
