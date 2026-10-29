@@ -63,7 +63,17 @@ jobs:
       - name: Install dependencies (repository has no lockfile)
         run: npm install --no-audit --no-fund
 
+      # Each Node test may fetch pinned worker SHAs into disposable Git repos.
+      # Disable Git's automatic background maintenance in every child Git process:
+      # it can rewrite .git/shallow or object packs during subsequent fetch/cleanup.
+      # Preserve parallel Node test coverage; this does not change application runtime.
       - name: Run integrated Node tests
+        env:
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: gc.auto
+          GIT_CONFIG_VALUE_0: '0'
+          GIT_CONFIG_KEY_1: maintenance.auto
+          GIT_CONFIG_VALUE_1: 'false'
         run: node --experimental-strip-types --test tests/*.test.mjs
 
       - name: Run integrated Neon SDK tests
