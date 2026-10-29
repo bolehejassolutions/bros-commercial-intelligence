@@ -10,10 +10,11 @@ import {bindLocalContentRenderToPlan} from '../lib/content/local-render-manifest
 import {prepareLocalContentEditorialHandoff} from '../lib/content/local-render-editorial-handoff.mjs';
 import {generateKeyPairSync,sign} from 'node:crypto';
 import {contentSignedReviewSigningBytes,verifyContentSignedEditorialDecision} from '../lib/content/signed-editorial-decision.mjs';
+import {prepareContentReviewDispatchPreflight} from '../lib/content/review-dispatch-binding.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const config={
-  schemaVersion:1,product:'content',tenantId:'tenant-internal',
+  schemaVersion:1,product:'content',tenantId:'22222222-2222-4222-8222-222222222222',
   instanceId:'content-pilot',brand:{displayName:'BROS SELL',voice:'Clear educational Malay',
     locale:'ms-MY',claimCandidates:[],blockedClaims:['Guaranteed sales']},
   audience:{segment:'Malaysian sellers',needs:['Understand customer requirements']},
@@ -32,7 +33,7 @@ const brief={briefId:'brief-local-qa',revisionId:'rev-1',
 // before Node tests and must execute this provider-independent real-byte bridge.
 const hasPillow=spawnSync('python3',['-c','from PIL import Image'],{encoding:'utf8'}).status===0;
 test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> independent Node QA; review-only',
-  {skip:hasPillow?false:'Pillow unavailable; real bridge runs in dedicated CONTENT CI'},()=>{
+  {skip:hasPillow?false:'Pillow unavailable; real bridge runs in dedicated CONTENT CI'},async()=>{
   const dir=mkdtempSync(join(tmpdir(),'content-real-render-'));
   try {
     const plan=planContentJobCandidate(config,brief);
@@ -82,6 +83,46 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
       signature:sign(null,contentSignedReviewSigningBytes(payload),privateKey).toString('base64url')};
     const signed=verifyContentSignedEditorialDecision(handoff,receipt,
       new Map([['test-only',publicKey]]),Date.parse('2026-10-29T07:00:00.000Z'));
+    // Real Pillow media -> freshly recomputed handoff -> test-signed Neon-shaped
+    // reviewer/membership -> exact Buffer dispatch candidate. No actual provider
+    // authentication, human approval, reservation, publish or SENT occurs.
+    const reviewer='11111111-1111-4111-8111-111111111111';
+    const scopedPayload={...payload,reviewerSubject:reviewer,reviewerProvider:'neon-auth',
+      nonce:'d'.repeat(32)};
+    const scopedReceipt={schemaVersion:1,keyId:'test-only',payload:scopedPayload,
+      signature:sign(null,contentSignedReviewSigningBytes(scopedPayload),privateKey).toString('base64url')};
+    const authDeps={authenticateReviewer:async()=>({userId:reviewer,authenticated:true}),
+      membershipsFor:async(id,product)=>[{
+        principalId:id,tenantId:config.tenantId,product,active:true}]};
+    const dispatchOptions={providerOrganizationId:'5c8ff5094c54ee487265a5c6'};
+    const bindingArgs=[config,brief,manifest,buffers,copy,dispatchOptions,
+      scopedReceipt,new Map([['test-only',publicKey]]),authDeps,
+      Date.parse('2026-10-29T07:00:00.000Z')];
+    const candidate=await prepareContentReviewDispatchPreflight(...bindingArgs);
+    assert.equal(candidate.status,'SIGNED_REVIEW_DISPATCH_SCOPE_BOUND_PREFLIGHT_ONLY');
+    assert.equal(candidate.approvalRequestId,handoff.approvalRequestId);
+    assert.equal(candidate.mediaSetId,bound.mediaSetId);
+    assert.match(candidate.dispatchIntentId,/^content-buffer-dispatch-[a-f0-9]{64}$/);
+    for(const key of ['providerOrganizationAuthenticated','reviewerAuthenticatedByThisModule',
+      'visualEditorialQaVerified','approvalGranted','durableApprovalRecorded',
+      'atomicReservationVerified','providerAccountCapabilityVerified',
+      'providerUploadVerified','providerSentVerified','measurementVerified',
+      'learningVerified','sharedBciAuditVerified','executionAllowed','customerSaasReady'])
+      assert.equal(candidate[key],false,key);
+    assert.equal((await prepareContentReviewDispatchPreflight(...bindingArgs)).dispatchIntentId,
+      candidate.dispatchIntentId);
+    const changedCaption={...copy,caption:copy.caption+' Lagi.'};
+    await assert.rejects(prepareContentReviewDispatchPreflight(config,brief,manifest,buffers,
+      changedCaption,dispatchOptions,scopedReceipt,new Map([['test-only',publicKey]]),
+      authDeps,Date.parse('2026-10-29T07:00:00.000Z')),
+      /CONTENT_REVIEW_DISPATCH_BINDING_DENIED/);
+    const crossTenant={...authDeps,membershipsFor:async(id,product)=>[{
+      principalId:id,tenantId:'33333333-3333-4333-8333-333333333333',
+      product,active:true}]};
+    await assert.rejects(prepareContentReviewDispatchPreflight(config,brief,manifest,buffers,
+      copy,dispatchOptions,scopedReceipt,new Map([['test-only',publicKey]]),
+      crossTenant,Date.parse('2026-10-29T07:00:00.000Z')),
+      /CONTENT_REVIEW_DISPATCH_BINDING_DENIED/);
     assert.equal(signed.signatureVerified,true);
     assert.equal(signed.approvalGranted,false);
     assert.equal(signed.executionAllowed,false);
