@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync, mkdirSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
@@ -25,7 +25,11 @@ const brief={briefId:'brief-local-qa',revisionId:'rev-1',
   hypothesis:'Clear questions may improve understanding',
   hook:'Start with a question',measurementQuestion:'Are saves recorded?'};
 
-test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> independent Node QA; review-only',()=>{
+// Generic repository CI has no Pillow dependency. Dedicated CONTENT CI installs Pillow
+// before Node tests and must execute this provider-independent real-byte bridge.
+const hasPillow=spawnSync('python3',['-c','from PIL import Image'],{encoding:'utf8'}).status===0;
+test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> independent Node QA; review-only',
+  {skip:hasPillow?false:'Pillow unavailable; real bridge runs in dedicated CONTENT CI'},()=>{
   const dir=mkdtempSync(join(tmpdir(),'content-real-render-'));
   try {
     const plan=planContentJobCandidate(config,brief);
