@@ -65,7 +65,10 @@ export function reconcileDemandMetaAdReadback(
         row.date_start !== scope.since || row.date_stop !== scope.until ||
         typeof row.attribution_setting !== "string" ||
         !/^[a-z0-9_]{1,64}$/.test(row.attribution_setting)) invalid();
-    ids.add(row.ad_id);
+    const adId = row.ad_id as string;
+    const adsetId = row.adset_id as string;
+    const attributionSetting = row.attribution_setting as string;
+    ids.add(adId);
     const s = minor(row.spend), i = integer(row.impressions), c = integer(row.inline_link_clicks);
     spendMinor += s; impressions += i; inlineLinkClicks += c;
     if (![spendMinor, impressions, inlineLinkClicks].every(Number.isSafeInteger)) invalid();
@@ -75,17 +78,18 @@ export function reconcileDemandMetaAdReadback(
       if (!a || typeof a.action_type !== "string" ||
           !/^[a-z0-9_.]{1,100}$/.test(a.action_type)) invalid();
       const value = integer(a.value);
-      if (purchaseLabels.has(a.action_type)) {
-        const previous = aliases.get(a.action_type);
+      const actionType = a.action_type as string;
+      if (purchaseLabels.has(actionType)) {
+        const previous = aliases.get(actionType);
         if (previous !== undefined && previous !== value) invalid();
-        aliases.set(a.action_type, value);
+        aliases.set(actionType, value);
       }
     }
     const values = [...aliases.values()];
     const mismatch = values.some(v => v !== values[0]);
-    adObservations.push({adId: row.ad_id, adsetId: row.adset_id,
+    adObservations.push({adId, adsetId,
       spendMinor: s, impressions: i, inlineLinkClicks: c,
-      attributionSetting: row.attribution_setting,
+      attributionSetting,
       metaPurchaseSignal: mismatch || values.length === 0 ? null : values[0],
       purchaseAliasMismatch: mismatch});
   }
