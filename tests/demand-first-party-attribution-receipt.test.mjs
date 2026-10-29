@@ -40,6 +40,19 @@ test('wrong join, out-of-order timestamps and stale chain reject without leaking
   ];
   for(const [a,b,c] of attempts){const x=assess(scope,a,b,c);assert.equal(x.status,'REJECTED_CORRELATION');assert.equal(x.candidateKey,null);}
 });
+test('candidate identity is stable across equivalent valid UTC fractional timestamp spellings',()=>{
+  const baseline=assess(scope,landing,checkout,order).candidateKey;
+  const zeroMs=assess(scope,{...landing,occurredAt:'2026-10-29T15:00:00.000Z'},
+    {...checkout,occurredAt:'2026-10-29T15:05:00.0Z'},
+    {...order,occurredAt:'2026-10-29T15:06:00.00Z'}).candidateKey;
+  assert.equal(zeroMs,baseline);
+  const shortMs=assess(scope,{...landing,occurredAt:'2026-10-29T15:00:00.1Z'},checkout,order).candidateKey;
+  const longMs=assess(scope,{...landing,occurredAt:'2026-10-29T15:00:00.100Z'},checkout,order).candidateKey;
+  const distinctMs=assess(scope,{...landing,occurredAt:'2026-10-29T15:00:00.101Z'},checkout,order).candidateKey;
+  assert.equal(shortMs,longMs);
+  assert.notEqual(shortMs,distinctMs);
+  assert.notEqual(shortMs,baseline);
+});
 test('candidate changes when receipt evidence changes but replay remains stable',()=>{
   const a=assess(scope,landing,checkout,order).candidateKey;
   const b=assess(scope,{...landing,receiptId:'landing_20261030_0002'},checkout,order).candidateKey;

@@ -78,6 +78,11 @@ const validUtc = (value: unknown): value is string => {
   return Number.isFinite(parsed) &&
     new Date(parsed).toISOString().slice(0, 19) === value.slice(0, 19);
 };
+// Preserve v1 candidate IDs for canonical second-precision timestamps while
+// treating equivalent UTC fractional spellings as the same event instant.
+// Untrusted receipts remain unverified regardless of candidate identity.
+const canonicalUtcForCandidate = (value: string): string =>
+  new Date(value).toISOString().replace(/\.000Z$/, "Z");
 const LANDING_KEYS = ["receiptId", "occurredAt", "correlationDigest", "consent", "campaign", "source", "medium"];
 const CHECKOUT_KEYS = ["receiptId", "occurredAt", "correlationDigest", "merchantOrderDigest"];
 const ORDER_KEYS = ["receiptId", "occurredAt", "merchantOrderDigest"];
@@ -137,9 +142,9 @@ export function assessDemandFirstPartyAttributionReceipt(
     ? "demand:first-party-receipt-candidate:sha256:" + createHash("sha256")
       .update(JSON.stringify(["v1", scope.tenantId.toLowerCase(), scope.product,
         scope.pilotProduct, scope.campaign, scope.source, scope.medium,
-        landing.receiptId, landing.occurredAt, landing.correlationDigest,
-        checkout.receiptId, checkout.occurredAt, checkout.merchantOrderDigest,
-        merchantOrder.receiptId, merchantOrder.occurredAt]))
+        landing.receiptId, canonicalUtcForCandidate(landing.occurredAt), landing.correlationDigest,
+        checkout.receiptId, canonicalUtcForCandidate(checkout.occurredAt), checkout.merchantOrderDigest,
+        merchantOrder.receiptId, canonicalUtcForCandidate(merchantOrder.occurredAt)]))
       .digest("hex") : null;
   return Object.freeze({
     status, candidateKey, nextEvidenceAction, receiptCount: receipts.length,
