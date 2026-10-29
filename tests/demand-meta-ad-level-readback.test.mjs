@@ -1,0 +1,61 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { reconcileDemandMetaAdReadback } from "../lib/demand/meta-ad-level-readback.ts";
+const scope = {tenantId:"11111111-1111-4111-8111-111111111111",product:"demand",accountId:"act_1997776120879476",campaignId:"120250864977630697",since:"2026-10-09",until:"2026-10-09",currency:"MYR"};
+const query = {accountId:scope.accountId,objectId:scope.campaignId,level:"ad",since:scope.since,until:scope.until};
+const row = (ad_id,spend,impressions,inline_link_clicks,actions) => ({ad_id,adset_id:"120250864977650697",campaign_id:scope.campaignId,date_start:scope.since,date_stop:scope.until,spend,impressions,inline_link_clicks,attribution_setting:"1d_view_7d_click_1d_ev",...(actions===undefined?{}:{actions})});
+const purchase = [{action_type:"purchase",value:1},{action_type:"omni_purchase",value:1},{action_type:"offsite_conversion.fb_pixel_purchase",value:1}];
+const response = {rows:[row("100",4.32,"117","1",purchase),row("200",120.61,"3077","62")],nextPageToken:null,missingScopes:null,droppedFields:null};
+const campaign = {spendMinor:12493,impressions:3194,inlineLinkClicks:63,metaAttributedPurchases:1};
+const project=(s=scope,q=query,r=response,c=campaign)=>reconcileDemandMetaAdReadback(s,q,r,c);
+test("provider-shaped ad totals reconcile while purchase is an unverified ad-level signal",()=>{
+ const x=project();assert.equal(x.adCount,2);assert.equal(x.adTotalsMatchCampaign,true);
+ assert.equal(x.adSpendMinor,12493);assert.equal(x.adImpressions,3194);assert.equal(x.adInlineLinkClicks,63);
+ assert.deepEqual(x.positiveSignalAds,[{adId:"100",reportedPurchaseAliases:1,attributionSetting:"1d_view_7d_click_1d_ev"}]);
+ assert.equal(x.incompletePurchaseActionCoverage,true);assert.equal(x.verifiedCpaMinor,null);
+ assert.equal(x.providerAuthenticationVerified,false);assert.equal(x.executionAllowed,false);
+ assert.equal(x.attributionWindowIsNotClickPath,true);
+});
+test("stable candidate ID across row order; changes when provider revisions occur",()=>{
+ assert.equal(project().candidateId,project(scope,query,{...response,rows:[...response.rows].reverse()}).candidateId);
+ assert.notEqual(project().candidateId,project(scope,query,{...response,rows:[{...response.rows[0],spend:4.33},response.rows[1]]}).candidateId);
+});
+test("incomplete pages, dropped fields, foreign parent, duplicate ad and missing identity fail closed",()=>{
+ for(const patch of [{nextPageToken:"next"},{droppedFields:["spend"]},{missingScopes:["ads_read"]},{rows:[response.rows[0],response.rows[0]]},{rows:[{...response.rows[0],campaign_id:"999"}]},{rows:[{...response.rows[0],adset_id:null}]},{rows:[]}])
+  assert.throws(()=>project(scope,query,{...response,...patch}),/Invalid BROS DEMAND/);
+});
+test("invalid numbers and conflicting aliases fail closed or remain unverified",()=>{
+ for(const bad of [-1,"1.001","Infinity",null]) assert.throws(()=>project(scope,query,{...response,rows:[{...response.rows[0],spend:bad},response.rows[1]]}),/Invalid BROS DEMAND/);
+ const mismatch=project(scope,query,{...response,rows:[{...response.rows[0],actions:[{action_type:"purchase",value:1},{action_type:"omni_purchase",value:2}]},response.rows[1]]});
+ assert.equal(mismatch.positiveSignalAds.length,0);assert.equal(mismatch.incompletePurchaseActionCoverage,true);
+});
+test("mismatched campaign totals cannot be declared reconciled or converted into CPA",()=>{
+ const x=project(scope,query,response,{...campaign,spendMinor:12494});assert.equal(x.adTotalsMatchCampaign,false);
+ assert.equal(x.verifiedOrders,null);assert.equal(x.verifiedCacMinor,null);assert.equal(x.causalLift,null);
+});
+test("14 actual provider-shaped 9 Oct ad rows reconcile 124.93/3194/63 with only one positive attributed ad",()=>{
+ const observed=[
+ ["120250864977640697",15.95,446,22],
+ ["120250875287780697",4.32,117,1],
+ ["120250875287790697",26.23,470,8],
+ ["120250875287800697",3.62,163,0],
+ ["120250875287820697",0.84,79,0],
+ ["120250875287830697",1.84,94,1],
+ ["120250875287840697",6.82,408,9],
+ ["120250875287850697",12.99,268,5],
+ ["120250875287860697",4.38,83,3],
+ ["120250875287870697",25.44,532,9],
+ ["120250875287880697",2.95,41,0],
+ ["120250875287890697",13.65,257,2],
+ ["120250875287900697",3.45,119,1],
+ ["120250875287910697",2.45,117,2],
+ ];
+ const rows=observed.map(([id,spend,impressions,clicks])=>row(id,spend,String(impressions),String(clicks),id==="120250875287780697"?purchase:undefined));
+ const result=project(scope,query,{...response,rows});
+ assert.equal(result.adCount,14);assert.equal(result.adTotalsMatchCampaign,true);
+ assert.equal(result.adSpendMinor,12493);assert.equal(result.adImpressions,3194);assert.equal(result.adInlineLinkClicks,63);
+ assert.equal(result.positiveSignalAds.length,1);
+ assert.equal(result.positiveSignalAds[0].adId,"120250875287780697");
+ assert.equal(result.positiveSignalAds[0].reportedPurchaseAliases,1);
+ assert.equal(result.verifiedOrders,null);
+});
