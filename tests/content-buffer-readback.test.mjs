@@ -81,13 +81,20 @@ test('observed TikTok metrics do not override native AI-disclosure review hold',
   assert.equal(r.executionAllowed,false);
 });
 
-test('pre-SENT metrics timestamp cannot become zero-view measurement',()=>{
-  const r=summarizeBufferReadback({post:{
-    ...ig,metricsUpdatedAt:'2026-10-28T04:49:16.215Z'
-  },scope:igScope});
-  assert.equal(r.status,'REVIEW_REQUIRED');
-  assert.ok(r.flags.includes('METRICS_PRECEDE_SENT'));
+test('pre-SENT all-zero metrics remain unknown; nonzero pre-SENT values require review',()=>{
+  const preSent={...ig,metricsUpdatedAt:'2026-10-28T04:49:16.215Z'};
+  const r=summarizeBufferReadback({post:preSent,scope:igScope});
+  assert.equal(r.status,'SENT_UNMEASURED');
+  assert.ok(r.flags.includes('PRE_SENT_ALL_ZERO_METRICS_TIMESTAMP'));
   assert.equal(r.metrics.views,null);
+  assert.equal(r.metrics.reach,null);
+  assert.equal(r.learningVerified,false);
+  const nonzero=summarizeBufferReadback({post:{...preSent,metrics:[
+    ...ig.metrics,{type:'shares',value:1,unit:'count'}
+  ]},scope:igScope});
+  assert.equal(nonzero.status,'REVIEW_REQUIRED');
+  assert.ok(nonzero.flags.includes('METRICS_PRECEDE_SENT'));
+  assert.equal(nonzero.metrics.views,null);
 });
 
 test('same-channel historical 6 views and new zero at unequal post ages are noncomparable',()=>{
