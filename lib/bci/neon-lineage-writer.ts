@@ -189,7 +189,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
         // spelling. Canonicalize only after rejecting accessors/unknown fields,
         // otherwise an exact idempotent replay could falsely conflict.
         const fields = ["id", "tenantId", "product", "stage", "sourceSystem",
-          "sourceRecordKey", "recordedAt", "parentIds", "verification"];
+          "sourceRecordKey", "recordedAt", "parentIds", "verification"] as const;
         const canonical = request.records.map(record => {
           if (!exact(record, fields) || typeof record.recordedAt !== "string" ||
               !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(record.recordedAt)) deny();
@@ -238,7 +238,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           if (rows.rows.length !== ids.length) deny();
           const byId = new Map<string, Record<string, unknown>>();
           for (const row of rows.rows) {
-            if (!exact(row, fields) || typeof row.id !== "string" || byId.has(row.id)) deny();
+            if (!obj(row) || !exact(row, fields) || typeof row.id !== "string" || byId.has(row.id)) deny();
             byId.set(row.id, row);
           }
           for (const expected of plan.toInsert) {
@@ -254,7 +254,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           const expectedEdges = plan.toInsert.flatMap(node =>
             node.parentIds.map(parent => parent + ":" + node.id)).sort();
           const actualEdges = edges.rows.map(row => {
-            if (!exact(row, ["parentId", "childId"]) ||
+            if (!obj(row) || !exact(row, ["parentId", "childId"]) ||
                 typeof row.parentId !== "string" || typeof row.childId !== "string") deny();
             return row.parentId + ":" + row.childId;
           }).sort();
