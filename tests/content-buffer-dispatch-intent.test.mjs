@@ -99,3 +99,40 @@ test('caption control characters remain rejected, multiline caption is preserved
     assert.throws(()=>run(config(),brief(),images(),x),/INVALID_CONTENT_CAPTION/);
   }
 });
+
+// CONTENT_DISPATCH_EDITORIAL_GATE_PARITY_20261030: offline synthetic bytes;
+// a dispatch candidate must never bypass a human-review packet's copy holds.
+test('dispatch intent propagates editorial AI alt-text and blocked-claim holds',()=>{
+  const alt=copy();alt.aiDisclosure='DECLARED_NON_AI';
+  alt.caption='Lakaran manual untuk pembelajaran.';
+  alt.altTexts[0]='Ilustrasi AI menerangkan soalan pelanggan.';
+  const ai=run(config(),brief(),images(),alt);
+  assert.equal(ai.status,'CAPABILITY_REVIEW_REQUIRED');
+  assert.ok(ai.reviewFlags.includes('AI_PROVENANCE_ALT_TEXT_CONTRADICTION'));
+  assert.equal(ai.executionAllowed,false);
+  const blocked=config();blocked.brand.blockedClaims=['jamin untung'];
+  const bad=copy();bad.caption+=' Jamin untung.';
+  const held=run(blocked,brief(),images(),bad);
+  assert.equal(held.status,'CAPABILITY_REVIEW_REQUIRED');
+  assert.ok(held.reviewFlags.includes('BLOCKED_CLAIM_TEXT_MATCH'));
+  const duplicate=copy();duplicate.altTexts[1]=duplicate.altTexts[0];
+  const dup=run(config(),brief(),images(),duplicate);
+  assert.ok(dup.reviewFlags.includes('DUPLICATE_ALT_TEXT_REVIEW'));
+  assert.equal(dup.executionAllowed,false);
+});
+
+test('dispatch intent propagates unverified claim-evidence holds and preserves identity',()=>{
+  const c=config();c.brand.claimCandidates=['jualan RM80,000'];
+  const p=copy();p.caption+=' Contoh jualan RM80,000.';
+  const missing=run(c,brief(),images(),p);
+  assert.equal(missing.status,'CAPABILITY_REVIEW_REQUIRED');
+  assert.ok(missing.reviewFlags.includes('CLAIM_EVIDENCE_REFERENCE_MISSING'));
+  const cited={...p,claimEvidenceRefs:['claim-source-1']};
+  const unverified=run(c,brief(),images(),cited);
+  assert.equal(unverified.status,'CAPABILITY_REVIEW_REQUIRED');
+  assert.ok(unverified.reviewFlags.includes('CLAIM_EVIDENCE_REFERENCES_UNVERIFIED'));
+  assert.notEqual(unverified.dispatchIntentId,missing.dispatchIntentId);
+  assert.equal(unverified.authenticatedApprovalVerified,false);
+  assert.equal(unverified.atomicReservationVerified,false);
+  assert.equal(unverified.providerSentVerified,false);
+});
