@@ -41,22 +41,24 @@ export function assessDemandMetaUtmCohort(
     if (!row || typeof row !== "object" || Array.isArray(row) ||
         typeof row.id !== "string" || !digits.test(row.id) || ids.has(row.id) ||
         !row.creative || typeof row.creative !== "object" || Array.isArray(row.creative)) fail();
-    ids.add(row.id);
+    const adId = row.id as string;
+    ids.add(adId);
     const creative = row.creative as Record<string, unknown>;
     if (typeof creative.id !== "string" || !digits.test(creative.id) ||
         typeof creative.url_tags !== "string" || creative.url_tags.length > 2048) fail();
-    const entries = [...new URLSearchParams(creative.url_tags).entries()];
+    const creativeId = creative.id as string;
+    const entries = [...new URLSearchParams(creative.url_tags as string).entries()];
     if (entries.length < 2 || entries.length > 24 ||
         entries.some(([k,v]) => !/^[a-z][a-z0-9_]{0,63}$/.test(k) || v.length > 250) ||
         new Set(entries.map(([k]) => k)).size !== entries.length) fail();
     const tags = new Map(entries);
-    const label = tags.get("utm_content");
-    const campaign = tags.get("utm_campaign");
+    const label = tags.get("utm_content") ?? fail();
+    const campaign = tags.get("utm_campaign") ?? fail();
     if (!label || !labelToken.test(label) || !campaign || !labelToken.test(campaign)) fail();
     campaigns.add(campaign);
     if (tags.get("ad_id") === "{{ad.id}}") macroCount++;
-    byLabel.set(label, [...(byLabel.get(label) ?? []), row.id]);
-    signatures.push([row.id, creative.id, label, campaign, tags.get("ad_id") ?? ""]);
+    byLabel.set(label, [...(byLabel.get(label) ?? []), adId]);
+    signatures.push([adId, creativeId, label, campaign, tags.get("ad_id") ?? ""]);
   }
   const collisions = [...byLabel.entries()]
     .filter(([, adIds]) => adIds.length > 1)
