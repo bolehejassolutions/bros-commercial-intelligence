@@ -42,6 +42,25 @@ test('Missing caption disclosure and unknown AI provenance remain explicit revie
   const y=base();y.aiDisclosure='UNKNOWN';
   assert.deepEqual(inspect(y).flags,['AI_PROVENANCE_UNRESOLVED']);
 });
+test('non-AI provenance contradicting explicit AI illustration caption is held on every channel',()=>{
+  for(const channelService of ['instagram','facebook','tiktok']){
+    const x=base();x.channelService=channelService;
+    x.aiDisclosure='DECLARED_NON_AI';
+    const r=inspect(x);
+    assert.equal(r.status,'CAPABILITY_REVIEW_REQUIRED');
+    assert.equal(r.captionDeclaresAi,true);
+    assert.deepEqual(r.flags,['AI_PROVENANCE_CAPTION_CONTRADICTION']);
+    assert.equal(r.executionAllowed,false);
+    assert.equal(r.authenticatedApprovalVerified,false);
+    assert.equal(r.providerSentVerified,false);
+    const safe={...x,caption:'Contoh lakaran manual untuk pembelajaran.'};
+    const accepted=inspect(safe);
+    assert.equal(accepted.status,'SCHEMA_PREFLIGHT_ONLY');
+    assert.equal(accepted.captionDeclaresAi,false);
+    assert.equal(accepted.executionAllowed,false);
+    assert.notEqual(accepted.capabilityPreflightId,r.capabilityPreflightId);
+  }
+});
 test('Revision, media type and disclosure change deterministic identity without execution',()=>{
   const a=inspect(base()),b=base();b.approvalRequestId='content-review-2';
   assert.notEqual(inspect(b).capabilityPreflightId,a.capabilityPreflightId);
