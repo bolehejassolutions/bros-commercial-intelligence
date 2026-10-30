@@ -61,9 +61,9 @@ export function createDemandDirectMetaReader(
   config: ServerConfig, deps: Dependencies,
 ) {
   if (!config || typeof config !== "object" || Array.isArray(config) ||
-      !/^act_\d+$/.test(config.accountId) ||
-      !/^\d+$/.test(config.campaignId) ||
-      !/^v[1-9]\d?\.\d+$/.test(config.apiVersion) ||
+      typeof config.accountId !== "string" || !/^act_\d+$/.test(config.accountId) ||
+      typeof config.campaignId !== "string" || !/^\d+$/.test(config.campaignId) ||
+      typeof config.apiVersion !== "string" || !/^v[1-9]\d?\.\d+$/.test(config.apiVersion) ||
       !deps || typeof deps.authenticate !== "function" ||
       typeof deps.membershipsFor !== "function" ||
       typeof deps.serverTokenFor !== "function" ||
@@ -125,8 +125,10 @@ export function createDemandDirectMetaReader(
         status: result.status,
         source: "DIRECT_META_GRAPH_API" as const,
         observation: result.observation,
-        principalVerifiedByServerDependency: true as const,
-        membershipCheckedBeforeAndAfterRead: true as const,
+        // These only indicate checks executed using injected server deps.
+        // Their independent authentication/provenance is not attested here.
+        admissionChecksApplied: true as const,
+        membershipRecheckedAfterRead: true as const,
         // Caller must still prove trusted deps, secret scope and BCI receipt.
         authenticatedProviderReceiptRecorded: false as const,
         durableBciEvidenceRecorded: false as const,
