@@ -13,6 +13,9 @@ export type ContentReservationArgs = Readonly<{
   dispatchIntentId: string; approvalId: string; bindingSha256: string;
 }>;
 type Reservation = Readonly<{ status: "acquired" | "already_reserved"; reservationId: string | null }>;
+/** Recheck is NOT an idempotency lease, provider dispatch authority, or SENT. */
+type PreDispatch = Readonly<{ status: "pre_dispatch_rechecked"; reservationId: null;
+  providerSent: false; providerAttested: false }>;
 type Client = Readonly<{ query: (sql: string, params?: Value[]) => Promise<Result>;
   release: (destroy?: boolean) => void }>;
 type Pool = Readonly<{ connect: () => Promise<Client> }>;
@@ -58,9 +61,14 @@ export function createPgContentReservationTransaction(pool: Pool): ContentReserv
  * transaction. No FOR UPDATE/SHARE (would require excess UPDATE grants).
  * A revocation committed after reservation MUST be rechecked before dispatch.
  */
-export function createPgContentDispatchAtomicReservation(transaction: ContentReservationTransaction) {
+export function createPgContentDispatchAtomicReservation(transaction: ContentReservationTransaction):
+  (args: ContentReservationArgs) => Promise<Reservation>;
+export function createPgContentDispatchAtomicReservation(transaction: ContentReservationTransaction,
+  mode: "predispatch_recheck"): (args: ContentReservationArgs) => Promise<PreDispatch>;
+export function createPgContentDispatchAtomicReservation(transaction: ContentReservationTransaction,
+  mode: "reserve" | "predispatch_recheck" = "reserve") {
   if (typeof transaction !== "function") deny();
-  return async (args: ContentReservationArgs): Promise<Reservation> => {
+  return async (args: ContentReservationArgs): Promise<Reservation | PreDispatch> => {
     try {
       const keys = ["tenantId","product","principalId","dispatchIntentId","approvalId","bindingSha256"];
       if (!obj(args) || Reflect.ownKeys(args).length !== keys.length ||
@@ -186,6 +194,9 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
         if (inserted.rows.length === 1 && obj(inserted.rows[0]) &&
             typeof inserted.rows[0].reservationId === "string" &&
             UUID.test(inserted.rows[0].reservationId)) {
+          // A pre-dispatch check MUST NOT create a new reservation. Throwing
+          // inside the transaction rolls back even if the INSERT succeeded.
+          if (mode === "predispatch_recheck") deny();
           return Object.freeze({status:"acquired" as const,reservationId:inserted.rows[0].reservationId});
         }
         // A conflicting intent is only disclosed to the SAME still-authorized
@@ -216,6 +227,15 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
           [args.tenantId,args.dispatchIntentId,args.principalId,args.approvalId,args.bindingSha256]);
         if (existing.rows.length === 1 && obj(existing.rows[0]) &&
             existing.rows[0].existingCount === 1) {
+          // The 0014 BEFORE INSERT trigger rechecks reviewer/requester and
+          // approval at the exact conflict attempt, even for DO NOTHING.
+          // This does NOT prevent revocation after COMMIT or duplicate provider
+          // dispatch. The caller still needs a single-use provider idempotency
+          // key, final authorization immediately before the API write, and
+          // outcome reconciliation; no route/provider call is enabled here.
+          if (mode === "predispatch_recheck") return Object.freeze({
+            status:"pre_dispatch_rechecked" as const,reservationId:null,
+            providerSent:false as const,providerAttested:false as const });
           return Object.freeze({status:"already_reserved" as const,reservationId:null});
         }
         return deny();

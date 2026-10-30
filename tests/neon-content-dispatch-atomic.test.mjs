@@ -16,14 +16,18 @@ const posture={databaseName:"bros_intelligence_dev",forcedRls:true,noSchemaCreat
   noRevocationWrites:true,noMutation:true,noOtherBci:true,
   noDefinerExec:true,noOtherSchemaCreate:true,noSequenceAccess:true,noExternalTables:true};
 const denied=/BCI private content reservation denied/;
-function harness({r=role,p=posture,rows=[{reservationId}],existing=0,failAt=0}={}) {
+function harness({r=role,p=posture,rows=[{reservationId}],existing=0,failAt=0,
+  mode="reserve"}={}) {
   const calls=[];let i=0;
-  const reserve=createPgContentDispatchAtomicReservation(async fn=>fn(async(sql,params)=>{
+  const tx=async fn=>fn(async(sql,params)=>{
     calls.push({sql,params});i++;if(i===failAt)throw Error("driver secret redacted");
     if(i===1)return {rows:[r]};if(i===2)return {rows:[p]};if(i===3)return {rows:[{}]};
     if(i===4)return {rows};if(i===5)return {rows:[{existingCount:existing}]};
     throw Error("unexpected SQL");
-  }));
+  });
+  const reserve=mode==="predispatch_recheck"
+    ?createPgContentDispatchAtomicReservation(tx,"predispatch_recheck")
+    :createPgContentDispatchAtomicReservation(tx);
   return {reserve,calls};
 }
 test("atomic SQL binds approval, membership, revocation and unique intent; no provider SENT",async()=>{
@@ -95,4 +99,26 @@ test("SERIALIZABLE wrapper commits and destroys failed sessions",async()=>{
   assert.equal(statements.at(-1),"COMMIT");assert.deepEqual(released,[false]);
   await assert.rejects(tx(async()=>{throw Error("secret from DB");}),denied);
   assert.equal(statements.at(-1),"ROLLBACK");assert.deepEqual(released,[false,true]);
+});
+
+test("pre-dispatch rechecks an EXISTING exact reservation via 0014 trigger and returns no publish permit",async()=>{
+  const h=harness({mode:"predispatch_recheck",rows:[],existing:1});
+  assert.deepEqual(await h.reserve(args),{status:"pre_dispatch_rechecked",
+    reservationId:null,providerSent:false,providerAttested:false});
+  assert.equal(h.calls.length,5);
+  assert.match(h.calls[3].sql,/ON CONFLICT \(tenant_id,product,dispatch_intent_id\) DO NOTHING/);
+  assert.match(h.calls[4].sql,/r.principal_id=\$3::uuid/);
+});
+test("pre-dispatch NEVER creates a missing reservation or permits stale/foreign/revoked claims",async()=>{
+  for(const opts of [
+    {rows:[{reservationId}],existing:0}, // would create: reject and transaction must rollback
+    {rows:[],existing:0}, // wrong principal, expired, revoked or absent
+    {rows:[],existing:1,failAt:4}, // DB 0014 active-reviewer trigger rejected
+    {rows:[],existing:1,failAt:5}, // driver failure
+    {rows:[],existing:1,r:{...role,sessionRoleName:"BROS"}},
+    {rows:[],existing:1,p:{...posture,noDefinerExec:false}},
+  ]){
+    const h=harness({...opts,mode:"predispatch_recheck"});
+    await assert.rejects(h.reserve(args),denied);
+  }
 });

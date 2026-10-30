@@ -38,15 +38,17 @@ function createPrivateRuntime() {
     result.on("error", () => { /* Never log driver exceptions or credentials. */ });
     return result;
   };
+  const reservationTransaction = createPgContentReservationTransaction(pool(reservation));
   return {
     membershipsFor: createNeonDevMembershipLookup(createPgReadOnlyTransaction(pool(membership))),
-    reserve: createPgContentDispatchAtomicReservation(
-      createPgContentReservationTransaction(pool(reservation))),
+    reserve: createPgContentDispatchAtomicReservation(reservationTransaction),
+    recheck: createPgContentDispatchAtomicReservation(reservationTransaction, "predispatch_recheck"),
   };
 }
 
-/** No route imports this. A reservation does NOT authorize or execute publication. */
-export async function reserveNeonDevContentPrivately(token: unknown, request: Request) {
+/** Neither operation is imported by an HTTP route or publishes content. */
+async function performPrivateContentOperation(token: unknown, request: Request,
+  action: "reserve" | "recheck") {
   if (!enabled()) throw new BciContentAtomicReservationDenied();
   try {
     if (!request || typeof request !== "object" || Array.isArray(request) ||
@@ -63,11 +65,21 @@ export async function reserveNeonDevContentPrivately(token: unknown, request: Re
     }
     // SQL transaction independently rechecks active membership, approval,
     // expiry, revocation, role posture and unique dispatch intent.
-    return await runtime.reserve({
-      ...request, tenantId: grants[0].tenantId,
-      principalId: principal.userId, product: "content",
-    });
+    const args = { ...request, tenantId: grants[0].tenantId,
+      principalId: principal.userId, product: "content" as const };
+    return action === "recheck" ? await runtime.recheck(args) : await runtime.reserve(args);
   } catch {
     throw new BciContentAtomicReservationDenied();
   }
+}
+
+/** A fresh server-side check, NOT authorization to publish or evidence of SENT.
+ * Keep CONTENT dispatch held until trusted approval issuance and provider
+ * idempotency/outcome audit are independently verified. */
+export async function recheckNeonDevContentBeforeDispatchPrivately(token: unknown, request: Request) {
+  return performPrivateContentOperation(token, request, "recheck");
+}
+
+export async function reserveNeonDevContentPrivately(token: unknown, request: Request) {
+  return performPrivateContentOperation(token, request, "reserve");
 }
