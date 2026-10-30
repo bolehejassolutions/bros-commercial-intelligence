@@ -31,6 +31,8 @@ test("atomic SQL binds approval, membership, revocation and unique intent; no pr
   assert.equal(h.calls.length,4);
   for (const guard of ["noDefinerExec","noOtherSchemaCreate","noSequenceAccess","noExternalTables"])
     assert.match(h.calls[1].sql,new RegExp(guard));
+  // BCI views (including owner-privilege views) must count as extra grants.
+  assert.match(h.calls[1].sql,/n\.nspname='bci_dev' AND t\.relkind IN \('r','p','v','m','f'\)/);
   assert.match(h.calls[3].sql,/active_memberships AS MATERIALIZED/);
   assert.match(h.calls[3].sql,/principal_id=\$1::uuid AND tenant_id=\$3::uuid AND product='content'/);
   assert.match(h.calls[3].sql,/expires_at > clock_timestamp\(\)/);

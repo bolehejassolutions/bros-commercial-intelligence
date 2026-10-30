@@ -106,8 +106,9 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
                     'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') AS "noRevocationWrites",
                   NOT has_table_privilege(current_user,'bci_dev.content_dispatch_reservations',
                     'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') AS "noMutation",
+                  -- Views can execute as their owner; treat view grants as out-of-scope too.
                   (SELECT NOT EXISTS (SELECT 1 FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace
-                   WHERE n.nspname='bci_dev' AND t.relkind IN ('r','p')
+                   WHERE n.nspname='bci_dev' AND t.relkind IN ('r','p','v','m','f')
                      AND t.relname NOT IN ('tenant_memberships','content_dispatch_approvals',
                                           'content_dispatch_revocations','content_dispatch_reservations')
                      AND has_table_privilege(current_user,t.oid,
