@@ -149,8 +149,8 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
       crossTenant,Date.parse('2026-10-29T07:00:00.000Z')),
       /CONTENT_REVIEW_DISPATCH_BINDING_DENIED/);
     // A valid signature and stubbed membership must not launder unresolved
-    // automated editorial warnings into a dispatch candidate. The Buffer
-    // capability gate alone does not see claim references or duplicate alt text.
+    // automated editorial warnings into a dispatch candidate. Dispatch now
+    // carries the same editorial holds as the review packet; still no authority.
     for(const [flaggedCopy,expectedFlag] of [
       [{...copy,claimEvidenceRefs:['source-1']},'CLAIM_EVIDENCE_REFERENCES_UNVERIFIED'],
       [{...copy,altTexts:[copy.altTexts[0],copy.altTexts[0]]},'DUPLICATE_ALT_TEXT_REVIEW']
@@ -160,8 +160,9 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
       assert.ok(flaggedHandoff.automatedReviewFlags.includes(expectedFlag));
       const flaggedDispatch=prepareContentBufferDispatchIntent(config,brief,buffers,
         flaggedCopy,dispatchOptions);
-      assert.equal(flaggedDispatch.status,'ATOMIC_RESERVATION_AND_APPROVAL_REQUIRED');
-      assert.deepEqual(flaggedDispatch.reviewFlags,[]);
+      assert.equal(flaggedDispatch.status,'CAPABILITY_REVIEW_REQUIRED');
+      assert.ok(flaggedDispatch.reviewFlags.includes(expectedFlag));
+      assert.equal(flaggedDispatch.executionAllowed,false);
       const flaggedPayload={...scopedPayload,
         approvalRequestId:flaggedHandoff.approvalRequestId,
         reviewPacketId:flaggedHandoff.reviewPacketId,
