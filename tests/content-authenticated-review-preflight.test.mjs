@@ -53,6 +53,26 @@ test('rejects impostor, cross-tenant, cross-product, revoked, duplicate or absen
  ];
  for(const d of mutations)await assert.rejects(prepare(h,r,trusted,d,now),/CONTENT_REVIEW_AUTHORITY_PREFLIGHT_DENIED/);
 });
+test('allows multiple CONTENT tenants but requires exactly one active signed-tenant membership',async()=>{
+ const h=handoff(),r=receipt(payload(h));
+ const other='33333333-3333-4333-8333-333333333333';
+ const target={principalId:reviewer,tenantId:tenant,product:'content',active:true};
+ const unrelated={principalId:reviewer,tenantId:other,product:'content',active:true};
+ const multi={...deps(),membershipsFor:async()=>[unrelated,target]};
+ const ok=await prepare(h,r,trusted,multi,now);
+ assert.equal(ok.status,'AUTHORITY_MATCHED_REVIEW_PREFLIGHT_ONLY');
+ assert.equal(ok.executionAllowed,false);
+ for(const rows of [
+  [unrelated],
+  [unrelated,{...target,active:false}],
+  [unrelated,target,{...target}],
+  [unrelated,target,{...unrelated,product:'demand'}],
+  [unrelated,target,{...unrelated,principalId:other}],
+  [unrelated,target,{...unrelated,active:'true'}],
+  [unrelated,target,{...unrelated,tenantId:'bad-tenant'}]
+ ])await assert.rejects(prepare(h,r,trusted,
+   {...deps(),membershipsFor:async()=>rows},now),/CONTENT_REVIEW_AUTHORITY_PREFLIGHT_DENIED/);
+});
 test('rejects REJECT decision, forged receipt, expired signature and untrusted reviewer provider',async()=>{
  const h=handoff(),p=payload(h),r=receipt(p);
  const reject=payload(h);reject.decision='REJECT';
