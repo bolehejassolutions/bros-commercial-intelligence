@@ -13,7 +13,8 @@ const role={roleName:"bci_dev_content_reserver",sessionRoleName:"bci_dev_content
 const posture={databaseName:"bros_intelligence_dev",forcedRls:true,noSchemaCreate:true,
   noDbCreate:true,canReadMembership:true,canReadApproval:true,canReadRevocation:true,
   canReadReservations:true,canReserve:true,noMembershipWrites:true,noApprovalWrites:true,
-  noRevocationWrites:true,noMutation:true,noOtherBci:true};
+  noRevocationWrites:true,noMutation:true,noOtherBci:true,
+  noDefinerExec:true,noOtherSchemaCreate:true,noSequenceAccess:true,noExternalTables:true};
 const denied=/BCI private content reservation denied/;
 function harness({r=role,p=posture,rows=[{reservationId}],existing=0,failAt=0}={}) {
   const calls=[];let i=0;
@@ -28,6 +29,8 @@ function harness({r=role,p=posture,rows=[{reservationId}],existing=0,failAt=0}={
 test("atomic SQL binds approval, membership, revocation and unique intent; no provider SENT",async()=>{
   const h=harness();assert.deepEqual(await h.reserve(args),{status:"acquired",reservationId});
   assert.equal(h.calls.length,4);
+  for (const guard of ["noDefinerExec","noOtherSchemaCreate","noSequenceAccess","noExternalTables"])
+    assert.match(h.calls[1].sql,new RegExp(guard));
   assert.match(h.calls[3].sql,/active_memberships AS MATERIALIZED/);
   assert.match(h.calls[3].sql,/principal_id=\$1::uuid AND tenant_id=\$3::uuid AND product='content'/);
   assert.match(h.calls[3].sql,/expires_at > clock_timestamp\(\)/);
@@ -58,7 +61,9 @@ test("admin impersonation, privilege drift and unforced RLS fail closed",async()
     assert.equal(h.calls.length,1);
   }
   for(const p of [{...posture,forcedRls:false},{...posture,noOtherBci:false},
-    {...posture,canReserve:false},{...posture,noApprovalWrites:false}]){
+    {...posture,canReserve:false},{...posture,noApprovalWrites:false},
+    {...posture,noDefinerExec:false},{...posture,noOtherSchemaCreate:false},
+    {...posture,noSequenceAccess:false},{...posture,noExternalTables:false}]){
     const h=harness({p});await assert.rejects(h.reserve(args),denied);
     assert.equal(h.calls.length,2);
   }

@@ -111,7 +111,33 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
                      AND t.relname NOT IN ('tenant_memberships','content_dispatch_approvals',
                                           'content_dispatch_revocations','content_dispatch_reservations')
                      AND has_table_privilege(current_user,t.oid,
-                       'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'))) AS "noOtherBci"
+                       'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'))) AS "noOtherBci",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_proc f JOIN pg_namespace n ON n.oid=f.pronamespace
+                    WHERE n.nspname NOT IN ('pg_catalog','information_schema')
+                      AND n.nspname NOT LIKE 'pg_%'
+                      AND f.prosecdef AND has_function_privilege(current_user,f.oid,'EXECUTE')
+                  )) AS "noDefinerExec",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_namespace n
+                    WHERE n.nspname NOT IN ('pg_catalog','information_schema')
+                      AND n.nspname NOT LIKE 'pg_%'
+                      AND has_schema_privilege(current_user,n.oid,'CREATE')
+                  )) AS "noOtherSchemaCreate",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_class s JOIN pg_namespace n ON n.oid=s.relnamespace
+                    WHERE s.relkind='S' AND n.nspname NOT IN ('pg_catalog','information_schema')
+                      AND n.nspname NOT LIKE 'pg_%'
+                      AND has_sequence_privilege(current_user,s.oid,'USAGE,SELECT,UPDATE')
+                  )) AS "noSequenceAccess",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace
+                    WHERE t.relkind IN ('r','p','v','m','f')
+                      AND n.nspname NOT IN ('pg_catalog','information_schema','bci_dev')
+                      AND n.nspname NOT LIKE 'pg_%'
+                      AND has_table_privilege(current_user,t.oid,
+                        'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
+                  )) AS "noExternalTables"
            FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
            WHERE n.nspname='bci_dev' AND c.relname IN
              ('tenant_memberships','content_dispatch_approvals','content_dispatch_revocations','content_dispatch_reservations')
@@ -123,7 +149,9 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
             p.canReadRevocation !== true || p.canReadReservations !== true ||
             p.canReserve !== true || p.noMembershipWrites !== true ||
             p.noApprovalWrites !== true || p.noRevocationWrites !== true ||
-            p.noMutation !== true || p.noOtherBci !== true) deny();
+            p.noMutation !== true || p.noOtherBci !== true ||
+            p.noDefinerExec !== true || p.noOtherSchemaCreate !== true ||
+            p.noSequenceAccess !== true || p.noExternalTables !== true) deny();
         // Transaction-local GUCs are filters, never proof of identity.
         await query("SELECT set_config('bci.principal_id',$1::text,true), set_config('bci.tenant_id',$2::text,true), set_config('bci.product','content',true)",
           [args.principalId,args.tenantId]);
