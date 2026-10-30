@@ -101,3 +101,32 @@ test("conflicting duplicate action values and invalid attributed values fail clo
    {...response.rows[0],actions:[...purchase,{action_type:"landing_page_view",value:33},
      {action_type:"landing_page_view",value:32}]},response.rows[1]]}),invalid);
 });
+
+test("ad action-value fingerprint preserves eight-decimal revisions without float rounding",()=>{
+ const actionValues = value => ({...response,rows:[
+   {...response.rows[0],action_values:[{action_type:"purchase",value}]},
+   response.rows[1]]});
+ const first=project(scope,query,actionValues("999999999999.00000001"));
+ const second=project(scope,query,actionValues("999999999999.00000002"));
+ assert.notEqual(first.candidateId,second.candidateId);
+ assert.equal(first.verifiedOrders,null);
+ assert.equal(first.verifiedCpaMinor,null);
+ assert.equal(first.providerAuthenticationVerified,false);
+ assert.equal(project(scope,query,actionValues("50.00")).candidateId,
+   project(scope,query,actionValues("50")).candidateId);
+ for(const value of ["1000000000000.00000001","9007199254740993","0.000000001"])
+   assert.throws(()=>project(scope,query,actionValues(value)),/Invalid BROS DEMAND/);
+});
+test("ad readback rejects coercible tenant IDs and impossible calendar dates",()=>{
+ const invalid=/Invalid BROS DEMAND ad-level readback/;
+ for(const patch of [
+   {tenantId:[scope.tenantId]}, {accountId:[scope.accountId]},
+   {campaignId:[scope.campaignId]},
+   {tenantId:{toString:()=>scope.tenantId}},
+ ]) assert.throws(()=>project({...scope,...patch}),invalid);
+ const impossible="2026-02-30";
+ const s={...scope,since:impossible,until:impossible};
+ const q={...query,since:impossible,until:impossible};
+ const r={...response,rows:response.rows.map(x=>({...x,date_start:impossible,date_stop:impossible}))};
+ assert.throws(()=>project(s,q,r),invalid);
+});

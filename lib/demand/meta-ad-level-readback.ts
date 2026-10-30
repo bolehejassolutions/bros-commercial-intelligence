@@ -23,6 +23,11 @@ const invalid = (): never => { throw new Error("Invalid BROS DEMAND ad-level rea
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digits = /^\d+$/;
 const date = /^\d{4}-\d{2}-\d{2}$/;
+const validDate = (v: unknown): v is string => {
+  if (typeof v !== "string" || !date.test(v)) return false;
+  const ms = Date.parse(v + "T00:00:00Z");
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === v;
+};
 function integer(v: unknown): number {
   if ((typeof v !== "string" && typeof v !== "number") ||
       (typeof v === "string" && !/^(0|[1-9]\d*)$/.test(v))) invalid();
@@ -59,9 +64,14 @@ function canonicalActionValues(input: unknown): readonly (readonly [string, stri
       throw new Error("Invalid BROS DEMAND ad-level readback");
     const raw = String(row.value);
     if (!/^(0|[1-9]\d*)(?:\.\d{1,8})?$/.test(raw)) invalid();
-    const numeric = Number(raw);
-    if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1e12) invalid();
-    const normalized = String(numeric);
+    // Decimal string canonicalization avoids IEEE-754 rounding collisions:
+    // 999999999999.00000001 and .00000002 are distinct provider revisions.
+    const [whole, fractional = ""] = raw.split(".");
+    const integerPart = Number(whole);
+    if (!Number.isSafeInteger(integerPart) || integerPart > 1e12 ||
+        (integerPart === 1e12 && /[1-9]/.test(fractional))) invalid();
+    const trimmedFraction = fractional.replace(/0+$/, "");
+    const normalized = trimmedFraction ? whole + "." + trimmedFraction : whole;
     const previous = values.get(actionType);
     if (previous !== undefined && previous !== normalized) invalid();
     values.set(actionType, normalized);
@@ -71,10 +81,14 @@ function canonicalActionValues(input: unknown): readonly (readonly [string, stri
 export function reconcileDemandMetaAdReadback(
   scope: Scope, query: Query, response: Response, campaign: CampaignTotals,
 ) {
-  if (!scope || !query || !response || !campaign || !uuid.test(scope.tenantId) ||
-      scope.product !== "demand" || !/^act_\d+$/.test(scope.accountId) ||
-      !digits.test(scope.campaignId) || scope.currency !== "MYR" ||
-      !date.test(scope.since) || !date.test(scope.until) || scope.since > scope.until ||
+  if (!scope || !query || !response || !campaign ||
+      // RegExp.test coerces arrays/objects: reject nonprimitive identities.
+      typeof scope.tenantId !== "string" || !uuid.test(scope.tenantId) ||
+      scope.product !== "demand" ||
+      typeof scope.accountId !== "string" || !/^act_\d+$/.test(scope.accountId) ||
+      typeof scope.campaignId !== "string" || !digits.test(scope.campaignId) ||
+      scope.currency !== "MYR" ||
+      !validDate(scope.since) || !validDate(scope.until) || scope.since > scope.until ||
       query.accountId !== scope.accountId || query.objectId !== scope.campaignId ||
       query.level !== "ad" || query.since !== scope.since || query.until !== scope.until ||
       !Array.isArray(response.rows) || response.rows.length === 0 ||
