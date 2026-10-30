@@ -56,6 +56,19 @@ test('unknown AI declaration and duplicate alt text require review',()=>{
   const r=prepare(config(),brief(),bytes(),c,dims);
   assert.deepEqual(r.automatedReviewFlags,['AI_DISCLOSURE_UNRESOLVED','DUPLICATE_ALT_TEXT_REVIEW']);
 });
+test('contradictory non-AI provenance is held at editorial review before signed approval',()=>{
+  const c=copy();c.aiDisclosure='DECLARED_NON_AI';
+  c.caption='Penerangan produk. Ilustrasi AI.';
+  const flagged=prepare(config(),brief(),bytes(),c,dims);
+  assert.deepEqual(flagged.automatedReviewFlags,['AI_PROVENANCE_CAPTION_CONTRADICTION']);
+  assert.equal(flagged.status,'EDITORIAL_REVIEW_PENDING');
+  assert.equal(flagged.approvalGranted,false);
+  assert.equal(flagged.executionAllowed,false);
+  const clear={...c,caption:'Penerangan produk menggunakan lakaran manual.'};
+  const accepted=prepare(config(),brief(),bytes(),clear,dims);
+  assert.deepEqual(accepted.automatedReviewFlags,[]);
+  assert.notEqual(flagged.reviewPacketId,accepted.reviewPacketId);
+});
 test('invalid or duplicated bytes and forged approval fields cannot produce a review packet',()=>{
   const b=bytes();b[0][29]^=1;
   assert.throws(()=>prepare(config(),brief(),b,copy(),dims),/PNG_QA_BAD_CRC/);
