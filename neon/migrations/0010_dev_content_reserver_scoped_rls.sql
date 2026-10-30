@@ -53,7 +53,8 @@ CREATE POLICY dev_content_reserver_reservation_insert
     AND principal_id = nullif(current_setting('bci.principal_id', true), '')::uuid
     AND EXISTS (
       SELECT 1 FROM bci_dev.tenant_memberships m
-      WHERE m.principal_id = principal_id AND m.tenant_id = tenant_id
+      WHERE m.principal_id = nullif(current_setting('bci.principal_id', true), '')::uuid
+        AND m.tenant_id = nullif(current_setting('bci.tenant_id', true), '')::uuid
         AND m.product = 'content' AND m.active IS TRUE AND m.revoked_at IS NULL
     )
   );
