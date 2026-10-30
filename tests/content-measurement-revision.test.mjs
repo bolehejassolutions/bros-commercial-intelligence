@@ -101,3 +101,20 @@ test('seven-day revision boundary permits candidate, one second later requires r
   assert.equal(held.status,'REVIEW_REQUIRED');
   assert.equal(held.reason,'STALE_LIFETIME_MEASUREMENT_REVIEW');
 });
+
+test('old provider snapshots cannot become fresh pilot learning merely because post age is short',()=>{
+  const sentAt='2026-10-20T01:00:00.000Z';
+  const first='2026-10-21T01:00:00.000Z';
+  const second='2026-10-21T03:00:00.000Z';
+  const old={...previous,sentAt,metricsUpdatedAt:first,measurementAgeSeconds:86400};
+  const later={...current,sentAt,metricsUpdatedAt:second,measurementAgeSeconds:93600};
+  const fresh=propose(old,later,{...scope,asOf:'2026-10-22T01:00:00.000Z'});
+  assert.equal(fresh.status,'CANDIDATE_UNATTESTED');
+  const stale=propose(old,later,{...scope,asOf:'2026-10-30T01:00:00.000Z'});
+  assert.equal(stale.status,'REVIEW_REQUIRED');
+  assert.equal(stale.reason,'STALE_PROVIDER_SNAPSHOT_REVIEW');
+  assert.equal(stale.nextAction,'REVIEW_PROVIDER_METRICS');
+  assert.equal(stale.candidateId,fresh.candidateId);
+  assert.equal(stale.learningVerified,false);
+  assert.equal(stale.executionAllowed,false);
+});
