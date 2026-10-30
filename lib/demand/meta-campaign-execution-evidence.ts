@@ -162,7 +162,7 @@ export function assessDemandCampaignActivityCandidates(
         !Number.isFinite(Date.parse(row.event_time)) ||
         new Date(Date.parse(row.event_time)).toISOString().slice(0, 19) !==
           row.event_time.slice(0, 19)) fail();
-    const eventMs = Date.parse(row.event_time);
+    const eventMs = Date.parse(row.event_time as string);
     if (eventMs < earliestPossibleUtc ||
         eventMs >= latestPossibleUtcExclusive) fail();
     if (row.object_name === exactCampaignName) {
