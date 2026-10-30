@@ -70,14 +70,32 @@ export function createPrivateContentDispatchReservation(deps: Dependencies) {
       if (principal === null) return deny();
       if (!exact(principal, ["userId", "authenticated"]) ||
           principal.authenticated !== true || !UUID.test(principal.userId)) deny();
+      // Multiple CONTENT tenant memberships are legitimate. Resolve exactly
+      // one trusted tenant by its durable approval; never trust a caller tenant.
       const grants = await deps.membershipsFor(principal.userId);
-      if (!Array.isArray(grants) || grants.length !== 1 ||
-          !exact(grants[0], ["principalId", "tenantId", "product", "active"])) deny();
-      const grant = grants[0];
-      if (grant.principalId !== principal.userId || grant.product !== "content" ||
-          grant.active !== true || !UUID.test(grant.tenantId)) deny();
-      const approval = await deps.loadApproval(grant.tenantId, request.dispatchIntentId);
-      if (approval === null) return deny();
+      if (!Array.isArray(grants) || grants.length < 1 || grants.length > 32) deny();
+      const seenTenants = new Set<string>();
+      for (const g of grants) {
+        if (!exact(g, ["principalId", "tenantId", "product", "active"]) ||
+            g.principalId !== principal.userId || g.product !== "content" ||
+            g.active !== true || !UUID.test(g.tenantId) ||
+            seenTenants.has(g.tenantId)) deny();
+        seenTenants.add(g.tenantId);
+      }
+      const candidates = await Promise.all(grants.map(g =>
+        deps.loadApproval(g.tenantId, request.dispatchIntentId)));
+      // A loader must never return another tenant's approval, even if the
+      // principal happens to belong to both tenants.
+      for (let i = 0; i < candidates.length; i++) {
+        const candidate = candidates[i];
+        if (candidate !== null && candidate.tenantId !== grants[i].tenantId) deny();
+      }
+      // Same intent approved in two authorized tenants is ambiguous: fail closed.
+      const found = candidates.filter((a): a is Approval => a !== null);
+      if (found.length !== 1) deny();
+      const approval = found[0];
+      const grant = grants.find(g => g.tenantId === approval.tenantId);
+      if (!grant) deny();
       if (!exact(approval, ["approvalId", "dispatchIntentId", "tenantId", "product", "status", "approvedBy", "expiresAt", "binding"]) ||
           typeof approval.approvalId !== "string" || !ID.test(approval.approvalId) ||
           approval.dispatchIntentId !== request.dispatchIntentId ||
@@ -92,10 +110,16 @@ export function createPrivateContentDispatchReservation(deps: Dependencies) {
           Date.parse(approval.expiresAt) <= now.getTime()) deny();
       // Narrow revocation window; atomic adapter must recheck again.
       const fresh = await deps.membershipsFor(principal.userId);
-      if (!Array.isArray(fresh) || fresh.length !== 1 ||
-          !exact(fresh[0], ["principalId", "tenantId", "product", "active"]) ||
-          fresh[0].principalId !== principal.userId || fresh[0].tenantId !== grant.tenantId ||
-          fresh[0].product !== "content" || fresh[0].active !== true) deny();
+      if (!Array.isArray(fresh) || fresh.length < 1 || fresh.length > 32) deny();
+      const freshTenants = new Set<string>();
+      for (const g of fresh) {
+        if (!exact(g, ["principalId", "tenantId", "product", "active"]) ||
+            g.principalId !== principal.userId || g.product !== "content" ||
+            g.active !== true || !UUID.test(g.tenantId) ||
+            freshTenants.has(g.tenantId)) deny();
+        freshTenants.add(g.tenantId);
+      }
+      if (!freshTenants.has(grant.tenantId)) deny();
       const result = await deps.reserveAtomically({ tenantId: grant.tenantId, product: "content",
         principalId: principal.userId, dispatchIntentId: request.dispatchIntentId,
         approvalId: approval.approvalId, bindingSha256: digest(request.binding) });

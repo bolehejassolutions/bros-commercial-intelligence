@@ -68,3 +68,39 @@ test("no DB adapter or unexpected adapter result fails closed", async () => {
   const h = harness({ reserveAtomically: async () => ({ status: "published", reservationId: "res-1" }) });
   await assert.rejects(h.reserve(request), denied);
 });
+
+test("valid memberships in multiple CONTENT tenants select the sole approved tenant", async () => {
+  const extra = { ...grant, tenantId: other };
+  const seen = [];
+  const h = harness({ membershipsFor: async () => [extra, grant],
+    loadApproval: async (tenant, intent) => {
+      seen.push([tenant, intent]);
+      return tenant === tenantId ? approval : null;
+    } });
+  const r = await h.reserve(request);
+  assert.equal(r.status, "reserved_for_dispatch");
+  assert.deepEqual(seen, [[other, "intent-1"], [tenantId, "intent-1"]]);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].tenantId, tenantId);
+});
+test("ambiguous multi-tenant approvals, duplicate grants and revoked target deny", async () => {
+  const extra = { ...grant, tenantId: other };
+  for (const change of [
+    { membershipsFor: async () => [grant, extra],
+      loadApproval: async tenant => ({ ...approval, tenantId: tenant }) },
+    { membershipsFor: async () => [grant, extra],
+      loadApproval: async tenant => tenant === other ? approval : null },
+    { membershipsFor: async () => [grant, grant] },
+    { membershipsFor: async () => [grant, { ...extra, principalId: other }] },
+    { membershipsFor: async () => [grant, { ...extra, product: "demand" }] },
+  ]) {
+    const h = harness(change);
+    await assert.rejects(h.reserve(request), denied);
+    assert.equal(h.calls.length, 0);
+  }
+  let count = 0;
+  const h = harness({ membershipsFor: async () => ++count === 1 ? [grant, extra] : [extra],
+    loadApproval: async tenant => tenant === tenantId ? approval : null });
+  await assert.rejects(h.reserve(request), denied);
+  assert.equal(h.calls.length, 0);
+});
