@@ -77,6 +77,7 @@ export function createDemandMetaHttpHandler(deps: Dependencies) {
         since: url.searchParams.get("since") ?? "",
         until: url.searchParams.get("until") ?? "",
       });
+      if (!result) throw new Error("DEMAND_META_READ_DENIED");
       // Whitelist fields. Never expose JWT, server token, raw provider JSON,
       // tenant/private principal or provider error details.
       const observation = result.observation;
