@@ -142,6 +142,13 @@ export function assessDemandCampaignActivityCandidates(
       (response.droppedFields != null &&
         (!Array.isArray(response.droppedFields) || response.droppedFields.length > 0))) fail();
 
+  // HYPD filters by account-local dates, but the activity payload has no
+  // attested account timezone. Any local day worldwide (UTC+14 to UTC-12)
+  // must map inside this conservative UTC envelope. Reject impossible
+  // out-of-window rows rather than silently treating them as experiment
+  // activity; possible boundary matches remain UNATTESTED.
+  const earliestPossibleUtc = Date.parse(since + "T00:00:00Z") - 14 * 3600000;
+  const latestPossibleUtcExclusive = Date.parse(until + "T00:00:00Z") + 36 * 3600000;
   const matching: string[] = [];
   const matchedTypes: string[] = [];
   for (const row of response.rows) {
@@ -155,6 +162,9 @@ export function assessDemandCampaignActivityCandidates(
         !Number.isFinite(Date.parse(row.event_time)) ||
         new Date(Date.parse(row.event_time)).toISOString().slice(0, 19) !==
           row.event_time.slice(0, 19)) fail();
+    const eventMs = Date.parse(row.event_time);
+    if (eventMs < earliestPossibleUtc ||
+        eventMs >= latestPossibleUtcExclusive) fail();
     if (row.object_name === exactCampaignName) {
       matching.push(JSON.stringify([row.event_type, row.event_time]));
       matchedTypes.push(row.event_type as string); // Runtime validated above.

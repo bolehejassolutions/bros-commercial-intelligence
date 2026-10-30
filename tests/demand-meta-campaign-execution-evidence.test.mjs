@@ -141,3 +141,38 @@ test('activity readback rejects incomplete, paginated, or malformed provider env
   assert.throws(()=>assessActivity(account,[target],activityName,'2026-10-25','2026-10-28',activityFeed));
   assert.throws(()=>assessActivity(account,target,activityName,'2026-02-30','2026-10-28',activityFeed));
 });
+
+test('real 27 Oct provider activity cannot be misrepresented as 29–30 Oct activity',()=>{
+  // The complete 27–30 Oct HYPD readback contains these 27 Oct events.
+  // Re-scoping the same events to 29–30 Oct must fail closed, not report
+  // a name-matched campaign status-change candidate in the wrong window.
+  assert.throws(()=>assessActivity(account,target,activityName,
+    '2026-10-29','2026-10-30',activityFeed));
+  const correctWindow=assessActivity(account,target,activityName,
+    '2026-10-27','2026-10-30',activityFeed);
+  assert.equal(correctWindow.matchingNameActivityRows,3);
+  assert.equal(correctWindow.experimentActionVerified,false);
+  assert.equal(correctWindow.verifiedCpaMinor,null);
+});
+
+test('account-local UTC boundary tolerance is conservative but never attestation',()=>{
+  const utcPlus14Boundary={...activityFeed,rows:[{
+    event_type:'update_campaign_run_status',
+    event_time:'2026-10-26T10:00:00+0000',
+    object_name:activityName,
+  }]};
+  const early=assessActivity(account,target,activityName,
+    '2026-10-27','2026-10-27',utcPlus14Boundary);
+  assert.equal(early.matchingNameActivityRows,1);
+  assert.equal(early.experimentActionVerified,false);
+  const utcMinus12Boundary={...activityFeed,rows:[{
+    event_type:'update_campaign_run_status',
+    event_time:'2026-10-28T11:59:59+0000',
+    object_name:activityName,
+  }]};
+  assert.equal(assessActivity(account,target,activityName,
+    '2026-10-27','2026-10-27',utcMinus12Boundary).matchingNameActivityRows,1);
+  utcMinus12Boundary.rows[0].event_time='2026-10-28T12:00:00+0000';
+  assert.throws(()=>assessActivity(account,target,activityName,
+    '2026-10-27','2026-10-27',utcMinus12Boundary));
+});
