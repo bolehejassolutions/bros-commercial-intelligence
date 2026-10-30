@@ -78,7 +78,7 @@ export function createPrivateContentDispatchReservation(deps: Dependencies) {
       for (const g of grants) {
         if (!exact(g, ["principalId", "tenantId", "product", "active"]) ||
             g.principalId !== principal.userId || g.product !== "content" ||
-            g.active !== true || !UUID.test(g.tenantId) ||
+            g.active !== true || typeof g.tenantId !== "string" || !UUID.test(g.tenantId) ||
             seenTenants.has(g.tenantId)) deny();
         seenTenants.add(g.tenantId);
       }
@@ -115,7 +115,7 @@ export function createPrivateContentDispatchReservation(deps: Dependencies) {
       for (const g of fresh) {
         if (!exact(g, ["principalId", "tenantId", "product", "active"]) ||
             g.principalId !== principal.userId || g.product !== "content" ||
-            g.active !== true || !UUID.test(g.tenantId) ||
+            g.active !== true || typeof g.tenantId !== "string" || !UUID.test(g.tenantId) ||
             freshTenants.has(g.tenantId)) deny();
         freshTenants.add(g.tenantId);
       }
