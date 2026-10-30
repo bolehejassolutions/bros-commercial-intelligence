@@ -91,3 +91,9 @@ test("live-provider-shaped UGC dynamic creative links and placement labels are p
  assert.throws(()=>check({...ugcCreative,asset_feed_spec:undefined}),/Invalid BROS DEMAND/);
  assert.equal(check({...ugcCreative,url_tags:ugcTags.replace("ugc03","ugc01")}).status,"TEMPLATE_INCOMPLETE_UNATTESTED");
 });
+
+test("direct-link v2 candidate ID is backward compatible after asset-feed support",()=>{
+ assert.equal(assess().snapshotId,
+  "demand:meta-creative-tracking:sha256:23d326b14f8271ecb13173b199a9f80858f8e8e88b4538e0709e5637df319454");
+ assert.equal(assess().landingUrlSource,"link_data");
+});

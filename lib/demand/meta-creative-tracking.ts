@@ -137,7 +137,8 @@ export function assessDemandMetaCreativeTracking(
       scope.accountId,scope.campaignId,scope.adId,scope.expectedLandingUrl,
       scope.expectedUtmCampaign,scope.expectedUtmContent,
       ad.adset_id,creative.id,ad.status,ad.effective_status,landing.href,
-      entries.sort(([a],[b]) => a.localeCompare(b)),feedLinkAudit])).digest("hex");
+      entries.sort(([a],[b]) => a.localeCompare(b)),
+      ...(feedPresent ? [feedLinkAudit] : [])])).digest("hex");
   return Object.freeze({
     snapshotId, status: trackingTemplateReady ? "TEMPLATE_READY_UNATTESTED" as const :
       "TEMPLATE_INCOMPLETE_UNATTESTED" as const,
