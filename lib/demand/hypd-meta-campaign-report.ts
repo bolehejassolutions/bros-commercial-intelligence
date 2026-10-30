@@ -74,6 +74,10 @@ export function projectHypdMetaCampaignReport(
   if (response.rows.length !== 1) fail();
   const raw = response.rows[0];
   if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
+      // Explicit Meta account identity is available when requested. Do not
+      // accept a foreign-account row solely because the object query and MYR
+      // currency match; default-field reports without account_id fail closed.
+      raw.account_id !== scope.accountId.slice(4) ||
       raw.account_currency !== scope.currency ||
       raw.date_start !== scope.since || raw.date_stop !== scope.until ||
       (Object.hasOwn(raw, "campaign_id") &&

@@ -20,7 +20,7 @@ const query = {
 // for an exact objectId query. Values are observations, NOT attestation.
 const row = {
   date_start: scope.since, date_stop: scope.until,
-  account_currency: "MYR", spend: 124.93,
+  account_id: "1997776120879476", account_currency: "MYR", spend: 124.93,
   impressions: "3194", reach: "2041", clicks: "84",
   inline_link_clicks: "63",
   actions: [
@@ -82,6 +82,11 @@ test("account-level, wrong object, wrong dates or foreign campaign cannot bind i
   assert.throws(() => projectHypdMetaCampaignReport(scope, query, {
     ...response, rows: [{ ...row, account_currency: "USD" }],
   }), invalid);
+  for (const account_id of [undefined, null, "1997776120879477", "act_1997776120879476", 1997776120879476]) {
+    assert.throws(() => projectHypdMetaCampaignReport(scope, query, {
+      ...response, rows: [{ ...row, account_id }],
+    }), invalid);
+  }
   assert.throws(() => projectHypdMetaCampaignReport(scope, query, {
     ...response, rows: [{ ...row, date_stop: "2026-10-26" }],
   }), invalid);
