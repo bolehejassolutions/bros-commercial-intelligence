@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { reconcileDemandMetaAdReadback } from "../lib/demand/meta-ad-level-readback.ts";
 const scope = {tenantId:"11111111-1111-4111-8111-111111111111",product:"demand",accountId:"act_1997776120879476",campaignId:"120250864977630697",since:"2026-10-09",until:"2026-10-09",currency:"MYR"};
 const query = {accountId:scope.accountId,objectId:scope.campaignId,level:"ad",since:scope.since,until:scope.until};
-const row = (ad_id,spend,impressions,inline_link_clicks,actions) => ({ad_id,adset_id:"120250864977650697",campaign_id:scope.campaignId,date_start:scope.since,date_stop:scope.until,spend,impressions,inline_link_clicks,attribution_setting:"1d_view_7d_click_1d_ev",...(actions===undefined?{}:{actions})});
+const row = (ad_id,spend,impressions,inline_link_clicks,actions) => ({ad_id,account_id:scope.accountId.slice(4),account_currency:scope.currency,adset_id:"120250864977650697",campaign_id:scope.campaignId,date_start:scope.since,date_stop:scope.until,spend,impressions,inline_link_clicks,attribution_setting:"1d_view_7d_click_1d_ev",...(actions===undefined?{}:{actions})});
 const purchase = [{action_type:"purchase",value:1},{action_type:"omni_purchase",value:1},{action_type:"offsite_conversion.fb_pixel_purchase",value:1}];
 const response = {rows:[row("100",4.32,"117","1",purchase),row("200",120.61,"3077","62")],nextPageToken:null,missingScopes:null,droppedFields:null};
 const campaign = {spendMinor:12493,impressions:3194,inlineLinkClicks:63,metaAttributedPurchases:1};
@@ -129,4 +129,25 @@ test("ad readback rejects coercible tenant IDs and impossible calendar dates",()
  const q={...query,since:impossible,until:impossible};
  const r={...response,rows:response.rows.map(x=>({...x,date_start:impossible,date_stop:impossible}))};
  assert.throws(()=>project(s,q,r),invalid);
+});
+
+// Live HYPD ad Insights returns account_id and account_currency when explicitly
+// requested. Do not accept default-field responses or cross-account/currency rows.
+test("ad evidence requires provider account and MYR currency binding",()=>{
+ const invalid=/Invalid BROS DEMAND ad-level readback/;
+ const valid=project();
+ assert.equal(valid.adTotalsMatchCampaign,true);
+ for(const bad of [
+   {account_id:"1997776120879477"},
+   {account_id:"act_1997776120879476"},
+   {account_id:null},
+   {account_currency:"USD"},
+   {account_currency:null},
+ ]) assert.throws(()=>project(scope,query,{...response,rows:[{...response.rows[0],...bad},response.rows[1]]}),invalid);
+ for(const key of ["account_id","account_currency"]){
+   const copy={...response.rows[0]};delete copy[key];
+   assert.throws(()=>project(scope,query,{...response,rows:[copy,response.rows[1]]}),invalid);
+ }
+ assert.equal(valid.verifiedOrders,null);
+ assert.equal(valid.verifiedCpaMinor,null);
 });

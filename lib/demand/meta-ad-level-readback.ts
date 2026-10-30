@@ -104,6 +104,11 @@ export function reconcileDemandMetaAdReadback(
     if (!row || typeof row !== "object" || Array.isArray(row) ||
         typeof row.ad_id !== "string" || !digits.test(row.ad_id) || ids.has(row.ad_id) ||
         typeof row.adset_id !== "string" || !digits.test(row.adset_id) ||
+        // HYPD exposes these when explicitly requested. Require both so an
+        // account/currency mismatch cannot silently contaminate MYR totals.
+        // A default Meta response omitting these identity fields is incomplete.
+        row.account_id !== scope.accountId.slice(4) ||
+        row.account_currency !== scope.currency ||
         row.campaign_id !== scope.campaignId ||
         row.date_start !== scope.since || row.date_stop !== scope.until ||
         typeof row.attribution_setting !== "string" ||
