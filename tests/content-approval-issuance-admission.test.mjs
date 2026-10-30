@@ -19,6 +19,14 @@ const binding={reviewPacketId:media.reviewPacketId,handoffId:media.handoffId,
   mediaSetId:media.mediaSetId,copySha256:"a".repeat(64),
   providerOrganizationId:"org-1",channelId:"channel-1"};
 const request={dispatchIntentId:"content-intent",binding,mediaBytes:bytes,receipt:{untrusted:true}};
+const bindingKeys=["reviewPacketId","handoffId","signedReviewEvidenceId","planId",
+  "mediaSetId","copySha256","providerOrganizationId","channelId"];
+const bindingSha256=createHash("sha256")
+  .update(JSON.stringify(bindingKeys.map(k=>binding[k]))).digest("hex");
+const signedDispatchIntentSha256=createHash("sha256")
+  .update("BCI_CONTENT_DISPATCH_INTENT_V1\n")
+  .update(JSON.stringify([request.dispatchIntentId,bindingSha256])).digest("hex");
+const signedVerified={...verified,signedDispatchIntentSha256};
 const authority={principalId:reviewerId,tenantId,product:"content",
   memberActive:true,reviewerAuthorized:true,revokedAt:null};
 const denied=/BCI_CONTENT_APPROVAL_ADMISSION_DENIED/;
@@ -27,7 +35,7 @@ function setup(overrides={}){
   const calls=[];
   const deps={
     recomputeOriginalMedia:async()=>{calls.push("media");return media;},
-    verifySignedReceipt:async()=>{calls.push("signature");return verified;},
+    verifySignedReceipt:async()=>{calls.push("signature");return signedVerified;},
     authenticateReviewer:async()=>{calls.push("jwt");return {userId:reviewerId,authenticated:true};},
     readReviewerAuthority:async()=>{calls.push("authority");return authority;},
     now:()=>now,...overrides
@@ -43,6 +51,7 @@ test("admission only binds signed review, original bytes, JWT and live reviewer 
   assert.equal(result.originalMediaSha256,sha);
   assert.equal(result.mediaCount,1);
   assert.match(result.bindingSha256,/^[a-f0-9]{64}$/);
+  assert.equal(result.dispatchIntentSha256,signedDispatchIntentSha256);
   assert.deepEqual(h.calls,["media","signature","jwt","authority"]);
 });
 test("untrusted original media digest fails before signature/JWT",async()=>{
@@ -52,7 +61,7 @@ test("untrusted original media digest fails before signature/JWT",async()=>{
 test("signed decision rejection, bad signature and expired receipt fail closed",async()=>{
   for(const patch of [{signedDecision:"REJECT"},{signatureVerified:false},
     {expiresAt:"2026-10-31T11:59:59.000Z"}]){
-    const h=setup({verifySignedReceipt:async()=>({...verified,...patch})});
+    const h=setup({verifySignedReceipt:async()=>({...signedVerified,...patch})});
     await assert.rejects(h.admit(request),denied);
   }
 });
@@ -121,4 +130,38 @@ test("caller cannot declare media count or a second original image",async()=>{
   const h=setup();
   await assert.rejects(h.admit({...request,mediaCount:1}),denied);
   await assert.rejects(h.admit({...request,mediaBytes2:Buffer.alloc(64)}),denied);
+});
+
+test("signed dispatch intent rejects altered copy, plan, provider, channel and intent",async()=>{
+  for(const field of ["copySha256","planId","providerOrganizationId","channelId"]) {
+    const h=setup();
+    const value=field==="copySha256"?"b".repeat(64):"tampered-"+field;
+    await assert.rejects(h.admit({...request,binding:{...binding,[field]:value}}),denied);
+  }
+  const h=setup();
+  await assert.rejects(h.admit({...request,dispatchIntentId:"replayed-intent"}),denied);
+});
+test("missing or fabricated signed intent digest never admits",async()=>{
+  for(const value of [undefined,"b".repeat(64)]) {
+    const h=setup({verifySignedReceipt:async()=>({
+      ...signedVerified,signedDispatchIntentSha256:value
+    })});
+    await assert.rejects(h.admit(request),denied);
+  }
+  const h=setup();
+  await assert.rejects(h.admit({...request,signedDispatchIntentSha256}),denied);
+});
+test("admission snapshots mutable original bytes and dispatch binding before async checks",async()=>{
+  const mutableBytes=Buffer.from(bytes),mutableBinding={...binding};
+  const mutableRequest={...request,mediaBytes:mutableBytes,binding:mutableBinding};
+  const h=setup({recomputeOriginalMedia:async mediaBytes=>{
+    mutableBytes.fill(1);
+    mutableBinding.channelId="changed-after-await";
+    mutableRequest.dispatchIntentId="changed-after-await";
+    assert.equal(createHash("sha256").update(mediaBytes).digest("hex"),sha);
+    return media;
+  }});
+  const result=await h.admit(mutableRequest);
+  assert.equal(result.dispatchIntentId,request.dispatchIntentId);
+  assert.equal(result.dispatchIntentSha256,signedDispatchIntentSha256);
 });
