@@ -29,6 +29,7 @@ test("atomic SQL binds approval, membership, revocation and unique intent; no pr
   const h=harness();assert.deepEqual(await h.reserve(args),{status:"acquired",reservationId});
   assert.equal(h.calls.length,4);
   assert.match(h.calls[3].sql,/active_memberships AS MATERIALIZED/);
+  assert.match(h.calls[3].sql,/principal_id=\$1::uuid AND tenant_id=\$3::uuid AND product='content'/);
   assert.match(h.calls[3].sql,/expires_at > clock_timestamp\(\)/);
   assert.match(h.calls[3].sql,/NOT EXISTS \(SELECT 1 FROM bci_dev.content_dispatch_revocations/);
   assert.match(h.calls[3].sql,/ON CONFLICT \(tenant_id,product,dispatch_intent_id\) DO NOTHING/);
@@ -38,6 +39,14 @@ test("atomic SQL binds approval, membership, revocation and unique intent; no pr
 test("existing intent cannot return prior receipt or authorize replay",async()=>{
   const h=harness({rows:[],existing:1});
   assert.deepEqual(await h.reserve(args),{status:"already_reserved",reservationId:null});
+  assert.equal(h.calls.length,5);
+  const replay=h.calls[4];
+  assert.deepEqual(replay.params,[tenantId,"intent-1",principalId,"approval-1","a".repeat(64)]);
+  assert.match(replay.sql,/r.principal_id=\$3::uuid/);
+  assert.match(replay.sql,/r.approval_id=\$4::text AND r.binding_sha256=\$5::text/);
+  assert.match(replay.sql,/a.expires_at > clock_timestamp\(\)/);
+  assert.match(replay.sql,/m.principal_id=\$3::uuid AND m.tenant_id=\$1::uuid/);
+  assert.match(replay.sql,/NOT EXISTS \(\s*SELECT 1 FROM bci_dev.content_dispatch_revocations v/);
 });
 test("missing, expired, revoked or foreign approval is denied",async()=>{
   const h=harness({rows:[],existing:0});await assert.rejects(h.reserve(args),denied);

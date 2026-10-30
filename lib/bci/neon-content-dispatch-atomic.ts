@@ -130,7 +130,7 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
         const inserted = await query(
           `WITH active_memberships AS MATERIALIZED (
              SELECT principal_id,tenant_id FROM bci_dev.tenant_memberships
-             WHERE principal_id=$1::uuid AND product='content'
+             WHERE principal_id=$1::uuid AND tenant_id=$3::uuid AND product='content'
                AND active IS TRUE AND revoked_at IS NULL
            ), eligible_approval AS MATERIALIZED (
              SELECT approval_id,tenant_id,product,dispatch_intent_id,binding_sha256
@@ -159,10 +159,32 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
             UUID.test(inserted.rows[0].reservationId)) {
           return Object.freeze({status:"acquired" as const,reservationId:inserted.rows[0].reservationId});
         }
+        // A conflicting intent is only disclosed to the SAME still-authorized
+        // principal with the SAME live, unrevoked approval and exact binding.
+        // Never reveal a prior reservation to a foreign/expired/revoked caller.
         const existing = await query(
-          `SELECT count(*)::integer AS "existingCount" FROM bci_dev.content_dispatch_reservations
-           WHERE tenant_id=$1::uuid AND product='content' AND dispatch_intent_id=$2::text`,
-          [args.tenantId,args.dispatchIntentId]);
+          `SELECT count(*)::integer AS "existingCount"
+           FROM bci_dev.content_dispatch_reservations r
+           JOIN bci_dev.content_dispatch_approvals a
+             ON a.approval_id=r.approval_id AND a.tenant_id=r.tenant_id
+            AND a.product=r.product AND a.dispatch_intent_id=r.dispatch_intent_id
+            AND a.binding_sha256=r.binding_sha256
+           WHERE r.tenant_id=$1::uuid AND r.product='content'
+             AND r.dispatch_intent_id=$2::text AND r.principal_id=$3::uuid
+             AND r.approval_id=$4::text AND r.binding_sha256=$5::text
+             AND a.expires_at > clock_timestamp()
+             AND a.approved_at <= clock_timestamp()
+             AND EXISTS (
+               SELECT 1 FROM bci_dev.tenant_memberships m
+               WHERE m.principal_id=$3::uuid AND m.tenant_id=$1::uuid
+                 AND m.product='content' AND m.active IS TRUE AND m.revoked_at IS NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM bci_dev.content_dispatch_revocations v
+               WHERE v.approval_id=a.approval_id AND v.tenant_id=a.tenant_id
+                 AND v.product=a.product
+             )`,
+          [args.tenantId,args.dispatchIntentId,args.principalId,args.approvalId,args.bindingSha256]);
         if (existing.rows.length === 1 && obj(existing.rows[0]) &&
             existing.rows[0].existingCount === 1) {
           return Object.freeze({status:"already_reserved" as const,reservationId:null});
