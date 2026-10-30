@@ -8,11 +8,12 @@ const reviewerId="11111111-1111-4111-8111-111111111111";
 const bytes=Buffer.alloc(64,42);
 const sha=createHash("sha256").update(bytes).digest("hex");
 const media={handoffId:"content-handoff",reviewPacketId:"content-review",
-  mediaSetId:"content-media",originalMediaSha256:sha};
+  mediaSetId:"content-media",originalMediaSha256:sha,mediaCount:1};
 const verified={product:"content",tenantId,reviewerSubject:reviewerId,
   reviewerProvider:"neon-auth",signedDecision:"APPROVE",signatureVerified:true,
   signedReviewEvidenceId:"content-signed-review",expiresAt:"2026-11-01T00:00:00.000Z",
-  handoffId:media.handoffId,reviewPacketId:media.reviewPacketId,mediaSetId:media.mediaSetId};
+  handoffId:media.handoffId,reviewPacketId:media.reviewPacketId,mediaSetId:media.mediaSetId,
+  originalMediaSha256:sha,mediaCount:1};
 const binding={reviewPacketId:media.reviewPacketId,handoffId:media.handoffId,
   signedReviewEvidenceId:verified.signedReviewEvidenceId,planId:"content-plan",
   mediaSetId:media.mediaSetId,copySha256:"a".repeat(64),
@@ -40,6 +41,7 @@ test("admission only binds signed review, original bytes, JWT and live reviewer 
   assert.equal(result.executionAllowed,false);
   assert.equal(result.providerSent,false);
   assert.equal(result.originalMediaSha256,sha);
+  assert.equal(result.mediaCount,1);
   assert.match(result.bindingSha256,/^[a-f0-9]{64}$/);
   assert.deepEqual(h.calls,["media","signature","jwt","authority"]);
 });
@@ -84,4 +86,39 @@ test("unverified or missing dependencies fail closed",async()=>{
   assert.throws(()=>createBciContentApprovalAdmission({}),denied);
   const h=setup({verifySignedReceipt:async()=>({...verified,extra:true})});
   await assert.rejects(h.admit(request),denied);
+});
+
+test("multi-image media-set cannot be admitted by attesting only the first image",async()=>{
+  const h=setup({recomputeOriginalMedia:async()=>({...media,mediaCount:2})});
+  await assert.rejects(h.admit(request),denied);
+  assert.deepEqual(h.calls,[]);
+});
+test("signed carousel receipt cannot masquerade as a one-image review",async()=>{
+  const h=setup({verifySignedReceipt:async()=>({...verified,mediaCount:2})});
+  await assert.rejects(h.admit(request),denied);
+});
+test("signed receipt must bind the exact recomputed original image digest",async()=>{
+  const h=setup({verifySignedReceipt:async()=>({...verified,originalMediaSha256:"b".repeat(64)})});
+  await assert.rejects(h.admit(request),denied);
+});
+test("missing independently verified media count or signed digest fails closed",async()=>{
+  const h=setup({recomputeOriginalMedia:async()=>({
+    handoffId:media.handoffId,reviewPacketId:media.reviewPacketId,
+    mediaSetId:media.mediaSetId,originalMediaSha256:sha
+  })});
+  await assert.rejects(h.admit(request),denied);
+  const g=setup({verifySignedReceipt:async()=>({
+    product:verified.product,tenantId:verified.tenantId,
+    reviewerSubject:verified.reviewerSubject,reviewerProvider:verified.reviewerProvider,
+    signedDecision:verified.signedDecision,signatureVerified:verified.signatureVerified,
+    signedReviewEvidenceId:verified.signedReviewEvidenceId,expiresAt:verified.expiresAt,
+    handoffId:verified.handoffId,reviewPacketId:verified.reviewPacketId,
+    mediaSetId:verified.mediaSetId,mediaCount:1
+  })});
+  await assert.rejects(g.admit(request),denied);
+});
+test("caller cannot declare media count or a second original image",async()=>{
+  const h=setup();
+  await assert.rejects(h.admit({...request,mediaCount:1}),denied);
+  await assert.rejects(h.admit({...request,mediaBytes2:Buffer.alloc(64)}),denied);
 });
