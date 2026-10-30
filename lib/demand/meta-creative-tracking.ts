@@ -67,8 +67,8 @@ export function assessDemandMetaCreativeTracking(
     landingStrings.push((linkData as Record<string, unknown>).link as string);
   } else {
     const spec = feed as Record<string, unknown>;
-    const links = spec.link_urls;
-    const rules = spec.asset_customization_rules;
+    const links = spec.link_urls as unknown[];
+    const rules = spec.asset_customization_rules as unknown[];
     if (!Array.isArray(links) || links.length < 1 || links.length > 20 ||
         !Array.isArray(rules) || rules.length < 1 || rules.length > 30) fail();
     const labelKeys = new Set<string>();
@@ -80,7 +80,7 @@ export function assessDemandMetaCreativeTracking(
           !Array.isArray(link.adlabels) || link.adlabels.length < 1 ||
           link.adlabels.length > 20) fail();
       landingStrings.push(link.website_url as string);
-      for (const value of link.adlabels) {
+      for (const value of link.adlabels as unknown[]) {
         if (!value || typeof value !== "object" || Array.isArray(value)) fail();
         const label = value as Record<string, unknown>;
         if (typeof label.name !== "string" ||
