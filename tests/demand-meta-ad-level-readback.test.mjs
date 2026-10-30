@@ -59,3 +59,45 @@ test("14 actual provider-shaped 9 Oct ad rows reconcile 124.93/3194/63 with only
  assert.equal(result.positiveSignalAds[0].reportedPurchaseAliases,1);
  assert.equal(result.verifiedOrders,null);
 });
+
+test("Meta action/value revisions change candidate identity without claiming revenue",()=>{
+ const base=project();
+ const enriched=[{...response.rows[0],actions:[...purchase,{action_type:"landing_page_view",value:33}],
+   action_values:[{action_type:"purchase",value:"50.00"},
+     {action_type:"web_app_in_store_purchase",value:"0.01"}]},response.rows[1]];
+ const r={...response,rows:enriched};
+ const x=project(scope,query,r);
+ const shuffled=project(scope,query,{...r,rows:[enriched[1],{...enriched[0],
+   actions:[...enriched[0].actions].reverse(),
+   action_values:[...enriched[0].action_values].reverse()}]});
+ assert.equal(x.candidateId,shuffled.candidateId);
+ assert.notEqual(x.candidateId,base.candidateId);
+ const revised=project(scope,query,{...r,rows:[{...enriched[0],
+   action_values:[{action_type:"purchase",value:"100.00"},
+     {action_type:"web_app_in_store_purchase",value:"0.01"}]},enriched[1]]});
+ assert.notEqual(x.candidateId,revised.candidateId);
+ const revisedCount=project(scope,query,{...r,rows:[{...enriched[0],
+   actions:[...purchase,{action_type:"landing_page_view",value:32}]},enriched[1]]});
+ assert.notEqual(x.candidateId,revisedCount.candidateId);
+ for(const item of [x,revised,revisedCount]){
+   assert.equal(item.adTotalsMatchCampaign,true);
+   assert.equal(item.verifiedOrders,null);
+   assert.equal(item.verifiedCpaMinor,null);
+   assert.equal(item.causalLift,null);
+ }
+});
+test("conflicting duplicate action values and invalid attributed values fail closed",()=>{
+ const invalid=/Invalid BROS DEMAND ad-level readback/;
+ for(const action_values of [
+   [{action_type:"purchase",value:"50"},{action_type:"purchase",value:"100"}],
+   [{action_type:"purchase",value:-1}],
+   [{action_type:"purchase",value:"Infinity"}],
+   [{action_type:"purchase",value:"50.123456789"}],
+ ]){
+   assert.throws(()=>project(scope,query,{...response,rows:[
+     {...response.rows[0],action_values},response.rows[1]]}),invalid);
+ }
+ assert.throws(()=>project(scope,query,{...response,rows:[
+   {...response.rows[0],actions:[...purchase,{action_type:"landing_page_view",value:33},
+     {action_type:"landing_page_view",value:32}]},response.rows[1]]}),invalid);
+});

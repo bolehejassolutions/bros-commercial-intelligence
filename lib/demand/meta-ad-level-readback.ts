@@ -39,6 +39,31 @@ function minor(v: unknown): number {
   return Math.round(n * 100);
 }
 const purchaseLabels = new Set(["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase"]);
+
+/** Action values are provider-attributed metadata, NEVER HitPay revenue.
+ * Fingerprint all observed action counts and action_values so later Meta
+ * revisions cannot reuse an earlier ad-level candidate ID. */
+function canonicalActionValues(input: unknown): readonly (readonly [string, string])[] | null {
+  if (input === undefined) return null; // absent is not provider-reported zero
+  if (!Array.isArray(input) || input.length > 200) invalid();
+  const values = new Map<string, string>();
+  for (const item of input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) invalid();
+    const row = item as Record<string, unknown>;
+    if (typeof row.action_type !== "string" ||
+        !/^[a-z0-9_.]{1,100}$/.test(row.action_type) ||
+        (typeof row.value !== "string" && typeof row.value !== "number")) invalid();
+    const raw = String(row.value);
+    if (!/^(0|[1-9]\\d*)(?:\\.\\d{1,8})?$/.test(raw)) invalid();
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1e12) invalid();
+    const normalized = String(numeric);
+    const previous = values.get(row.action_type);
+    if (previous !== undefined && previous !== normalized) invalid();
+    values.set(row.action_type, normalized);
+  }
+  return [...values.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
 export function reconcileDemandMetaAdReadback(
   scope: Scope, query: Query, response: Response, campaign: CampaignTotals,
 ) {
@@ -56,7 +81,7 @@ export function reconcileDemandMetaAdReadback(
   let spendMinor = 0, impressions = 0, inlineLinkClicks = 0;
   const adObservations: Array<{adId: string; adsetId: string; spendMinor: number;
     impressions: number; inlineLinkClicks: number; attributionSetting: string;
-    metaPurchaseSignal: number | null; purchaseAliasMismatch: boolean}> = [];
+    metaPurchaseSignal: number | null; purchaseAliasMismatch: boolean; actionEvidenceDigest: string}> = [];
   for (const row of response.rows) {
     if (!row || typeof row !== "object" || Array.isArray(row) ||
         typeof row.ad_id !== "string" || !digits.test(row.ad_id) || ids.has(row.ad_id) ||
@@ -74,11 +99,15 @@ export function reconcileDemandMetaAdReadback(
     if (![spendMinor, impressions, inlineLinkClicks].every(Number.isSafeInteger)) invalid();
     if (row.actions !== undefined && (!Array.isArray(row.actions) || row.actions.length > 200)) invalid();
     const aliases = new Map<string, number>();
+    const allActionCounts = new Map<string, number>();
     for (const a of (row.actions ?? []) as Array<Record<string, unknown>>) {
       if (!a || typeof a.action_type !== "string" ||
           !/^[a-z0-9_.]{1,100}$/.test(a.action_type)) invalid();
       const value = integer(a.value);
       const actionType = a.action_type as string;
+      const previousCount = allActionCounts.get(actionType);
+      if (previousCount !== undefined && previousCount !== value) invalid();
+      allActionCounts.set(actionType, value);
       if (purchaseLabels.has(actionType)) {
         const previous = aliases.get(actionType);
         if (previous !== undefined && previous !== value) invalid();
@@ -87,11 +116,17 @@ export function reconcileDemandMetaAdReadback(
     }
     const values = [...aliases.values()];
     const mismatch = values.some(v => v !== values[0]);
+    // The digest binds revisions of ALL action labels and attributed values,
+    // including auxiliary MYR0.01 signals, without treating any as revenue.
+    const actionEvidenceDigest = createHash("sha256").update(JSON.stringify([
+      [...allActionCounts.entries()].sort(([a], [b]) => a.localeCompare(b)),
+      canonicalActionValues(row.action_values),
+    ])).digest("hex");
     adObservations.push({adId, adsetId,
       spendMinor: s, impressions: i, inlineLinkClicks: c,
       attributionSetting,
       metaPurchaseSignal: mismatch || values.length === 0 ? null : values[0],
-      purchaseAliasMismatch: mismatch});
+      purchaseAliasMismatch: mismatch, actionEvidenceDigest});
   }
   adObservations.sort((a,b) => a.adId.localeCompare(b.adId));
   const totalsMatch = campaign.spendMinor !== null && campaign.impressions !== null &&
@@ -101,7 +136,7 @@ export function reconcileDemandMetaAdReadback(
     .map(a => ({adId: a.adId, reportedPurchaseAliases: a.metaPurchaseSignal,
       attributionSetting: a.attributionSetting}));
   const candidateId = "demand:meta-ad-readback:sha256:" + createHash("sha256")
-    .update(JSON.stringify([scope.tenantId.toLowerCase(), scope.accountId,
+    .update(JSON.stringify(["v2", scope.tenantId.toLowerCase(), scope.accountId,
       scope.campaignId, scope.since, scope.until, campaign, adObservations]))
     .digest("hex");
   return Object.freeze({candidateId, status: "AD_LEVEL_OBSERVED_UNATTESTED" as const,
