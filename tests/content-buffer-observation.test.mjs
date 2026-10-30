@@ -27,6 +27,32 @@ test("distinct carousel slots cannot reuse one media source URL or provider asse
 });
 
 test("AI caption/native metadata conflict triggers review",()=>{const o=make({metadata:{isAiGenerated:false}});assert.equal(o.status,"REVIEW_REQUIRED");assert.equal(next([o]).reason,"AI_DISCLOSURE_REVIEW")});
+
+// CONTENT_PROVIDER_ALT_TEXT_AI_PROVENANCE_PARITY_20261030: synthetic Buffer-shaped
+// metadata, not a live publication or authenticated provider attestation.
+test("image alt-text AI provenance contradicts native non-AI metadata even with neutral caption",()=>{
+  const assets=[{...post.assets[0],image:{altText:"Ilustrasi AI untuk pembelajaran"}},
+    {...post.assets[1],image:{altText:"Penjual bertanya kepada pelanggan"}}];
+  const neutral={text:"Slaid latihan penjual.",metadata:{isAiGenerated:false},assets};
+  for(const [service,channelId,externalLink] of [
+    ["instagram","ig123","https://www.instagram.com/p/ABC/"],
+    ["tiktok","tt123","https://www.tiktok.com/@bros.sell/video/7699352537861737735"]
+  ]){
+    const s={...scope,channelService:service,channelId};
+    const observed=make({...neutral,channelService:service,channelId,externalLink},s);
+    assert.equal(observed.status,"REVIEW_REQUIRED");
+    assert.ok(observed.flags.includes("AI_DISCLOSURE_ALT_TEXT_MISMATCH"));
+    assert.equal(next([observed]).reason,"AI_DISCLOSURE_REVIEW");
+    assert.throws(()=>handoff(observed,s,"2026-10-26T17:00:00.000Z"),/INVALID_CONTENT_EVIDENCE_SCOPE/);
+    const declared=make({...neutral,channelService:service,channelId,externalLink,
+      metadata:{isAiGenerated:true}},s);
+    assert.equal(declared.status,"MEASURED");
+    const manual=make({...neutral,channelService:service,channelId,externalLink,
+      assets:[{...assets[0],image:{altText:"Lakaran manual untuk latihan"}},assets[1]]},s);
+    assert.equal(manual.status,"MEASURED");
+  }
+});
+
 test("native URL must be HTTPS on matching channel",()=>{assert.equal(make({externalLink:"https://www.tiktok.com/@a/video/1"}).status,"REVIEW_REQUIRED");assert.equal(make({externalLink:"http://www.instagram.com/p/a"}).status,"REVIEW_REQUIRED")});
 test("learning rejects cross tenant and duplicate posts",()=>{const o=make();assert.throws(()=>next([o,{...o,tenantId:"tenant-B",postId:"post456"}]),/CROSS_SCOPE/);assert.throws(()=>next([o,o]),/DUPLICATE_POST/)});
 test("cross-platform views cannot be compared as a winner",()=>{const o=make();const t=make({id:"post456",channelService:"tiktok",channelId:"tt123",externalLink:"https://www.tiktok.com/@bros.sell/video/7699352537861737735"},{channelService:"tiktok",channelId:"tt123"});assert.equal(t.status,"MEASURED");assert.equal(next([o,t]).reason,"NO_SAME_CHANNEL_PAIR")});
