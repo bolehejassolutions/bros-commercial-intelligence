@@ -54,7 +54,7 @@ function canonicalActionValues(input: unknown): readonly (readonly [string, stri
         !/^[a-z0-9_.]{1,100}$/.test(row.action_type) ||
         (typeof row.value !== "string" && typeof row.value !== "number")) invalid();
     const raw = String(row.value);
-    if (!/^(0|[1-9]\\d*)(?:\\.\\d{1,8})?$/.test(raw)) invalid();
+    if (!/^(0|[1-9]\d*)(?:\.\d{1,8})?$/.test(raw)) invalid();
     const numeric = Number(raw);
     if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1e12) invalid();
     const normalized = String(numeric);
