@@ -45,22 +45,26 @@ const purchaseLabels = new Set(["purchase", "omni_purchase", "offsite_conversion
  * revisions cannot reuse an earlier ad-level candidate ID. */
 function canonicalActionValues(input: unknown): readonly (readonly [string, string])[] | null {
   if (input === undefined) return null; // absent is not provider-reported zero
-  if (!Array.isArray(input) || input.length > 200) invalid();
+  if (!Array.isArray(input)) throw new Error("Invalid BROS DEMAND ad-level readback");
+  if (input.length > 200) invalid();
   const values = new Map<string, string>();
   for (const item of input) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) invalid();
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw new Error("Invalid BROS DEMAND ad-level readback");
     const row = item as Record<string, unknown>;
-    if (typeof row.action_type !== "string" ||
-        !/^[a-z0-9_.]{1,100}$/.test(row.action_type) ||
-        (typeof row.value !== "string" && typeof row.value !== "number")) invalid();
+    const actionType = row.action_type;
+    if (typeof actionType !== "string" ||
+        !/^[a-z0-9_.]{1,100}$/.test(actionType) ||
+        (typeof row.value !== "string" && typeof row.value !== "number"))
+      throw new Error("Invalid BROS DEMAND ad-level readback");
     const raw = String(row.value);
     if (!/^(0|[1-9]\d*)(?:\.\d{1,8})?$/.test(raw)) invalid();
     const numeric = Number(raw);
     if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1e12) invalid();
     const normalized = String(numeric);
-    const previous = values.get(row.action_type);
+    const previous = values.get(actionType);
     if (previous !== undefined && previous !== normalized) invalid();
-    values.set(row.action_type, normalized);
+    values.set(actionType, normalized);
   }
   return [...values.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
