@@ -47,19 +47,76 @@ export function assessDemandMetaCreativeTracking(
       typeof creative.url_tags !== "string" || creative.url_tags.length > 2048 ||
       !creative.object_story_spec || typeof creative.object_story_spec !== "object" ||
       Array.isArray(creative.object_story_spec)) fail();
-  const linkData = (creative.object_story_spec as Record<string, unknown>).link_data;
-  if (!linkData || typeof linkData !== "object" || Array.isArray(linkData) ||
-      typeof (linkData as Record<string, unknown>).link !== "string") fail();
-  let expected: URL, landing: URL;
+  // Meta's dynamic-creative UGC ads store destination links in
+  // asset_feed_spec.link_urls, not object_story_spec.link_data. A direct-link
+  // only validator rejects valid provider rows and hides placement link risks.
+  // Accept either provider shape, never both, and fail closed if ANY dynamic
+  // link or customization-rule label cannot be resolved to the expected URL.
+  const story = creative.object_story_spec as Record<string, unknown>;
+  const feed = creative.asset_feed_spec;
+  const directPresent = Object.hasOwn(story, "link_data");
+  const feedPresent = !!feed && typeof feed === "object" && !Array.isArray(feed) &&
+    Object.hasOwn(feed, "link_urls");
+  if (directPresent === feedPresent) fail();
+  const landingStrings: string[] = [];
+  let feedLinkAudit: readonly unknown[] | null = null;
+  if (directPresent) {
+    const linkData = story.link_data;
+    if (!linkData || typeof linkData !== "object" || Array.isArray(linkData) ||
+        typeof (linkData as Record<string, unknown>).link !== "string") fail();
+    landingStrings.push((linkData as Record<string, unknown>).link as string);
+  } else {
+    const spec = feed as Record<string, unknown>;
+    const links = spec.link_urls;
+    const rules = spec.asset_customization_rules;
+    if (!Array.isArray(links) || links.length < 1 || links.length > 20 ||
+        !Array.isArray(rules) || rules.length < 1 || rules.length > 30) fail();
+    const labelKeys = new Set<string>();
+    const linkAudit: string[] = [];
+    for (const item of links) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) fail();
+      const link = item as Record<string, unknown>;
+      if (typeof link.website_url !== "string" ||
+          !Array.isArray(link.adlabels) || link.adlabels.length < 1 ||
+          link.adlabels.length > 20) fail();
+      landingStrings.push(link.website_url as string);
+      for (const value of link.adlabels) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) fail();
+        const label = value as Record<string, unknown>;
+        if (typeof label.name !== "string" ||
+            !/^[a-z0-9_]{3,100}$/i.test(label.name) ||
+            typeof label.id !== "string" || !digits.test(label.id)) fail();
+        const key = label.name + "#" + label.id;
+        if (labelKeys.has(key)) fail();
+        labelKeys.add(key);
+        linkAudit.push(key + "=" + link.website_url);
+      }
+    }
+    const ruleAudit: string[] = [];
+    for (const value of rules) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) fail();
+      const label = (value as Record<string, unknown>).link_url_label;
+      if (!label || typeof label !== "object" || Array.isArray(label)) fail();
+      const name = (label as Record<string, unknown>).name;
+      const id = (label as Record<string, unknown>).id;
+      if (typeof name !== "string" || typeof id !== "string" ||
+          !labelKeys.has(name + "#" + id)) fail();
+      ruleAudit.push(name + "#" + id);
+    }
+    feedLinkAudit = [linkAudit.sort(), ruleAudit.sort()];
+  }
+  let expected: URL, landing: URL, landingUrls: URL[];
   try {
     expected = new URL(scope.expectedLandingUrl);
-    landing = new URL((linkData as Record<string, unknown>).link as string);
+    landingUrls = landingStrings.map(value => new URL(value));
+    landing = landingUrls[0];
   } catch { return fail(); }
   if (expected.protocol !== "https:" || expected.username || expected.password ||
       expected.search || expected.hash || expected.port ||
-      landing.protocol !== "https:" || landing.username || landing.password ||
-      landing.port || landing.hash || landing.search ||
-      landing.origin !== expected.origin || landing.pathname !== expected.pathname) fail();
+      landingUrls.length < 1 || landingUrls.some(url =>
+        url.protocol !== "https:" || url.username || url.password ||
+        url.port || url.hash || url.search ||
+        url.origin !== expected.origin || url.pathname !== expected.pathname)) fail();
   const entries = [...new URLSearchParams(creative.url_tags as string).entries()];
   if (entries.length === 0 || entries.length > 24 ||
       entries.some(([key,value]) => !/^[a-z][a-z0-9_]{0,63}$/.test(key) ||
@@ -76,17 +133,18 @@ export function assessDemandMetaCreativeTracking(
     .filter(key => !required.includes(key as typeof required[number])).sort();
   const trackingTemplateReady = missingOrMismatchedTags.length === 0 && extraTags.length === 0;
   const snapshotId = "demand:meta-creative-tracking:sha256:" + createHash("sha256")
-    .update(JSON.stringify(["v2",scope.tenantId.toLowerCase(),scope.product,
+    .update(JSON.stringify([feedPresent ? "v3-asset-feed" : "v2",scope.tenantId.toLowerCase(),scope.product,
       scope.accountId,scope.campaignId,scope.adId,scope.expectedLandingUrl,
       scope.expectedUtmCampaign,scope.expectedUtmContent,
       ad.adset_id,creative.id,ad.status,ad.effective_status,landing.href,
-      entries.sort(([a],[b]) => a.localeCompare(b))])).digest("hex");
+      entries.sort(([a],[b]) => a.localeCompare(b)),feedLinkAudit])).digest("hex");
   return Object.freeze({
     snapshotId, status: trackingTemplateReady ? "TEMPLATE_READY_UNATTESTED" as const :
       "TEMPLATE_INCOMPLETE_UNATTESTED" as const,
     adId:scope.adId, creativeId:creative.id as string,
     configuredStatus:ad.status as string, effectiveStatus:ad.effective_status as string,
-    landingUrl:landing.href, missingOrMismatchedTags:Object.freeze(missingOrMismatchedTags),
+    landingUrl:landing.href, landingUrlSource:feedPresent ? "asset_feed_spec" as const : "link_data" as const,
+    missingOrMismatchedTags:Object.freeze(missingOrMismatchedTags),
     extraTags:Object.freeze(extraTags), trackingTemplateReady,
     dynamicTokenExpansionVerified:false as const,
     liveClickOrFbclidVerified:false as const,
