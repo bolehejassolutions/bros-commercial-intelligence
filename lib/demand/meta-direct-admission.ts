@@ -91,7 +91,7 @@ export function createDemandDirectMetaReader(
 
       const principal = await deps.authenticate();
       if (!principal || principal.authenticated !== true ||
-          typeof principal.userId !== "string" || !UUID.test(principal.userId)) fail();
+          typeof principal.userId !== "string" || !UUID.test(principal.userId)) return fail();
       const tenantId = membershipTenant(
         await deps.membershipsFor(principal.userId, "demand"), principal.userId,
       );
@@ -101,7 +101,7 @@ export function createDemandDirectMetaReader(
           new Date(Date.parse(collectedAt)).toISOString().slice(0, 19) !==
             collectedAt.slice(0, 19)) fail();
       const accessToken = await deps.serverTokenFor(tenantId, binding.accountId);
-      if (typeof accessToken !== "string" || !accessToken) fail();
+      if (typeof accessToken !== "string" || !accessToken) return fail();
 
       const scope: MetaFunnelScope = {
         tenantId, product: "demand",
@@ -113,6 +113,7 @@ export function createDemandDirectMetaReader(
         scope, apiVersion: binding.apiVersion, accessToken,
         ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
       });
+      if (!result) return fail();
 
       // Fail closed if the membership was revoked or switched during HTTP.
       const tenantAfterRead = membershipTenant(
