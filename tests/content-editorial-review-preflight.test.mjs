@@ -69,6 +69,18 @@ test('contradictory non-AI provenance is held at editorial review before signed 
   assert.deepEqual(accepted.automatedReviewFlags,[]);
   assert.notEqual(flagged.reviewPacketId,accepted.reviewPacketId);
 });
+test('non-AI declaration contradicted only by one slide alt text is held before approval',()=>{
+  const c=copy();c.aiDisclosure='DECLARED_NON_AI';
+  c.caption='Penerangan produk menggunakan lakaran manual.';
+  c.altTexts=['Langkah satu: ilustrasi AI menunjukkan pelanggan.','Langkah dua: lakaran manual.'];
+  const flagged=prepare(config(),brief(),bytes(),c,dims);
+  assert.deepEqual(flagged.automatedReviewFlags,['AI_PROVENANCE_ALT_TEXT_CONTRADICTION']);
+  assert.equal(flagged.approvalGranted,false);
+  assert.equal(flagged.executionAllowed,false);
+  const clear={...c,altTexts:['Langkah satu: lakaran manual pelanggan.','Langkah dua: lakaran manual.']};
+  assert.deepEqual(prepare(config(),brief(),bytes(),clear,dims).automatedReviewFlags,[]);
+  assert.notEqual(flagged.reviewPacketId,prepare(config(),brief(),bytes(),clear,dims).reviewPacketId);
+});
 test('invalid or duplicated bytes and forged approval fields cannot produce a review packet',()=>{
   const b=bytes();b[0][29]^=1;
   assert.throws(()=>prepare(config(),brief(),b,copy(),dims),/PNG_QA_BAD_CRC/);
