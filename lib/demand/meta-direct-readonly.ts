@@ -101,16 +101,18 @@ export async function readDirectMetaCampaignInsights(
 
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) reject();
     const body = payload as Record<string, unknown>;
-    if (Object.hasOwn(body, "error") || !Array.isArray(body.data) ||
-        body.data.length > 1) reject();
+    const data = body.data;
+    if (Object.hasOwn(body, "error") || !Array.isArray(data) ||
+        data.length > 1) reject();
     // Do NOT follow paging.next (untrusted URL with possible token contents).
     // A partially loaded report is neither complete nor authoritative.
-    if (body.paging !== undefined) {
-      if (!body.paging || typeof body.paging !== "object" ||
-          Array.isArray(body.paging)) reject();
-      if (Object.hasOwn(body.paging, "next")) reject();
+    const paging = body.paging;
+    if (paging !== undefined) {
+      if (!paging || typeof paging !== "object" ||
+          Array.isArray(paging)) reject();
+      if (Object.hasOwn(paging, "next")) reject();
     }
-    if (body.data.length === 0) {
+    if (data.length === 0) {
       return Object.freeze({
         status: "NO_ROWS_NOT_ZERO" as const,
         observation: null,
@@ -122,7 +124,7 @@ export async function readDirectMetaCampaignInsights(
       });
     }
 
-    const row = body.data[0];
+    const row = data[0];
     if (!row || typeof row !== "object" || Array.isArray(row)) reject();
     const raw = row as Record<string, unknown>;
     if (raw.account_id !== scope.accountId.slice(4) ||
