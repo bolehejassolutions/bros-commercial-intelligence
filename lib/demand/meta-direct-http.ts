@@ -31,6 +31,14 @@ const securityHeaders = {
 const json = (data: unknown, status: number, additional?: Record<string, string>) =>
   Response.json(data, { status, headers: { ...securityHeaders, ...additional } });
 const deny = (status: number) => json({ error: "BROS DEMAND private Meta read denied." }, status);
+/** One explicit historical, PAUSED BROS SELL control, same protected account.
+ * Server-owned exact scope; never accept arbitrary campaign IDs from callers. */
+const historicalControl = Object.freeze({
+  cohort: "historical_bros_sell_202610",
+  campaignId: "120250864977630697",
+  since: "2026-10-08",
+  until: "2026-10-27",
+});
 
 export function createDemandMetaHttpHandler(deps: Dependencies) {
   if (!deps || typeof deps.enabled !== "function" ||
@@ -50,10 +58,15 @@ export function createDemandMetaHttpHandler(deps: Dependencies) {
       return deny(400);
     let url: URL;
     try { url = new URL(request.url); } catch { return deny(400); }
+    const historical = url.searchParams.get("cohort") === historicalControl.cohort;
     if (url.pathname !== "/api/internal/demand-meta" ||
-        [...url.searchParams.keys()].some(k => k !== "since" && k !== "until") ||
+        [...url.searchParams.keys()].some(k =>
+          k !== "since" && k !== "until" && !(historical && k === "cohort")) ||
         url.searchParams.getAll("since").length !== 1 ||
-        url.searchParams.getAll("until").length !== 1)
+        url.searchParams.getAll("until").length !== 1 ||
+        (historical && (url.searchParams.getAll("cohort").length !== 1 ||
+          url.searchParams.get("since") !== historicalControl.since ||
+          url.searchParams.get("until") !== historicalControl.until)))
       return deny(400);
 
     const authorization = request.headers.get("authorization");
@@ -66,7 +79,8 @@ export function createDemandMetaHttpHandler(deps: Dependencies) {
     try {
       // Request-local dependencies prohibit concurrent JWT cross-contamination.
       const reader = createDemandDirectMetaReader({
-        accountId: deps.accountId, campaignId: deps.campaignId,
+        accountId: deps.accountId,
+        campaignId: historical ? historicalControl.campaignId : deps.campaignId,
         apiVersion: deps.apiVersion,
       }, {
         authenticate: async () => {

@@ -159,3 +159,65 @@ test("empty provider read remains UNKNOWN, not zero business spend or purchase",
   assert.equal(payload.readCandidate.independentProviderReceiptRecorded, false);
   assert.equal(payload.verifiedPaidOrders, null);
 });
+
+const historicalUrl = "https://preview.example/api/internal/demand-meta?cohort=historical_bros_sell_202610&since=2026-10-08&until=2026-10-27";
+const historicalId = "120250864977630697";
+
+test("historical PAUSED control is one exact server-owned read-only campaign/window", async () => {
+  const { handler, events } = make({
+    fetchImpl: async (url, init) => {
+      events.network++;
+      const u = new URL(url);
+      assert.equal(u.hostname, "graph.facebook.com");
+      assert.equal(u.pathname, "/v26.0/" + historicalId + "/insights");
+      assert.deepEqual(JSON.parse(u.searchParams.get("time_range")),
+        { since: "2026-10-08", until: "2026-10-27" });
+      assert.equal(init.method, "GET");
+      assert.equal(init.headers.Authorization, "Bearer " + secret);
+      return { ok: true, json: async () => ({ data: [{
+        ...sourceRow, campaign_id: historicalId, date_start: "2026-10-08",
+        date_stop: "2026-10-27", spend: "124.93",
+        actions: [
+          { action_type: "purchase", value: 1 },
+          { action_type: "omni_purchase", value: 1 },
+          { action_type: "offsite_conversion.fb_pixel_purchase", value: 1 },
+          { action_type: "landing_page_view", value: 33 },
+        ],
+      }] }) };
+    },
+  });
+  const response = await handler(request(historicalUrl));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.status, "CAMPAIGN_ROW_OBSERVED_UNATTESTED");
+  assert.equal(body.report.campaignId, historicalId);
+  assert.equal(body.report.spendMinor, 12493);
+  assert.equal(body.report.metaAttributedPurchases, 1);
+  assert.equal(body.report.windowStart, "2026-10-08");
+  assert.equal(body.readCandidate.stage, "UNATTESTED_READ_CANDIDATE_ONLY");
+  assert.equal(body.durableBciEvidenceRecorded, false);
+  assert.equal(body.verifiedPaidOrders, null);
+  assert.equal(body.verifiedCpaMinor, null);
+  assert.equal(body.campaignExecutionAllowed, false);
+  assert.equal(JSON.stringify(body).includes(secret), false);
+  assert.deepEqual(events, { auth: 1, membership: 2, token: 1, network: 1 });
+});
+
+test("historical scope injection, duplicate cohort, arbitrary dates and unauthenticated reads fail closed", async () => {
+  const { handler, events } = make();
+  for (const bad of [
+    historicalUrl.replace("historical_bros_sell_202610", "other"),
+    historicalUrl + "&cohort=historical_bros_sell_202610",
+    historicalUrl + "&campaignId=123",
+    historicalUrl.replace("2026-10-08", "2026-10-09"),
+    historicalUrl.replace("2026-10-27", "2026-10-28"),
+    historicalUrl + "&tenantId=" + tenantId,
+  ]) assert.equal((await handler(request(bad))).status, 400);
+  assert.equal(events.auth, 0);
+  assert.equal(events.network, 0);
+  assert.equal((await handler(new Request(historicalUrl))).status, 401);
+  assert.equal(events.network, 0);
+  const off = make({ enabled: () => false });
+  assert.equal((await off.handler(request(historicalUrl))).status, 404);
+  assert.equal(off.events.network, 0);
+});

@@ -9,6 +9,7 @@ import { demandMetaBrowserDiagnostic, type DemandMetaBrowserPhase } from "@/lib/
 const operatorEmail = "rasymokh@gmail.com";
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
 const endpoint = "/api/internal/demand-meta?since=2026-10-01&until=2026-10-30";
+const historicalEndpoint = "/api/internal/demand-meta?cohort=historical_bros_sell_202610&since=2026-10-08&until=2026-10-27";
 let neonClient: VanillaBetterAuthClient | undefined;
 
 function auth(): VanillaBetterAuthClient {
@@ -119,7 +120,7 @@ export default function DemandMetaTestClient() {
     } finally { setBusy(false); }
   }
 
-  async function checkReadOnly() {
+  async function checkReadOnly(mode: "pinned" | "historical" = "pinned") {
     if (busy) return;
     setBusy(true);
     setNotice("Checking authorized read-only DEMAND API…");
@@ -130,7 +131,7 @@ export default function DemandMetaTestClient() {
       phase = "token";
       const jwt = await requestNeonPreviewToken(auth());
       phase = "request";
-      const response = await fetch(endpoint, {
+      const response = await fetch(mode === "historical" ? historicalEndpoint : endpoint, {
         method: "GET",
         headers: { Authorization: "Bearer " + jwt },
         cache: "no-store", redirect: "error",
@@ -152,8 +153,13 @@ export default function DemandMetaTestClient() {
             body.campaignExecutionAllowed !== false ||
             !("durableBciEvidenceRecorded" in body) ||
             body.durableBciEvidenceRecorded !== false) throw new Error();
-        setNotice("HTTP 200 — read-only Meta response: " + body.status +
-          ". No verified paid orders, BCI signed evidence, or campaign execution authority is implied.");
+        if (mode === "historical" && body.status === "CAMPAIGN_ROW_OBSERVED_UNATTESTED" &&
+            (!("report" in body) || !body.report || typeof body.report !== "object" ||
+             !("campaignId" in body.report) ||
+             body.report.campaignId !== "120250864977630697")) throw new Error();
+        setNotice("HTTP 200 — " + (mode === "historical" ? "historical PAUSED BROS SELL" : "pinned ACQ-V2") +
+          " Meta read-only response: " + body.status +
+          ". Provider-reported observations only; no HitPay attribution, BCI signed evidence, verified CPA or execution authority.");
       } else {
         setNotice("API returned HTTP " + response.status + "; no success is attested.");
       }
@@ -204,12 +210,13 @@ export default function DemandMetaTestClient() {
           ) : null}
           {stage === "ready" ? (
             <>
-              <button type="button" disabled={busy} onClick={checkReadOnly}>Check signed JWT + authorized read-only API</button>
+              <button type="button" disabled={busy} onClick={() => checkReadOnly("pinned")}>Check signed JWT + pinned ACQ-V2 read-only API</button>
+              <button type="button" disabled={busy} onClick={() => checkReadOnly("historical")}>Check historical PAUSED BROS SELL (8–27 Oct) read-only</button>
               <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
             </>
           ) : null}
         </div>
-        <p className="sub">No JWT, code, access token, tenant ID or database password is shown or written to storage. All provider reads require a manual click and are confined to the approved campaign and date window.</p>
+        <p className="sub">No JWT, code, access token, tenant ID or database password is shown or written to storage. All provider reads require a manual click and are confined to the pinned ACQ-V2 window or one server-locked historical PAUSED BROS SELL control window. No arbitrary campaign selection.</p>
       </section>
     </main>
   );
