@@ -6,7 +6,8 @@ import {verifyContentSingleImageUrlReadback as verify} from '../lib/content/medi
 const original=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.alloc(64,42)]);
 const digest=createHash('sha256').update(original).digest('hex');
 const admission=()=>({
-  product:'content',status:'SINGLE_IMAGE_ORIGINAL_BYTES_RECHECKED_NONAUTHORIZING',
+  product:'content',tenantId:'tenant-1',instanceId:'instance-1',
+  status:'SINGLE_IMAGE_ORIGINAL_BYTES_RECHECKED_NONAUTHORIZING',
   originalMedia:{mediaSetId:'media-set-1',originalMediaSha256:digest,mediaCount:1},
   mediaBytes:Buffer.from(original),executionAllowed:false
 });
@@ -74,4 +75,36 @@ test('streaming readback rejects excessive body before accepting response',async
     start(controller){controller.enqueue(new Uint8Array(original.length+1));controller.close();}
   }),{headers:{'content-type':'image/png'}});
   await assert.rejects(verify(admission(),url,opts(async()=>response)),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+});
+
+test('media identity survives URL token rotation and host changes but is scoped to tenant, instance and original bytes',async()=>{
+  const hostOpts=(fetchImpl)=>({...opts(fetchImpl),allowedHosts:['assets.example.com','cdn.example.com']});
+  const first=await verify(admission(),url,hostOpts(async()=>ok()));
+  const rotated=await verify(admission(),'https://assets.example.com/published-proof.png?token=rotated',
+    hostOpts(async()=>ok()));
+  const relocated=await verify(admission(),'https://cdn.example.com/new-path.png?token=another',
+    hostOpts(async()=>ok()));
+  assert.equal(first.deliveryCandidateId,rotated.deliveryCandidateId);
+  assert.equal(first.deliveryCandidateId,relocated.deliveryCandidateId);
+  assert.equal(first.executionAllowed,false);
+  for(const modify of [
+    a=>{a.tenantId='tenant-2';},
+    a=>{a.instanceId='instance-2';},
+    a=>{a.originalMedia.mediaSetId='media-set-2';}
+  ]){
+    const a=admission();modify(a);
+    const result=await verify(a,url,hostOpts(async()=>ok()));
+    assert.notEqual(result.deliveryCandidateId,first.deliveryCandidateId);
+  }
+  const changed=admission();
+  changed.mediaBytes[20]^=1;
+  changed.originalMedia.originalMediaSha256=createHash('sha256').update(changed.mediaBytes).digest('hex');
+  const changedResult=await verify(changed,url,hostOpts(async()=>new Response(changed.mediaBytes,{
+    status:200,headers:{'content-type':'image/png','content-length':String(changed.mediaBytes.length)}
+  })));
+  assert.notEqual(changedResult.deliveryCandidateId,first.deliveryCandidateId);
+  for(const missing of ['tenantId','instanceId']){
+    const a=admission();delete a[missing];
+    await assert.rejects(verify(a,url,hostOpts(async()=>ok())),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+  }
 });
