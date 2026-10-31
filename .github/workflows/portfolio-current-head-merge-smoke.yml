@@ -34,6 +34,7 @@ jobs:
           branches=(
             feat/neon-bci-dev-ledger-20261025
             feat/demand-meta-funnel-readonly-20261026
+            feat/demand-direct-meta-readonly-20261031
             feat/content-measurement-gate-20261026
             feat/portfolio-hitpay-provider-smoke-20261026
           )
@@ -44,6 +45,7 @@ jobs:
           for branch in "${branches[@]}"; do
             git fetch --no-tags origin "+refs/heads/$branch:refs/remotes/origin/$branch"
             sha="$(git rev-parse "refs/remotes/origin/$branch")"
+            echo "MERGE_ATTESTED branch=$branch sha=$sha"
             if git merge --no-ff --no-edit "refs/remotes/origin/$branch"; then
               echo "| \`$branch\` | \`$sha\` | PASS |" >> "$GITHUB_STEP_SUMMARY"
             else
