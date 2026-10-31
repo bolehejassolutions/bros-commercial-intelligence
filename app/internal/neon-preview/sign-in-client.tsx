@@ -227,9 +227,14 @@ export default function NeonPreviewSignIn() {
         {step === "ready" && httpCheckResult !== null ? <p role="status" aria-label="HTTP rejection check result">{httpCheckResult}</p> : null}
         {step === "ready" && tenantCheckResult !== null ? <p role="status" aria-label="Empty-tenant isolation result">{tenantCheckResult}</p> : null}
         {step === "ready" && writerCheckResult !== null ? <p role="status" aria-label="Restricted writer login result">{writerCheckResult}</p> : null}
-        {step === "start" ? <div className="auth-form"><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("verify")}>
-          {cooldown > 0 ? `Wait ${cooldown}s` : "Verify email (first app login)"}
-        </button><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>Send sign-in code (already verified)</button></div> : null}
+        {step === "start" ? <div className="auth-form">
+          <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>
+            {cooldown > 0 ? `Wait ${cooldown}s` : "Send sign-in code (verified email)"}
+          </button>
+          <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("verify")}>
+            Verify email (only if not verified)
+          </button>
+        </div> : null}
         {(step === "verify-code" || step === "signin-code") ? (
           <form className="auth-form" onSubmit={verifyCode}>
             <label>
