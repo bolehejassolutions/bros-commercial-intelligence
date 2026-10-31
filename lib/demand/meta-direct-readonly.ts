@@ -42,7 +42,7 @@ const tokenPattern = /^[\x21-\x7e]{20,4096}$/;
 const ALLOWED_FIELDS = [
   "account_id", "account_currency", "campaign_id",
   "date_start", "date_stop", "spend", "impressions",
-  "reach", "clicks", "inline_link_clicks", "actions",
+  "reach", "clicks", "inline_link_clicks", "actions", "action_values",
 ].join(",");
 
 /**
@@ -147,6 +147,8 @@ export async function readDirectMetaCampaignInsights(
         { inline_link_clicks: raw.inline_link_clicks as string | number } : {}),
       ...(Object.hasOwn(raw, "actions") ?
         { actions: raw.actions as MetaCampaignInsight["actions"] } : {}),
+      ...(Object.hasOwn(raw, "action_values") ?
+        { action_values: raw.action_values as MetaCampaignInsight["action_values"] } : {}),
     };
     const observation = normalizeMetaCampaignFunnel(scope, insight);
     return Object.freeze({

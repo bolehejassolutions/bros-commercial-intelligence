@@ -41,6 +41,7 @@ test("direct read uses Meta-only GET with bearer secret and expected campaign wi
     assert.deepEqual(JSON.parse(u.searchParams.get("time_range")),
       { since: scope.since, until: scope.until });
     assert.equal(u.searchParams.get("fields").includes("account_currency"), true);
+    assert.equal(u.searchParams.get("fields").split(",").includes("action_values"), true);
     assert.equal(url.includes(accessToken), false);
     assert.equal(init.method, "GET");
     assert.equal(init.headers.Authorization, "Bearer " + accessToken);
@@ -131,4 +132,43 @@ test("replay gives stable normalized snapshot but changed report remains distinc
   assert.notEqual(first.observation.snapshotKey, changed.observation.snapshotKey);
   assert.equal(changed.verifiedPaidOrders, null);
   assert.equal(changed.causalLift, null);
+});
+
+test("direct Meta action_values revisions change immutable snapshot without implying merchant revenue", async () => {
+  const withValues = {
+    ...raw, action_values: [
+      { action_type: "purchase", value: "50.00" },
+      { action_type: "offsite_conversion.fb_pixel_purchase", value: "50.00" },
+    ],
+  };
+  const initial = await call(ok({ data: [withValues] }));
+  const reordered = await call(ok({ data: [{
+    ...withValues, action_values: [...withValues.action_values].reverse(),
+  }] }));
+  const revised = await call(ok({ data: [{
+    ...withValues, action_values: [
+      { action_type: "purchase", value: "60.00" },
+      { action_type: "offsite_conversion.fb_pixel_purchase", value: "60.00" },
+    ],
+  }] }));
+  const absent = await call(ok({ data: [raw] }));
+  assert.equal(initial.observation.snapshotKey, reordered.observation.snapshotKey);
+  assert.notEqual(initial.observation.snapshotKey, revised.observation.snapshotKey);
+  assert.notEqual(initial.observation.snapshotKey, absent.observation.snapshotKey);
+  assert.equal(initial.observation.metaAttributedPurchases, 1);
+  assert.equal(initial.observation.hitpayPaidOrders, null);
+  assert.equal(initial.observation.verifiedCacMinor, null);
+  assert.equal(initial.verifiedPaidOrders, null);
+  assert.equal(initial.causalLift, null);
+});
+
+test("malformed or conflicting provider action_values fail closed", async () => {
+  for (const bad of [
+    [{ action_type: "purchase", value: "-1" }],
+    [{ action_type: "purchase", value: "50" }, { action_type: "purchase", value: "60" }],
+    [{ action_type: "purchase", value: "not-money" }],
+    "not-an-array",
+  ]) {
+    await assert.rejects(call(ok({ data: [{ ...raw, action_values: bad }] })), generic);
+  }
 });
