@@ -10,6 +10,7 @@ export class NeonAuthIdentityDenied extends Error {
 }
 
 export type VerifiedNeonPrincipal = Readonly<{ userId: string; authenticated: true }>;
+export type NeonAuthVerifyStage = "structure" | "claims" | "time" | "jwks" | "key" | "signature" | "operator" | "verified";
 export type NeonAuthVerifierConfig = Readonly<{
   issuer: string;
   audience: string;
@@ -70,7 +71,9 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
   });
   const clock = config.now ?? (() => Math.floor(Date.now() / 1000));
 
-  return async (token: unknown): Promise<VerifiedNeonPrincipal> => {
+  return async (token: unknown, onStage?: (stage: NeonAuthVerifyStage) => void): Promise<VerifiedNeonPrincipal> => {
+    // Optional request-local diagnostic, never includes JWT, claims, keys or errors.
+    onStage?.("structure");
     if (typeof token !== "string" || token.length > 16000) return deny();
     const parts = token.split(".");
     if (parts.length !== 3) deny();
@@ -82,10 +85,12 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
     if (typeof header.kid !== "string" || !header.kid ||
         typeof header.alg !== "string" || !acceptedAlgorithms.has(header.alg) ||
         (header.typ !== undefined && header.typ !== "JWT") || header.crit !== undefined) deny();
+    onStage?.("claims");
     if (payload.iss !== config.issuer ||
         !(payload.aud === config.audience ||
           (Array.isArray(payload.aud) && payload.aud.includes(config.audience))) ||
         typeof payload.sub !== "string" || !uuid.test(payload.sub)) deny();
+    onStage?.("time");
     // A future not-before claim is never valid, even within issuance clock-skew allowance.
     const now = clock();
     if (!Number.isFinite(now) || typeof payload.exp !== "number" ||
@@ -98,10 +103,12 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
     const verifiedSubject = payload.sub;
     if (typeof verifiedSubject !== "string") return deny();
     // Network failure is deny, never fall back to trusting decoded claims.
+    onStage?.("jwks");
     let jwks: unknown;
     try { jwks = await load(endpoint.toString()); } catch { return deny(); }
     if (!record(jwks)) return deny();
     if (!Array.isArray(jwks.keys) || jwks.keys.length > 32) return deny();
+    onStage?.("key");
     const keys = jwks.keys.filter((k: unknown) => record(k) && k.kid === header.kid);
     if (keys.length !== 1) deny();
     const key = keys[0] as Record<string, unknown>;
@@ -112,6 +119,7 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
     if ((header.alg === "RS256" && key.kty !== "RSA") ||
         (header.alg === "ES256" && (key.kty !== "EC" || key.crv !== "P-256")) ||
         (header.alg === "EdDSA" && (key.kty !== "OKP" || key.crv !== "Ed25519"))) deny();
+    onStage?.("signature");
     let valid = false;
     try {
       const publicKey = createPublicKey({ key: key as JsonWebKey, format: "jwk" });
@@ -127,10 +135,12 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
     // Authorize only signed claims. A Neon project admin or matching email
     // without verified mailbox ownership is not an approved app identity.
     // JWT validity ends at exp; this does not replace live session revocation.
+    onStage?.("operator");
     if (operator && (payload.email !== operator.email ||
         payload.emailVerified !== true ||
         (payload.banned !== undefined && payload.banned !== false) ||
         (payload.exp as number) - (payload.iat as number) > maxOperatorLifetime)) deny();
+    onStage?.("verified");
     return Object.freeze({ userId: verifiedSubject, authenticated: true });
   };
 }
