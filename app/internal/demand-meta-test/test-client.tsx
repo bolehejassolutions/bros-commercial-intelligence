@@ -3,7 +3,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
-import { requestNeonPreviewToken } from "@/lib/bci/neon-preview-client-token";
+import { requestNeonPreviewToken, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
+import { demandMetaBrowserDiagnostic, type DemandMetaBrowserPhase } from "@/lib/demand/meta-browser-diagnostic";
 
 const operatorEmail = "rasymokh@gmail.com";
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
@@ -122,16 +123,21 @@ export default function DemandMetaTestClient() {
     if (busy) return;
     setBusy(true);
     setNotice("Checking authorized read-only DEMAND API…");
+    let phase: DemandMetaBrowserPhase = "session";
     try {
       if (!(await verifiedSession())) throw new Error();
       // Short-lived JWT remains in the local stack and is not displayed or persisted.
+      phase = "token";
       const jwt = await requestNeonPreviewToken(auth());
+      phase = "request";
       const response = await fetch(endpoint, {
         method: "GET",
         headers: { Authorization: "Bearer " + jwt },
         cache: "no-store", redirect: "error",
       });
+      phase = "headers";
       if (!probeHeaders(response)) throw new Error();
+      phase = "payload";
       if (response.status === 404) {
         setNotice("Read flag remains OFF (HTTP 404). No Meta provider request was made.");
       } else if (response.status === 403) {
@@ -151,8 +157,9 @@ export default function DemandMetaTestClient() {
       } else {
         setNotice("API returned HTTP " + response.status + "; no success is attested.");
       }
-    } catch {
-      setNotice("Protected read could not be verified. Do not copy any JWT or secret.");
+    } catch (error) {
+      const category = error instanceof NeonPreviewTokenUnavailable ? error.category : null;
+      setNotice(demandMetaBrowserDiagnostic(phase, category));
     } finally { setBusy(false); }
   }
 
