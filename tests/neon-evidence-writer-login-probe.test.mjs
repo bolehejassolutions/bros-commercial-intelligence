@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   createRestrictedEvidenceWriterReadOnlyProbe, BciEvidenceWriterProbeDenied,
 } from "../lib/bci/neon-evidence-writer-login-probe.ts";
+import { RESTRICTED_EVIDENCE_WRITER_POLICIES } from "../lib/bci/neon-evidence-writer-policy-fingerprint.ts";
 
 const PRINCIPAL="11111111-1111-4111-8111-111111111111";
 const TENANT="22222222-2222-4222-8222-222222222222";
@@ -19,7 +20,7 @@ const posture={databaseName:"bros_intelligence_dev",forcedTables:2,
 const denied=/BCI evidence writer login probe denied/;
 
 function harness({identity=role,grants=posture,memberLeak=false,foreignLeak=false,
-  fail=false,mutateScope}={}) {
+  fail=false,mutateScope,policyRows}={}) {
   const calls=[]; let scopedTenant=null;
   const transaction=async fn=>{
     mutateScope?.();
@@ -28,6 +29,7 @@ function harness({identity=role,grants=posture,memberLeak=false,foreignLeak=fals
       if(fail) throw new Error("postgresql://secret-sentinel@host/db");
       if(sql.includes('AS "roleName"')) return {rows:[identity]};
       if(sql.includes('AS "forcedTables"')) return {rows:[grants]};
+      if(sql.includes("FROM pg_policies")) return {rows:policyRows ?? RESTRICTED_EVIDENCE_WRITER_POLICIES};
       if(sql.includes("set_config('bci.principal_id'")) {
         scopedTenant=params[1];return {rows:[]};
       }
@@ -112,4 +114,15 @@ test("DB errors never leak password or connection details",async()=>{
     assert.doesNotMatch(e.message,/postgres|secret-sentinel|password/i);
     return true;
   });
+});
+
+test("policy drift, missing membership check and new PUBLIC policy fail before scope GUC",async()=>{
+  const base=RESTRICTED_EVIDENCE_WRITER_POLICIES;
+  const altered=[{...base[0],checkHash:"0".repeat(64)},...base.slice(1)];
+  const publicExtra=[...base,{...base[1],policyName:"permissive_public",roles:"{public}"}];
+  for(const policyRows of [altered,base.slice(0,2),publicExtra]){
+    const h=harness({policyRows});
+    await assert.rejects(h.probe(scope),denied);
+    assert.ok(!h.calls.some(x=>x.sql.includes("set_config")));
+  }
 });

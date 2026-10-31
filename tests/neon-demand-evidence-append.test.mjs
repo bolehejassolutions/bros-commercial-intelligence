@@ -5,6 +5,7 @@ import {
   BciDemandEvidenceAppendDenied, createBciDemandMetaEvidenceAppender,
   createPgDemandEvidenceAppendTransaction,
 } from "../lib/bci/neon-demand-evidence-append.ts";
+import { RESTRICTED_EVIDENCE_WRITER_POLICIES } from "../lib/bci/neon-evidence-writer-policy-fingerprint.ts";
 
 const tenant="11111111-1111-4111-8111-111111111111";
 const foreign="22222222-2222-4222-8222-222222222222";
@@ -54,6 +55,7 @@ function harness(changes={}) {
       calls.push({sql,params});
       if(sql.includes('AS "roleName"')) return {rows:[changes.role ?? role]};
       if(sql.includes('AS "forcedRls"')) return {rows:[changes.posture ?? posture]};
+      if(sql.includes("FROM pg_policies")) return {rows:changes.policyRows ?? RESTRICTED_EVIDENCE_WRITER_POLICIES};
       if(sql.includes('FROM bci_dev.tenant_memberships')) return {
         rows:changes.sqlRevoked ? []:[{principalId:userId}]
       };
@@ -189,5 +191,18 @@ test("constructor rejects unpinned or invalid dates/account scope",()=>{
   for(const c of [{...fixed,since:"2026-02-30"},{...fixed,until:"2026-09-30"},
     {...fixed,accountId:"admin"}, {...fixed,tenantId:tenant}]) {
     assert.throws(()=>harness({fixedCampaign:c}),BciDemandEvidenceAppendDenied);
+  }
+});
+
+test("policy fingerprint drift or unexpected PUBLIC grant fails before physical append",async()=>{
+  const base=RESTRICTED_EVIDENCE_WRITER_POLICIES;
+  for(const policyRows of [
+    [{...base[0],checkHash:"0".repeat(64)},...base.slice(1)],
+    base.slice(1),
+    [...base,{...base[1],policyName:"public_select",roles:"{public}"}],
+  ]){
+    const h=harness({policyRows});
+    await assert.rejects(h.run(),deny);
+    assert.ok(!h.calls.some(x=>x.sql.includes("INSERT INTO bci_dev.evidence")));
   }
 });

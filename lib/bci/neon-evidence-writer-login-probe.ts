@@ -8,6 +8,7 @@
  * external attestation, DB append proof, or cross-tenant end-to-end acceptance.
  */
 import type { ScopedTransaction } from "./neon-dev-read-rows.ts";
+import { assertRestrictedEvidenceWriterPolicies } from "./neon-evidence-writer-policy-fingerprint.ts";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EXPECTED_ROLE="bci_dev_evidence_writer_restricted";
@@ -87,6 +88,7 @@ export function createRestrictedEvidenceWriterReadOnlyProbe(transaction:ScopedTr
           p.noDatabaseCreate!==true||p.noApprovalAccess!==true||
           p.requiredPolicies!==3)deny();
 
+        await assertRestrictedEvidenceWriterPolicies(query);
         await query("SELECT set_config('bci.principal_id',$1,true),set_config('bci.tenant_id',$2,true),set_config('bci.product',$3,true)",
           [principalId,tenantId,"demand"]);
         const member=async(expectedCount:number)=>{

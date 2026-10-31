@@ -10,6 +10,7 @@
  * No SQL changes, grants, provider writes or production activation here.
  */
 import { planUnattestedDemandMetaEvidenceIntake } from "./demand-meta-intake-preflight.ts";
+import { assertRestrictedEvidenceWriterPolicies } from "./neon-evidence-writer-policy-fingerprint.ts";
 
 type Candidate = Parameters<typeof planUnattestedDemandMetaEvidenceIntake>[1];
 type Report = Parameters<typeof planUnattestedDemandMetaEvidenceIntake>[2];
@@ -178,6 +179,7 @@ export function createBciDemandMetaEvidenceAppender(deps: Deps) {
            p.noMembershipMutation!==true || p.noSchemaCreate!==true ||
            p.noDbCreate!==true || p.noApprovalAccess!==true) deny();
 
+        await assertRestrictedEvidenceWriterPolicies(query);
         // GUCs only filter RLS; they are NOT authentication. Restricted direct
         // LOGIN + verified identity + fresh membership are mandatory above.
         await query("SELECT set_config('bci.tenant_id',$1,true),set_config('bci.product',$2,true),set_config('bci.principal_id',$3,true)",[tenantId,"demand",userId]);
