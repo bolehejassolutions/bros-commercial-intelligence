@@ -208,7 +208,7 @@ export function createBciDemandMetaEvidenceAppender(deps: Deps) {
              observed_at,period_start,period_end,collected_at,completeness,metrics,facts,unknowns
            FROM bci_dev.evidence WHERE tenant_id=$1::uuid AND product='demand'
              AND provider='meta_ads' AND provider_record_key=$2`,[tenantId,expected.provider_record_key]);
-        const actual=fetched.rows[0];
+        const actual=fetched.rows[0] as Record<string, unknown>;
         if(fetched.rows.length!==1 || !object(actual) || !UUID.test(String(actual.id)) ||
            actual.tenant_id!==tenantId || actual.product!=="demand" ||
            actual.provider!=="meta_ads" || actual.provider_record_key!==expected.provider_record_key ||
