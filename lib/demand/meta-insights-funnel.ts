@@ -166,10 +166,15 @@ export function normalizeMetaCampaignFunnel(
   // Provider may revise attributed monetary action_values without changing
   // action counts. Bind the revised metadata to the immutable candidate ID,
   // never treat it as HitPay revenue. Preserve legacy IDs when field is absent.
+  let actionValueEvidence: ReturnType<typeof canonicalActionValues> = null;
+  if (row.action_values !== undefined) {
+    try { actionValueEvidence = canonicalActionValues(row.action_values); }
+    catch { fail(); } // preserve campaign-level fail-closed error contract
+  }
   const normalizedActionDigest = createHash("sha256")
     .update(JSON.stringify(row.action_values === undefined
       ? sortedActionCounts
-      : [sortedActionCounts, canonicalActionValues(row.action_values)]))
+      : [sortedActionCounts, actionValueEvidence]))
     .digest("hex");
   // DEMAND_META_BOUNDED_SNAPSHOT_KEY_20261027: immutable evidence identity
   // is content-addressed, not collection-time-addressed. A provider report
