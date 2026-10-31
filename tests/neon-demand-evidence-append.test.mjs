@@ -12,7 +12,7 @@ const userId="33333333-3333-4333-8333-333333333333";
 const recordId="44444444-4444-4444-8444-444444444444";
 const fixed={accountId:"act_1997776120879476",campaignId:"120251158023300697",
   since:"2026-10-01",until:"2026-10-30"};
-const role={roleName:"bci_dev_evidence_writer",sessionRoleName:"bci_dev_evidence_writer",
+const role={roleName:"bci_dev_evidence_writer_restricted",sessionRoleName:"bci_dev_evidence_writer_restricted",
   canLogin:true,superuser:false,bypassRls:false,canCreateDb:false,
   canCreateRole:false,canReplicate:false,inherits:false,parentRoles:0};
 const posture={databaseName:"bros_intelligence_dev",forcedRls:true,canInsert:true,
@@ -97,7 +97,7 @@ test("default-unwired adapter inserts only a scoped unverified empty Meta observ
   assert.ok(!h.state.stored.unknowns.includes("bci_durable_receipt_not_recorded"));
   assert.ok(h.state.stored.unknowns.includes("independent_provider_receipt_not_verified"));
   assert.ok(h.calls.some(x=>x.sql.includes("set_config('bci.tenant_id'") &&
-    x.params[0]===tenant && x.params[1]==="demand"));
+    x.params[0]===tenant && x.params[1]==="demand" && x.params[2]===userId));
   assert.equal(h.calls.filter(x=>x.sql.includes("INSERT INTO bci_dev.evidence")).length,1);
   assert.ok(!h.calls.some(x=>/UPDATE bci_dev|DELETE FROM bci_dev/.test(x.sql)));
 });
