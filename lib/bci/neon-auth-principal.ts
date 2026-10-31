@@ -53,7 +53,13 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
        maxOperatorLifetime < 1 || maxOperatorLifetime > 900)) deny();
   let endpoint: URL;
   try { endpoint = new URL(config.jwksUrl); } catch { return deny(); }
-  if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password ||
+  // A misconfigured cross-origin JWKS could let an unrelated key authority
+  // sign tokens claiming the trusted issuer. Pin both to the same HTTPS origin.
+  let issuerUrl: URL;
+  try { issuerUrl = new URL(config.issuer); } catch { return deny(); }
+  if (issuerUrl.protocol !== "https:" || issuerUrl.username || issuerUrl.password ||
+      issuerUrl.search || issuerUrl.hash || issuerUrl.origin !== endpoint.origin ||
+      endpoint.protocol !== "https:" || endpoint.username || endpoint.password ||
       endpoint.search || endpoint.hash || !endpoint.pathname.endsWith("/.well-known/jwks.json")) deny();
   const load = config.fetchJwks ?? (async (url: string) => {
     const response = await fetch(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(3000) });
@@ -80,6 +86,7 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
         !(payload.aud === config.audience ||
           (Array.isArray(payload.aud) && payload.aud.includes(config.audience))) ||
         typeof payload.sub !== "string" || !uuid.test(payload.sub)) deny();
+    // A future not-before claim is never valid, even within issuance clock-skew allowance.
     const now = clock();
     if (!Number.isFinite(now) || typeof payload.exp !== "number" ||
         !Number.isSafeInteger(payload.exp) || payload.exp <= now ||
@@ -87,7 +94,7 @@ export function createNeonAuthPrincipalVerifier(config: NeonAuthVerifierConfig) 
         typeof payload.iat !== "number" || !Number.isSafeInteger(payload.iat) ||
         payload.iat > now + 60 || payload.iat > payload.exp ||
         (payload.nbf !== undefined &&
-          (typeof payload.nbf !== "number" || !Number.isSafeInteger(payload.nbf) || payload.nbf > now + 60))) deny();
+          (typeof payload.nbf !== "number" || !Number.isSafeInteger(payload.nbf) || payload.nbf > now))) deny();
     const verifiedSubject = payload.sub;
     if (typeof verifiedSubject !== "string") return deny();
     // Network failure is deny, never fall back to trusting decoded claims.

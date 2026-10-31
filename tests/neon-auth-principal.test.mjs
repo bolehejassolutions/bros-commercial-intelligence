@@ -39,11 +39,17 @@ test("rejects unsigned, malformed, tampered and mismatched key tokens", async ()
   }
 });
 test("rejects expired, not-yet-valid, missing audience and wrong issuer", async () => {
-  for (const claims of [{ exp: NOW }, { nbf: NOW+100 }, { iat: NOW+200 },
+  for (const claims of [{ exp: NOW }, { nbf: NOW+1 }, { nbf: NOW+59 }, { nbf: NOW+100 }, { iat: NOW+200 },
     { aud: "other" }, { iss: "https://evil.test" }, { sub: "attacker" }, { exp: NOW+90000 }]) {
     await assert.rejects(verifier()(jwt("RS256", claims)), denied);
   }
 });
+test("not-before is enforced at the current second without rejecting valid boundary tokens", async () => {
+  assert.deepEqual(await verifier()(jwt("EdDSA", { nbf: NOW })), { userId: USER, authenticated: true });
+  assert.deepEqual(await verifier()(jwt("EdDSA", { nbf: NOW-1 })), { userId: USER, authenticated: true });
+  await assert.rejects(verifier()(jwt("EdDSA", { nbf: NOW+1 })), denied);
+});
+
 test("rejects duplicate kid, wrong key algorithm and JWKS retrieval failures", async () => {
   const rsa = pairs.RS256.publicKey.export({ format: "jwk" });
   const key = { ...rsa, kid: "test-RS256", alg: "RS256" };
@@ -52,7 +58,8 @@ test("rejects duplicate kid, wrong key algorithm and JWKS retrieval failures", a
   await assert.rejects(verifier({ fetchJwks: async () => { throw new Error("offline"); } })(jwt()), denied);
 });
 test("rejects unsafe JWKS source before fetching", () => {
-  for (const url of ["http://auth.example.test/auth/.well-known/jwks.json", "https://user:pass@auth.example.test/.well-known/jwks.json", "https://auth.example.test/other"]) {
+  for (const url of ["http://auth.example.test/auth/.well-known/jwks.json", "https://user:pass@auth.example.test/.well-known/jwks.json", "https://auth.example.test/other",
+    "https://attacker.example.test/auth/.well-known/jwks.json"]) {
     assert.throws(() => verifier({ jwksUrl: url }), denied);
   }
 });
@@ -106,5 +113,13 @@ test("approved operator policy rejects widened or malformed server policy", () =
     { ...approvedOperator, maxTokenLifetimeSeconds: 0 },
     { ...approvedOperator, maxTokenLifetimeSeconds: 1.5 }]) {
     assert.throws(() => verifier({ approvedOperator: policy }), denied);
+  }
+});
+
+// A trusted issuer must never be paired with a different JWKS signing authority.
+test("rejects malformed or insecure JWT issuer configuration", () => {
+  for (const issuer of ["http://auth.example.test/auth", "https://user:pass@auth.example.test/auth",
+    "https://auth.example.test/auth?redirect=1", "not a URL"]) {
+    assert.throws(() => verifier({ issuer }), denied);
   }
 });

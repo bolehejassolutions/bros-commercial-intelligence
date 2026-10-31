@@ -28,6 +28,8 @@ test("read-only transaction pins all queries to a single checkout and releases a
   assert.equal(result, 42);
   assert.equal(f.connections(), 1);
   assert.match(f.calls[0].sql, /^BEGIN.*READ ONLY/);
+  assert.equal(f.calls[1].sql, "SET LOCAL search_path = pg_catalog, pg_temp");
+  assert.ok(f.calls.findIndex(c => c.sql?.includes("statement_timeout")) > 1);
   assert.ok(f.calls.some(c => c.sql?.includes("statement_timeout")));
   assert.ok(f.calls.some(c => c.sql?.includes("idle_in_transaction_session_timeout")));
   assert.deepEqual(f.calls.find(c => c.sql?.includes("SELECT $1")).params, ["synthetic-tenant"]);
@@ -77,4 +79,49 @@ test("restricted connection parser rejects owner roles, wrong target and insecur
     valid.replace("test-only-not-a-live-secret", ""),
     valid.replace("postgresql:", "https:"),
   ]) assert.throws(() => parseNeonDevConnection(value, role));
+});
+
+test("lineage writer URL requires its own direct LOGIN, pinned Neon host and verified TLS", () => {
+  const host = "ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech";
+  const role = "bci_dev_lineage_writer";
+  const valid = `postgresql://${role}:synthetic-nonsecret@ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev?sslmode=verify-full`;
+  const parsed = parseNeonDevConnection(valid, role);
+  assert.equal(parsed.user, role);
+  assert.equal(parsed.database, "bros_intelligence_dev");
+  assert.equal(parsed.ssl.rejectUnauthorized, true);
+  assert.equal(parsed.ssl.servername, host);
+  assert.equal(parsed.enableChannelBinding, true);
+  for (const value of [
+    valid.replace(role, "BROS"),
+    valid.replace(role, "bci_dev_membership_reader"),
+    valid.replace(host, "ep-attacker.c-4.ap-southeast-1.aws.neon.tech"),
+    valid.replace("sslmode=verify-full", "sslmode=disable"),
+    valid + "&options=-c%20role%3DBROS",
+    valid.replace("synthetic-nonsecret", ""),
+    valid.replace("bros_intelligence_dev", "neondb"),
+  ]) assert.throws(() => parseNeonDevConnection(value, role));
+  assert.throws(() => parseNeonDevConnection(valid, "bci_dev_private_reader"));
+});
+
+test("CONTENT reserver connection is a distinct direct LOGIN, never owner or reader fallback", () => {
+  const host = "ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech";
+  const role = "bci_dev_content_reserver";
+  const valid = `postgresql://${role}:synthetic-nonsecret@${host}/bros_intelligence_dev?sslmode=verify-full&channel_binding=require`;
+  const parsed = parseNeonDevConnection(valid, role);
+  assert.equal(parsed.user, role);
+  assert.equal(parsed.database, "bros_intelligence_dev");
+  assert.equal(parsed.ssl.rejectUnauthorized, true);
+  assert.equal(parsed.ssl.servername, host);
+  assert.equal(parsed.enableChannelBinding, true);
+  for (const bad of [
+    valid.replace(role, "BROS"),
+    valid.replace(role, "bci_dev_membership_reader"),
+    valid.replace(role, "bci_dev_lineage_writer"),
+    valid.replace(host, "attacker.test"),
+    valid.replace("verify-full", "disable"),
+    valid + "&options=-c%20role%3DBROS",
+    valid.replace("synthetic-nonsecret", ""),
+    valid.replace("bros_intelligence_dev", "neondb"),
+  ]) assert.throws(() => parseNeonDevConnection(bad, role));
+  assert.throws(() => parseNeonDevConnection(valid, "bci_dev_private_reader"));
 });
