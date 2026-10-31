@@ -1,6 +1,6 @@
 import "server-only";
 import { Pool } from "pg";
-import { createNeonAuthPrincipalVerifier } from "../bci/neon-auth-principal.ts";
+import { createNeonAuthPrincipalVerifier, type NeonAuthVerifyStage } from "../bci/neon-auth-principal.ts";
 import { createNeonDevMembershipLookup } from "../bci/neon-dev-membership-rows.ts";
 import { createPgReadOnlyTransaction, parseNeonDevConnection } from "../bci/neon-readonly-transaction.ts";
 import { createDemandMetaHttpHandler } from "./meta-direct-http.ts";
@@ -113,7 +113,16 @@ const handler = createDemandMetaHttpHandler({
   accountId: process.env.BROS_DEMAND_META_ACCOUNT_ID ?? "act_0",
   campaignId: process.env.BROS_DEMAND_META_CAMPAIGN_ID ?? "0",
   apiVersion: process.env.BROS_DEMAND_META_API_VERSION ?? "v26.0",
-  verifyJwt: token => verifier(token),
+  verifyJwt: async token => {
+    let stage: NeonAuthVerifyStage = "structure";
+    try {
+      return await verifier(token, next => { stage = next; });
+    } catch {
+      // Fixed request-local enum ONLY: no JWT, claims, keys or error object.
+      console.warn("demand_meta_identity_step", stage);
+      throw new Error("BROS_DEMAND_IDENTITY_ACCESS_DENIED");
+    }
+  },
   membershipsFor: async (userId, product) => {
     let step: MembershipStep = "configuration";
     try {
