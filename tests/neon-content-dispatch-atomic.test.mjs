@@ -129,3 +129,40 @@ test("pre-dispatch NEVER creates a missing reservation or permits stale/foreign/
     await assert.rejects(h.reserve(args),denied);
   }
 });
+
+test("reservation pins authorization tuple before asynchronous SQL role and posture checks",async()=>{
+  for(const replay of [false,true]){
+    const mutable={...args};const calls=[];let count=0;
+    const tx=async fn=>fn(async(sql,params)=>{
+      calls.push({sql,params});count++;
+      if(count===1){
+        Object.assign(mutable,{
+          tenantId:"44444444-4444-4444-8444-444444444444",
+          principalId:"55555555-5555-4555-8555-555555555555",
+          product:"demand",dispatchIntentId:"swapped-intent",
+          approvalId:"swapped-approval",bindingSha256:"b".repeat(64)
+        });
+        return {rows:[role]};
+      }
+      if(count===2)return {rows:[posture]};
+      if(count===3)return {rows:[{}]};
+      if(count===4)return {rows:replay?[]:[{reservationId}]};
+      if(count===5)return {rows:[{existingCount:1}]};
+      throw Error("unexpected query");
+    });
+    const result=await createPgContentDispatchAtomicReservation(tx)(mutable);
+    assert.equal(result.status,replay?"already_reserved":"acquired");
+    assert.deepEqual(calls[2].params,[principalId,tenantId]);
+    assert.deepEqual(calls[3].params,
+      [principalId,"approval-1",tenantId,"intent-1","a".repeat(64)]);
+    if(replay)assert.deepEqual(calls[4].params,
+      [tenantId,"intent-1",principalId,"approval-1","a".repeat(64)]);
+  }
+});
+
+test("reservation rejects accessor-based caller fields before SQL",async()=>{
+  const accessor={...args};
+  Object.defineProperty(accessor,"tenantId",{enumerable:true,get(){return tenantId;}});
+  const h=harness();await assert.rejects(h.reserve(accessor),denied);
+  assert.equal(h.calls.length,0);
+});

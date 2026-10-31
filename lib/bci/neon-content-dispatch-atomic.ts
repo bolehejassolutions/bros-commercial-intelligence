@@ -71,14 +71,23 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
   return async (args: ContentReservationArgs): Promise<Reservation | PreDispatch> => {
     try {
       const keys = ["tenantId","product","principalId","dispatchIntentId","approvalId","bindingSha256"];
-      if (!obj(args) || Reflect.ownKeys(args).length !== keys.length ||
-          !keys.every(k => Object.hasOwn(args,k)) ||
-          typeof args.tenantId !== "string" || !UUID.test(args.tenantId) ||
-          typeof args.principalId !== "string" || !UUID.test(args.principalId) ||
-          args.product !== "content" || typeof args.dispatchIntentId !== "string" ||
-          !ID.test(args.dispatchIntentId) || typeof args.approvalId !== "string" ||
-          !ID.test(args.approvalId) || typeof args.bindingSha256 !== "string" ||
-          !SHA.test(args.bindingSha256)) deny();
+      if (!obj(args) ||
+          ![Object.prototype, null].includes(Object.getPrototypeOf(args))) deny();
+      // Pin own data descriptors before the first await. Accessors and unknown
+      // fields cannot mutate the authorization tuple during SQL execution.
+      const descriptors = Object.getOwnPropertyDescriptors(args);
+      if (Reflect.ownKeys(args).length !== keys.length ||
+          !keys.every(k => Object.hasOwn(descriptors, k) &&
+            descriptors[k].enumerable === true &&
+            Object.hasOwn(descriptors[k], "value"))) deny();
+      const pinned = Object.freeze(Object.fromEntries(
+        keys.map(k => [k, descriptors[k].value]))) as ContentReservationArgs;
+      if (typeof pinned.tenantId !== "string" || !UUID.test(pinned.tenantId) ||
+          typeof pinned.principalId !== "string" || !UUID.test(pinned.principalId) ||
+          pinned.product !== "content" || typeof pinned.dispatchIntentId !== "string" ||
+          !ID.test(pinned.dispatchIntentId) || typeof pinned.approvalId !== "string" ||
+          !ID.test(pinned.approvalId) || typeof pinned.bindingSha256 !== "string" ||
+          !SHA.test(pinned.bindingSha256)) deny();
       return await transaction(async query => {
         const identity = await query(
           `SELECT current_user AS "roleName", session_user AS "sessionRoleName",
@@ -186,7 +195,7 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
             p.noSequenceAccess !== true || p.noExternalTables !== true) deny();
         // Transaction-local GUCs are filters, never proof of identity.
         await query("SELECT set_config('bci.principal_id',$1::text,true), set_config('bci.tenant_id',$2::text,true), set_config('bci.product','content',true)",
-          [args.principalId,args.tenantId]);
+          [pinned.principalId,pinned.tenantId]);
         const inserted = await query(
           `WITH active_memberships AS MATERIALIZED (
              SELECT principal_id,tenant_id FROM bci_dev.tenant_memberships
@@ -213,7 +222,7 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
              FROM eligible ON CONFLICT (tenant_id,product,dispatch_intent_id) DO NOTHING
              RETURNING reservation_id::text AS "reservationId"
            ) SELECT "reservationId" FROM inserted`,
-          [args.principalId,args.approvalId,args.tenantId,args.dispatchIntentId,args.bindingSha256]);
+          [pinned.principalId,pinned.approvalId,pinned.tenantId,pinned.dispatchIntentId,pinned.bindingSha256]);
         if (inserted.rows.length === 1 && obj(inserted.rows[0]) &&
             typeof inserted.rows[0].reservationId === "string" &&
             UUID.test(inserted.rows[0].reservationId)) {
@@ -247,7 +256,7 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
                WHERE v.approval_id=a.approval_id AND v.tenant_id=a.tenant_id
                  AND v.product=a.product
              )`,
-          [args.tenantId,args.dispatchIntentId,args.principalId,args.approvalId,args.bindingSha256]);
+          [pinned.tenantId,pinned.dispatchIntentId,pinned.principalId,pinned.approvalId,pinned.bindingSha256]);
         if (existing.rows.length === 1 && obj(existing.rows[0]) &&
             existing.rows[0].existingCount === 1) {
           // The 0014 BEFORE INSERT trigger rechecks reviewer/requester and
