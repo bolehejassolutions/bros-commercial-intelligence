@@ -31,6 +31,7 @@ export default function NeonPreviewSignIn() {
   // Do not persist tokens, response bodies, identity claims, or check results.
   const [httpCheckResult, setHttpCheckResult] = useState<string | null>(null);
   const [tenantCheckResult, setTenantCheckResult] = useState<string | null>(null);
+  const [writerCheckResult, setWriterCheckResult] = useState<string | null>(null);
   const [product, setProduct] = useState<"content" | "demand">("content");
 
   useEffect(() => {
@@ -166,6 +167,36 @@ export default function NeonPreviewSignIn() {
     } finally { setBusy(false); }
   }
 
+  async function checkRestrictedWriterLogin() {
+    if (busy) return;
+    setBusy(true);
+    setWriterCheckResult(null);
+    setMessage("Running restricted writer read-only login probe in Neon DEV…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/neon-evidence?product=demand&probe=writer", {
+        method: "GET", headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 || !/no-store/i.test(response.headers.get("cache-control") || "")) throw new Error();
+      const raw = await response.text();
+      if (raw.length > 1024) throw new Error();
+      const payload: unknown = JSON.parse(raw);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          Object.keys(payload).length !== 4 || !("scope" in payload) ||
+          payload.scope !== "internal-development" ||
+          !("writerLoginProbe" in payload) || payload.writerLoginProbe !== "pass" ||
+          !("evidenceAppended" in payload) || payload.evidenceAppended !== false ||
+          !("providerReceiptRecorded" in payload) || payload.providerReceiptRecorded !== false) throw new Error();
+      setWriterCheckResult("Restricted writer direct PostgreSQL LOGIN + role/RLS + current membership: read-only smoke PASS. No evidence was inserted, no provider receipt authenticated, and full cross-tenant security acceptance remains open.");
+      setMessage("Restricted writer DEV probe completed; see the separate result below.");
+    } catch {
+      setWriterCheckResult("Restricted writer direct LOGIN probe could not be verified. No database acceptance gate has been certified.");
+      setMessage("Restricted writer DEV probe failed; see the separate result below.");
+    } finally { setBusy(false); }
+  }
+
   async function signOut() {
     if (busy) return;
     setBusy(true);
@@ -176,6 +207,7 @@ export default function NeonPreviewSignIn() {
       setCode("");
       setHttpCheckResult(null);
       setTenantCheckResult(null);
+      setWriterCheckResult(null);
       setMessage("You have signed out of this development session.");
     } catch { setMessage("Sign-out could not be confirmed. Please try again."); }
     finally { setBusy(false); }
@@ -194,6 +226,7 @@ export default function NeonPreviewSignIn() {
         <p role="status" aria-live="polite">{message}</p>
         {step === "ready" && httpCheckResult !== null ? <p role="status" aria-label="HTTP rejection check result">{httpCheckResult}</p> : null}
         {step === "ready" && tenantCheckResult !== null ? <p role="status" aria-label="Empty-tenant isolation result">{tenantCheckResult}</p> : null}
+        {step === "ready" && writerCheckResult !== null ? <p role="status" aria-label="Restricted writer login result">{writerCheckResult}</p> : null}
         {step === "start" ? <div className="auth-form"><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("verify")}>
           {cooldown > 0 ? `Wait ${cooldown}s` : "Verify email (first app login)"}
         </button><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>Send sign-in code (already verified)</button></div> : null}
@@ -223,6 +256,7 @@ export default function NeonPreviewSignIn() {
             <button type="button" disabled={busy} onClick={checkAccess}>Check protected access</button>
             <button type="button" disabled={busy} onClick={checkNegativeAccess}>Run HTTP rejection checks</button>
             <button type="button" disabled={busy} onClick={checkEmptyTenantIsolation}>Check empty-tenant isolation (DEV)</button>
+            <button type="button" disabled={busy} onClick={checkRestrictedWriterLogin}>Check restricted evidence writer LOGIN (DEV read-only)</button>
             <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
           </div>
         ) : null}
