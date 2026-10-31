@@ -15,6 +15,8 @@ type Dependencies = Readonly<{
   verifierConfig: NeonAuthVerifierConfig;
   membershipsFor: PrivateEvidenceDependencies["membershipsFor"];
   readRows: PrivateEvidenceDependencies["readRows"];
+  // Optional DEV-only read-only direct LOGIN probe; no provider writes.
+  probeWriter?: (scope: Readonly<{ principalId: string; tenantId: string; product: "demand" }>) => Promise<unknown>;
 }>;
 
 const headers = {
@@ -43,16 +45,21 @@ export function createNeonPreviewHandler(deps: Dependencies) {
     // Route identity is fixed by the server, not caller-provided path or role hints.
     // Check here as well as in Next.js routing so direct handler reuse fails closed.
     if (url.pathname !== "/api/internal/neon-evidence" ||
-        [...url.searchParams.keys()].some(key => key !== "product" && key !== "limit") ||
+        [...url.searchParams.keys()].some(key => key !== "product" && key !== "limit" && key !== "probe") ||
         url.searchParams.getAll("product").length !== 1 || url.searchParams.getAll("limit").length > 1 ||
+        url.searchParams.getAll("probe").length > 1 ||
         ["x-tenant-id", "x-user-id", "x-principal-id", "x-bci-tenant-id",
          "x-admin", "x-role", "x-product", "x-operator-id"].some(key => request.headers.has(key))) {
       return denied(400);
     }
     const product = url.searchParams.get("product");
     const rawLimit = url.searchParams.get("limit");
+    const writerProbe = url.searchParams.get("probe");
     if ((product !== "content" && product !== "demand") ||
         (rawLimit !== null && !/^(?:[1-9]|[1-4][0-9]|50)$/.test(rawLimit))) return denied(400);
+    if (writerProbe !== null && (writerProbe !== "writer" || product !== "demand" || rawLimit !== null)) return denied(400);
+    if (writerProbe === "writer" &&
+        (deps.env().BCI_NEON_DEV_WRITER_LOGIN_PROBE !== "enabled" || typeof deps.probeWriter !== "function")) return denied(404);
     const authorization = request.headers.get("authorization");
     if (!authorization || authorization.length > 16007 ||
         !/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(authorization)) return denied(401);
@@ -61,6 +68,29 @@ export function createNeonPreviewHandler(deps: Dependencies) {
       // The closure is request-local. No token, principal or membership is cached across requests.
       let stage: "identity" | "membership" | "evidence" = "identity";
       try {
+        if (writerProbe === "writer") {
+          stage = "membership";
+          // Explicit JWT and single authoritative DEMAND membership before any
+          // writer credential is loaded or any restricted SQL connection begins.
+          const principal = await verify(token);
+          const memberships = await deps.membershipsFor(principal.userId, "demand");
+          if (memberships.length !== 1 || memberships[0].principalId !== principal.userId ||
+              memberships[0].product !== "demand" || memberships[0].active !== true) return denied(403);
+          stage = "evidence";
+          const outcome = await deps.probeWriter!({
+            principalId: principal.userId, tenantId: memberships[0].tenantId, product: "demand",
+          });
+          // Do not serialize values returned by a dependency. Fixed booleans only.
+          if (!outcome || typeof outcome !== "object" ||
+              !("directRestrictedLoginVerified" in outcome) || outcome.directRestrictedLoginVerified !== true ||
+              !("forcedRlsAndPrivilegesVerified" in outcome) || outcome.forcedRlsAndPrivilegesVerified !== true ||
+              !("activeDemandMembershipVerified" in outcome) || outcome.activeDemandMembershipVerified !== true ||
+              !("readOnlyScopeSmokeVerified" in outcome) || outcome.readOnlyScopeSmokeVerified !== true ||
+              !("evidenceAppended" in outcome) || outcome.evidenceAppended !== false ||
+              !("authenticatedProviderReceiptRecorded" in outcome) || outcome.authenticatedProviderReceiptRecorded !== false) return denied(403);
+          return json({ scope: "internal-development", writerLoginProbe: "pass",
+            evidenceAppended: false, providerReceiptRecorded: false }, 200);
+        }
         const reader = createPrivateEvidenceReader({
           authenticate: () => verify(token),
           membershipsFor: async (...args) => {
