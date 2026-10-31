@@ -60,6 +60,11 @@ test("valid signed-principal dependency plus exact active membership gates one r
   assert.equal(report.membershipRecheckedAfterRead, true);
   assert.equal(report.authenticatedProviderReceiptRecorded, false);
   assert.equal(report.durableBciEvidenceRecorded, false);
+  assert.equal(report.readCandidate.stage, "UNATTESTED_READ_CANDIDATE_ONLY");
+  assert.match(report.readCandidate.candidateKey, /^demand:meta-read:sha256:[0-9a-f]{64}$/);
+  assert.equal(report.readCandidate.metrics.spendMinor, 1234);
+  assert.equal(report.readCandidate.independentProviderReceiptRecorded, false);
+  assert.equal(report.readCandidate.durableBciEvidenceRecorded, false);
   assert.equal(report.verifiedPaidOrders, null);
   assert.equal(report.verifiedCpaMinor, null);
   assert.equal(report.executionAllowed, false);
@@ -174,6 +179,10 @@ test("empty scoped Meta report remains unknown; no verified paid sale inferred",
   const result = await createDemandDirectMetaReader(config, deps)(range);
   assert.equal(result.status, "NO_ROWS_NOT_ZERO");
   assert.equal(result.observation, null);
+  assert.equal(result.readCandidate.reportStatus, "NO_ROWS_NOT_ZERO");
+  assert.equal(result.readCandidate.metrics, null);
+  assert.equal(result.readCandidate.verifiedPaidOrders, null);
+  assert.equal(result.readCandidate.durableBciEvidenceRecorded, false);
   assert.equal(result.verifiedPaidOrders, null);
   assert.equal(result.executionAllowed, false);
 });
