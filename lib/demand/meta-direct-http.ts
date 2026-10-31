@@ -61,17 +61,32 @@ export function createDemandMetaHttpHandler(deps: Dependencies) {
         !/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(authorization))
       return deny(401);
     const jwt = authorization.slice(7);
+    // Fixed, non-identifying server-side diagnostic. Never log JWT, IDs or errors.
+    let phase: "identity" | "membership" | "tenant_gate" | "provider" = "identity";
     try {
       // Request-local dependencies prohibit concurrent JWT cross-contamination.
       const reader = createDemandDirectMetaReader({
         accountId: deps.accountId, campaignId: deps.campaignId,
         apiVersion: deps.apiVersion,
       }, {
-        authenticate: () => deps.verifyJwt(jwt),
-        membershipsFor: deps.membershipsFor,
-        serverTokenFor: deps.serverTokenFor,
+        authenticate: async () => {
+          const principal = await deps.verifyJwt(jwt);
+          if (principal?.authenticated === true) phase = "membership";
+          return principal;
+        },
+        membershipsFor: async (userId, product) => {
+          phase = "membership";
+          return deps.membershipsFor(userId, product);
+        },
+        serverTokenFor: async (tenantId, accountId) => {
+          phase = "tenant_gate";
+          return deps.serverTokenFor(tenantId, accountId);
+        },
         now: deps.now,
-        ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+        fetchImpl: async (url, init) => {
+          phase = "provider";
+          return (deps.fetchImpl ?? (fetch as ReadOnlyMetaFetch))(url, init);
+        },
       });
       const result = await reader({
         since: url.searchParams.get("since") ?? "",
@@ -103,6 +118,8 @@ export function createDemandMetaHttpHandler(deps: Dependencies) {
         campaignExecutionAllowed: false,
       }, 200);
     } catch {
+      // Restricted fixed vocabulary only; never include secret-bearing exception.
+      console.warn("demand_meta_read_denied", phase);
       return deny(403);
     }
   };
