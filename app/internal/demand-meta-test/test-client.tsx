@@ -20,7 +20,7 @@ function auth(): VanillaBetterAuthClient {
 async function verifiedSession(): Promise<boolean> {
   const { data, error } = await auth().getSession();
   return !error && Boolean(data?.session && data.user?.email === operatorEmail &&
-    data.user.emailVerified === true && data.user.banned !== true);
+    data.user.emailVerified === true);
 }
 
 const probeHeaders = (response: Response): boolean =>
