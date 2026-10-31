@@ -1,4 +1,5 @@
 import { readDirectMetaCampaignInsights } from "./meta-direct-readonly.ts";
+import { prepareDemandMetaReadCandidate } from "./meta-direct-read-candidate.ts";
 import type { ReadOnlyMetaFetch } from "./meta-direct-readonly.ts";
 import type { MetaFunnelScope } from "./meta-insights-funnel.ts";
 
@@ -121,8 +122,11 @@ export function createDemandDirectMetaReader(
       );
       if (tenantAfterRead !== tenantId) fail();
 
+      // Candidate handoff is non-persistent and cannot assert BCI attestation.
+      const readCandidate = prepareDemandMetaReadCandidate(scope, result.status, result.observation);
       // Do not echo tokens, raw provider payload, principal, or tenant grants.
       return Object.freeze({
+        readCandidate,
         status: result.status,
         source: "DIRECT_META_GRAPH_API" as const,
         observation: result.observation,
