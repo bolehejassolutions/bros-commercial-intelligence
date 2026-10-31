@@ -1,0 +1,37 @@
+name: CONTENT observation gate tests
+on:
+  push:
+    branches: [feat/content-measurement-gate-20261026]
+    paths:
+      - "lib/content/**"
+      - "scripts/content_jpeg_pixel_qa.py"
+      - "scripts/content_local_card_renderer.py"
+      - "tests/content-*.test.mjs"
+      - "tests/content_jpeg_pixel_qa_test.py"
+      - "tests/content_local_card_renderer_test.py"
+      - ".github/workflows/content-observation-tests.yml"
+  pull_request:
+    paths:
+      - "lib/content/**"
+      - "scripts/content_jpeg_pixel_qa.py"
+      - "tests/content-*.test.mjs"
+      - "tests/content_jpeg_pixel_qa_test.py"
+      - ".github/workflows/content-observation-tests.yml"
+jobs:
+  content-observation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install "Pillow>=12,<13"
+      # The real plan→Pillow PNG→Node manifest QA regression invokes python3.
+      - run: node --test tests/content-*.test.mjs
+      - run: python -m unittest discover -s tests -p "content_jpeg_pixel_qa_test.py" -v
+      - run: python -m unittest discover -s tests -p "content_local_card_renderer_test.py" -v
