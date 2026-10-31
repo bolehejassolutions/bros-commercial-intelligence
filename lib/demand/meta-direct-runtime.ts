@@ -35,6 +35,33 @@ const enabled = () =>
   process.env.BROS_DEMAND_META_ADS_READ_TOKEN.length >= 20 &&
   Boolean(process.env.BCI_NEON_DEV_MEMBERSHIP_DATABASE_URL);
 
+/** Fixed-category, server-only Vercel secret shape check. No URI, values or secrets logged. */
+type ConnectionShape = "missing" | "url" | "protocol" | "host" | "port" |
+  "role" | "password_missing" | "database" | "query_options" | "parser_other";
+function connectionShape(value: unknown): ConnectionShape {
+  if (typeof value !== "string" || value.length === 0 || value.length > 4096) return "missing";
+  try {
+    const uri = new URL(value);
+    if (uri.protocol !== "postgres:" && uri.protocol !== "postgresql:") return "protocol";
+    if (uri.hostname !== "ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech" &&
+        uri.hostname !== "ep-fancy-queen-b30g0cjn-pooler.c-4.ap-southeast-1.aws.neon.tech") return "host";
+    if (uri.port && uri.port !== "5432") return "port";
+    if (decodeURIComponent(uri.username) !== "bci_dev_membership_reader") return "role";
+    if (!uri.password) return "password_missing";
+    if (decodeURIComponent(uri.pathname) !== "/bros_intelligence_dev") return "database";
+    for (const key of uri.searchParams.keys()) {
+      if ((key !== "sslmode" && key !== "channel_binding") ||
+          uri.searchParams.getAll(key).length !== 1) return "query_options";
+    }
+    if (uri.searchParams.has("sslmode") &&
+        !["require", "verify-full"].includes(uri.searchParams.get("sslmode")!)) return "query_options";
+    if (uri.searchParams.has("channel_binding") &&
+        uri.searchParams.get("channel_binding") !== "require") return "query_options";
+    if (uri.hash || !uri.username) return "parser_other";
+    return "parser_other";
+  } catch { return "url"; }
+}
+
 /** Server-log diagnostic labels are fixed and per request. No secrets or identifiers. */
 type MembershipStep = "configuration" | "connection" | "role" | "posture" | "scope" | "rows";
 let membershipPool: Pool | null = null;
@@ -42,10 +69,18 @@ function getMemberships(mark: (step: MembershipStep) => void) {
   if (!enabled()) throw new Error("DEMAND_META_PREVIEW_DISABLED");
   if (!membershipPool) {
     mark("configuration");
-    const config = parseNeonDevConnection(
-      process.env.BCI_NEON_DEV_MEMBERSHIP_DATABASE_URL,
-      "bci_dev_membership_reader",
-    );
+    let config: ReturnType<typeof parseNeonDevConnection>;
+    try {
+      config = parseNeonDevConnection(
+        process.env.BCI_NEON_DEV_MEMBERSHIP_DATABASE_URL,
+        "bci_dev_membership_reader",
+      );
+    } catch {
+      // Vercel logs never receive the value, parsed URL, or thrown error.
+      console.warn("demand_meta_membership_config_shape",
+        connectionShape(process.env.BCI_NEON_DEV_MEMBERSHIP_DATABASE_URL));
+      throw new Error("BROS_DEMAND_MEMBERSHIP_CONFIG_DENIED");
+    }
     // Reuse the restricted pool, but keep diagnostic state request-local.
     const pool = new Pool({ ...config, max: 2, connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 10000, allowExitOnIdle: true,
