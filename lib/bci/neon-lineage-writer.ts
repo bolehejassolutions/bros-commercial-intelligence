@@ -25,6 +25,8 @@ type Client = Readonly<{
 }>;
 type Pool = Readonly<{ connect: () => Promise<Client> }>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const lineageFields = ["id", "tenantId", "product", "stage", "sourceSystem",
+  "sourceRecordKey", "recordedAt", "parentIds", "verification"] as const;
 const deny = (): never => { throw new BciLineageWriteDenied(); };
 const obj = (x: unknown): x is Record<string, unknown> =>
   x !== null && typeof x === "object" && !Array.isArray(x);
@@ -96,17 +98,34 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
       typeof deps.membershipsFor !== "function" || typeof deps.transaction !== "function") deny();
   return async (request: Request): Promise<Readonly<{ insertedIds: readonly string[]; replayedIds: readonly string[] }>> => {
     try {
+      const product = request.product;
       if (!exact(request, ["product", "records"]) ||
-          (request.product !== "content" && request.product !== "demand") ||
+          (product !== "content" && product !== "demand") ||
           !Array.isArray(request.records) || request.records.length < 1 || request.records.length > 100) deny();
+      // Pin caller-owned product, rows and nested ancestry BEFORE any JWT,
+      // membership or SQL await. Later mutations cannot change authorized scope
+      // or the validated graph being inserted.
+      const records: BciLineageRecord[] = [];
+      for (let i = 0; i < request.records.length; i++) {
+        if (!Object.hasOwn(request.records, i)) deny();
+        const record = request.records[i];
+        if (!exact(record, lineageFields) || !Array.isArray(record.parentIds)) deny();
+        const parents: string[] = [];
+        for (let j = 0; j < record.parentIds.length; j++) {
+          if (!Object.hasOwn(record.parentIds, j)) deny();
+          parents.push(record.parentIds[j]);
+        }
+        records.push(Object.freeze({ ...record, parentIds: Object.freeze(parents) }));
+      }
+      Object.freeze(records);
       const principal = await deps.authenticate();
       if (principal === null) throw new BciLineageWriteDenied();
       if (!exact(principal, ["userId", "authenticated"]) ||
           principal.authenticated !== true || !UUID.test(principal.userId)) deny();
       const verifiedPrincipalId: string = principal.userId;
-      const tenantId = scopeOf(await deps.membershipsFor(verifiedPrincipalId, request.product),
-        verifiedPrincipalId, request.product);
-      const scope = { tenantId, product: request.product };
+      const tenantId = scopeOf(await deps.membershipsFor(verifiedPrincipalId, product),
+        verifiedPrincipalId, product);
+      const scope = { tenantId, product: product };
       return await deps.transaction(async query => {
         const role = await query(
           `SELECT current_user AS "roleName", session_user AS "sessionRoleName",
@@ -176,22 +195,20 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
             p.allSchemaCreateDenied !== true || p.sequenceAccessDenied !== true) deny();
         await query(
           "SELECT set_config('bci.tenant_id',$1::text,true), set_config('bci.product',$2::text,true)",
-          [tenantId, request.product]);
+          [tenantId, product]);
         const found = await query(
           `SELECT id::text AS "id", tenant_id::text AS "tenantId", product, stage,
                   source_system AS "sourceSystem", source_record_key AS "sourceRecordKey",
                   to_char(recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "recordedAt",
                   parent_ids::text[] AS "parentIds", assertion_status AS "verification"
            FROM bci_dev.lineage_nodes WHERE tenant_id=$1::uuid AND product=$2::text
-           ORDER BY id LIMIT 1001`, [tenantId, request.product]);
+           ORDER BY id LIMIT 1001`, [tenantId, product]);
         if (found.rows.length > 1000) deny();
         // PostgreSQL preserves the instant but not the input's fractional-second
         // spelling. Canonicalize only after rejecting accessors/unknown fields,
         // otherwise an exact idempotent replay could falsely conflict.
-        const fields = ["id", "tenantId", "product", "stage", "sourceSystem",
-          "sourceRecordKey", "recordedAt", "parentIds", "verification"] as const;
-        const canonical = request.records.map(record => {
-          if (!exact(record, fields) || typeof record.recordedAt !== "string" ||
+        const canonical = records.map(record => {
+          if (!exact(record, lineageFields) || typeof record.recordedAt !== "string" ||
               !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(record.recordedAt)) deny();
           const instant = new Date(record.recordedAt);
           if (!Number.isFinite(instant.getTime()) ||
@@ -206,7 +223,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
              (id,tenant_id,product,stage,source_system,source_record_key,recorded_at,parent_ids,assertion_status)
              VALUES ($1::uuid,$2::uuid,$3::text,$4::text,$5::text,$6::text,$7::timestamptz,$8::uuid[],'unverified')
              RETURNING id::text AS "id"`,
-            [node.id, tenantId, request.product, node.stage, node.sourceSystem,
+            [node.id, tenantId, product, node.stage, node.sourceSystem,
               node.sourceRecordKey, node.recordedAt, node.parentIds]);
           if (inserted.rows.length !== 1 || !obj(inserted.rows[0]) ||
               inserted.rows[0].id !== node.id) deny();
@@ -217,7 +234,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
               `INSERT INTO bci_dev.lineage_edges (tenant_id,product,parent_id,child_id)
                VALUES ($1::uuid,$2::text,$3::uuid,$4::uuid)
                RETURNING child_id::text AS "childId"`,
-              [tenantId, request.product, parentId, node.id]);
+              [tenantId, product, parentId, node.id]);
             if (inserted.rows.length !== 1 || !obj(inserted.rows[0]) ||
                 inserted.rows[0].childId !== node.id) deny();
           }
@@ -234,25 +251,25 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
                     parent_ids::text[] AS "parentIds", assertion_status AS "verification"
              FROM bci_dev.lineage_nodes
              WHERE tenant_id=$1::uuid AND product=$2::text AND id = ANY($3::uuid[])`,
-            [tenantId, request.product, ids]);
+            [tenantId, product, ids]);
           if (rows.rows.length !== ids.length) deny();
           const byId = new Map<string, Record<string, unknown>>();
           for (const row of rows.rows) {
             if (!obj(row)) throw new BciLineageWriteDenied();
-            if (!exact(row, fields) || typeof row.id !== "string" || byId.has(row.id))
+            if (!exact(row, lineageFields) || typeof row.id !== "string" || byId.has(row.id))
               throw new BciLineageWriteDenied();
             byId.set(row.id, row);
           }
           for (const expected of plan.toInsert) {
             const actual = byId.get(expected.id);
-            if (!actual || fields.some(field =>
+            if (!actual || lineageFields.some(field =>
               JSON.stringify(actual[field]) !== JSON.stringify(expected[field]))) deny();
           }
           const edges = await query(
             `SELECT parent_id::text AS "parentId", child_id::text AS "childId"
              FROM bci_dev.lineage_edges
              WHERE tenant_id=$1::uuid AND product=$2::text AND child_id = ANY($3::uuid[])`,
-            [tenantId, request.product, ids]);
+            [tenantId, product, ids]);
           const expectedEdges = plan.toInsert.flatMap(node =>
             node.parentIds.map(parent => parent + ":" + node.id)).sort();
           const actualEdges = edges.rows.map(row => {
@@ -265,8 +282,8 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           if (JSON.stringify(actualEdges) !== JSON.stringify(expectedEdges)) deny();
         }
         // Revocation between initial membership lookup and append must roll back.
-        const fresh = scopeOf(await deps.membershipsFor(verifiedPrincipalId, request.product),
-          verifiedPrincipalId, request.product);
+        const fresh = scopeOf(await deps.membershipsFor(verifiedPrincipalId, product),
+          verifiedPrincipalId, product);
         if (fresh !== tenantId) deny();
         return Object.freeze({
           insertedIds: Object.freeze(plan.toInsert.map(node => node.id)),

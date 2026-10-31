@@ -193,3 +193,40 @@ test("writer rejects lateral privileges and SECURITY DEFINER escape paths before
     assert.equal(h.calls.some(c => c.sql.includes("INSERT INTO")), false, key);
   }
 });
+
+test("writer snapshots caller product and nested record bytes before asynchronous authentication", async () => {
+  const mutable = { ...evidence, parentIds: [] };
+  const request = { product: "content", records: [mutable] };
+  const h = harness({ authenticate: async () => {
+    request.product = "demand";
+    mutable.sourceRecordKey = "forged-after-auth-start";
+    mutable.parentIds.push(other);
+    request.records[0] = { ...mutable, product: "demand" };
+    return { userId, authenticated: true };
+  } });
+  const result = await h.write(request);
+  assert.deepEqual(result.insertedIds, [rootId]);
+  const scope = h.calls.find(c => c.sql.includes("set_config('bci.tenant_id'"));
+  assert.deepEqual(scope.params, [tenant, "content"]);
+  const insert = h.calls.find(c => c.sql.includes("INSERT INTO bci_dev.lineage_nodes"));
+  assert.equal(insert.params[2], "content");
+  assert.equal(insert.params[5], "draft-1");
+  assert.deepEqual(insert.params[7], []);
+});
+
+test("writer rejects sparse records before authentication and pins product across membership await", async () => {
+  const sparse = new Array(1);
+  const bad = harness();
+  await assert.rejects(bad.write({ product: "content", records: sparse }), denied);
+  assert.equal(bad.calls.length, 0);
+
+  const request = { product: "content", records: [evidence] };
+  const h = harness({ membershipsFor: async () => {
+    request.product = "demand";
+    return [grant];
+  } });
+  const result = await h.write(request);
+  assert.deepEqual(result.insertedIds, [rootId]);
+  const scope = h.calls.find(c => c.sql.includes("set_config('bci.tenant_id'"));
+  assert.deepEqual(scope.params, [tenant, "content"]);
+});
