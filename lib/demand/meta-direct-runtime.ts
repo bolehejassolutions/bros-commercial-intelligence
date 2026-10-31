@@ -35,22 +35,36 @@ const enabled = () =>
   process.env.BROS_DEMAND_META_ADS_READ_TOKEN.length >= 20 &&
   Boolean(process.env.BCI_NEON_DEV_MEMBERSHIP_DATABASE_URL);
 
-let memberships: ReturnType<typeof createNeonDevMembershipLookup> | null = null;
-function getMemberships() {
+/** Server-log diagnostic labels are fixed and per request. No secrets or identifiers. */
+type MembershipStep = "configuration" | "connection" | "role" | "posture" | "scope" | "rows";
+let membershipPool: Pool | null = null;
+function getMemberships(mark: (step: MembershipStep) => void) {
   if (!enabled()) throw new Error("DEMAND_META_PREVIEW_DISABLED");
-  if (!memberships) {
+  if (!membershipPool) {
+    mark("configuration");
     const config = parseNeonDevConnection(
       process.env.BCI_NEON_DEV_MEMBERSHIP_DATABASE_URL,
       "bci_dev_membership_reader",
     );
-    // Existing separate restricted membership-only database role.
+    // Reuse the restricted pool, but keep diagnostic state request-local.
     const pool = new Pool({ ...config, max: 2, connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 10000, allowExitOnIdle: true,
       application_name: "demand-meta-private-preview", query_timeout: 7000 });
     pool.on("error", () => { /* Never log password-bearing driver errors. */ });
-    memberships = createNeonDevMembershipLookup(createPgReadOnlyTransaction(pool));
+    membershipPool = pool;
   }
-  return memberships;
+  const transaction = createPgReadOnlyTransaction(membershipPool);
+  return createNeonDevMembershipLookup(async fn => {
+    mark("connection");
+    return transaction(async query => fn((sql, params) => {
+      // Classify ONLY source-owned, fixed SQL patterns; never log SQL or parameters.
+      if (sql.startsWith("SELECT current_user AS role_name")) mark("role");
+      else if (sql.startsWith("SELECT current_database() AS database_name")) mark("posture");
+      else if (sql.startsWith("SELECT set_config(")) mark("scope");
+      else if (sql.includes("FROM bci_dev.tenant_memberships")) mark("rows");
+      return query(sql, params);
+    }));
+  });
 }
 const verifier = createNeonAuthPrincipalVerifier({
   issuer: new URL(authBase).origin,
@@ -65,7 +79,18 @@ const handler = createDemandMetaHttpHandler({
   campaignId: process.env.BROS_DEMAND_META_CAMPAIGN_ID ?? "0",
   apiVersion: process.env.BROS_DEMAND_META_API_VERSION ?? "v26.0",
   verifyJwt: token => verifier(token),
-  membershipsFor: (userId, product) => getMemberships()(userId, product),
+  membershipsFor: async (userId, product) => {
+    let step: MembershipStep = "configuration";
+    try {
+      const grants = await getMemberships(next => { step = next; })(userId, product);
+      if (grants.length !== 1) console.warn("demand_meta_membership_step", "no_unique_grant");
+      return grants;
+    } catch {
+      // Fixed vocabulary only. No error objects, subject, role URL or SQL values.
+      console.warn("demand_meta_membership_step", step);
+      throw new Error("BROS_DEMAND_MEMBERSHIP_ACCESS_DENIED");
+    }
+  },
   serverTokenFor: async (tenantId, accountId) => {
     if (!enabled() ||
         tenantId !== process.env.BROS_DEMAND_META_TENANT_ID?.toLowerCase() ||
