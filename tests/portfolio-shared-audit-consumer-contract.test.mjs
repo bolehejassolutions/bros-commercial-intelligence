@@ -1,0 +1,220 @@
+/**
+ * PORTFOLIO_SHARED_AUDIT_CONSUMER_CONTRACT_20261027_1420
+ * Coordinator-only, pinned cross-branch consumer test. SYNTHETIC inputs.
+ * Never authenticates Buffer/Meta, writes Neon, grants approval, or executes ads.
+ * An eight-stage structural lineage is NOT verified outcome or durable audit.
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join,dirname} from 'node:path';
+import {pathToFileURL} from 'node:url';
+
+const pins=Object.freeze({
+  content:'0b564c01e4e38659d1efe20313090d7429218035',
+  demand:'5b75e54ba293ad563e8e6d7d61c074d05d277bcd',
+  bci:'f41eaf72ac0ea0680e8243e3586169d5858039aa',
+});
+const sources=[
+  [pins.content,'lib/content/buffer-observation.mjs'],
+  [pins.content,'lib/content/measurement-revision.mjs'],
+  [pins.content,'lib/content/png-source-qa.mjs'],
+  [pins.demand,'lib/demand/experiment-preregistration.ts'],
+  [pins.demand,'lib/demand/concurrent-control-protocol.ts'],
+  [pins.bci,'lib/bci/internal-lineage.ts'],
+  [pins.bci,'lib/bci/audit-append-plan.ts'],
+];
+const tenantId='33333333-3333-4333-8333-333333333333';
+const stages=['evidence','signal','case','diagnosis','decision','action','outcome','learning'];
+const chain=(product,sourceKey)=>{
+  const ids=stages.map((_,i)=>
+    String(i+1).padStart(8,'0')+'-'+(product==='content'?'1111':'2222')+
+    '-4111-8111-111111111111');
+  return stages.map((stage,i)=>({
+    id:ids[i],tenantId,product,stage,sourceSystem:'portfolio_synthetic',
+    sourceRecordKey:i===0?sourceKey:'synthetic:'+product+':'+stage,
+    recordedAt:'2026-10-27T06:'+String(i).padStart(2,'0')+':00Z',
+    parentIds:i?[ids[i-1]]:[],verification:'unverified',
+  }));
+};
+
+if(process.env.GITHUB_ACTIONS!=='true'){
+  test.skip('pinned cross-branch consumer contract runs in GitHub Actions');
+}else{
+  test('latest CONTENT and DEMAND candidates reuse ONE BCI audit planner without false-green promotion',async()=>{
+    const dir=mkdtempSync(join(tmpdir(),'bros-portfolio-audit-'));
+    try{
+      // A private disposable git directory avoids concurrent shallow-fetch locks.
+      execFileSync('git',['init','--quiet',dir],{stdio:'pipe',timeout:15000});
+      execFileSync('git',['-C',dir,'remote','add','origin',
+        'https://github.com/bolehejassolutions/bros-commercial-intelligence.git'],
+        {stdio:'pipe',timeout:15000});
+      for(const ref of new Set(Object.values(pins))){
+        execFileSync('git',['-C',dir,'fetch','--no-tags','--depth=1','origin',ref],
+          {stdio:'pipe',timeout:60000,maxBuffer:2097152});
+      }
+      for(const [ref,path] of sources){
+        const src=execFileSync('git',['-C',dir,'show',ref+':'+path],
+          {encoding:'utf8',timeout:15000,maxBuffer:2097152});
+        const file=join(dir,path);
+        mkdirSync(dirname(file),{recursive:true});
+        writeFileSync(file,src,{mode:0o600});
+      }
+      const load=async path=>import(pathToFileURL(join(dir,path)).href);
+      const {projectBufferContentObservation}=await load(sources[0][1]);
+      const {proposeContentMeasurementRevision}=await load(sources[1][1]);
+      const {preregisterDemandExperiment}=await load('lib/demand/experiment-preregistration.ts');
+      const {proposeDemandConcurrentControl}=await load('lib/demand/concurrent-control-protocol.ts');
+      const {verifyDistinctPngSources}=await load('lib/content/png-source-qa.mjs');
+      const {planUntrustedBciAuditAppend}=await load('lib/bci/audit-append-plan.ts');
+
+      const contentScope={tenantId,product:'content',instanceId:'sell-internal',
+        contentId:'synthetic-content-001',channelService:'instagram',
+        channelId:'ig-synthetic-001',expectedAssetCount:2,
+        asOf:'2026-10-27T06:20:00Z'};
+      const post={id:'synthetic-post-001',status:'sent',channelService:'instagram',
+        channelId:contentScope.channelId,sentAt:'2026-10-27T01:03:43.741Z',
+        externalLink:'https://www.instagram.com/p/DeyLqz7EYPk/',
+        text:'Seller education synthetic',metadata:{isAiGenerated:false},
+        assets:[{type:'image',source:'https://example.com/slide-1.png'},
+          {type:'image',source:'https://example.com/slide-2.png'}],
+        metricsUpdatedAt:'2026-10-27T02:03:43.741Z',
+        metrics:[{type:'views',unit:'count',value:6}]};
+      const previous=projectBufferContentObservation(post,contentScope);
+      const current=projectBufferContentObservation({...post,
+        metricsUpdatedAt:'2026-10-27T04:03:43.741Z',
+        metrics:[{type:'views',unit:'count',value:8}]},contentScope);
+      assert.equal(previous.status,'MEASURED');
+      assert.equal(current.status,'MEASURED');
+      const contentCandidate=proposeContentMeasurementRevision(previous,current,{
+        ...contentScope,postId:post.id,
+      });
+      assert.equal(contentCandidate.status,'CANDIDATE_UNATTESTED');
+      assert.equal(contentCandidate.observedDeltas.views,2);
+      for(const flag of ['providerAttested','approvalVerified','bciAuditWritten',
+        'learningVerified','causalLiftProven','executionAllowed'])
+        assert.equal(contentCandidate[flag],false,flag);
+
+      const demandCandidate=preregisterDemandExperiment({
+        tenantId,product:'demand',pilotProduct:'bros_sell',
+        metaAccountId:'act_1997776120879476',campaignId:'123456789',
+        hypothesis:'Synthetic concurrent creative test proposal, not executed',
+        action:'CREATIVE_TEST',primaryKpi:'verified_paid_orders',
+        baselineStart:'2026-10-01',baselineEnd:'2026-10-07',
+        experimentStart:'2026-10-29',experimentEnd:'2026-11-05',
+        preRegisteredAt:'2026-10-27T06:00:00Z',
+        evidenceCandidateIds:['demand:synthetic:meta:01'],
+        maxIncrementalSpendMinor:0,
+      });
+      assert.equal(demandCandidate.status,'PROPOSED_NOT_AUTHORIZED');
+      assert.equal(demandCandidate.experimentDesign,'SEQUENTIAL_BASELINE_NOT_CONTROLLED');
+      for(const flag of ['controlledExperimentVerified','causalInferenceEligible',
+        'providerEvidenceAttested','tenantAuthorizationVerified','actionApproved',
+        'actionExecuted','outcomeVerified','learningVerified','executionAllowed'])
+        assert.equal(demandCandidate[flag],false,flag);
+      assert.equal(demandCandidate.verifiedPaidOrders,null);
+      assert.equal(demandCandidate.causalLift,null);
+
+      // Same shared BCI planner, separate tenant/product scopes and source keys.
+      for(const [product,candidateKey] of [
+        ['content',contentCandidate.candidateId],
+        ['demand',demandCandidate.candidateId],
+      ]){
+        const scope={tenantId,product},records=chain(product,candidateKey);
+        const first=planUntrustedBciAuditAppend(scope,[],records);
+        assert.equal(first.toInsert.length,8);
+        assert.equal(first.structurallyLinkedLearnings,1);
+        assert.deepEqual(first.replayedIds,[]);
+        for(const flag of ['authenticated','providerAttested','persisted'])
+          assert.equal(first[flag],false,flag);
+        // The persisted parameter here is a hypothetical in-memory fixture,
+        // NOT a readback from Neon or proof of a durable audit.
+        const replay=planUntrustedBciAuditAppend(scope,records,records);
+        assert.equal(replay.toInsert.length,0);
+        assert.equal(replay.replayedIds.length,8);
+        assert.equal(replay.persisted,false);
+        assert.throws(()=>planUntrustedBciAuditAppend(scope,[],[
+          {...records[0],verification:'verified'},...records.slice(1)]),
+          /Invalid BCI audit append/);
+        assert.throws(()=>planUntrustedBciAuditAppend({
+          ...scope,product:product==='content'?'demand':'content'
+        },[],records),/Invalid BCI evidence lineage/);
+        assert.throws(()=>planUntrustedBciAuditAppend({
+          ...scope,tenantId:'55555555-5555-4555-8555-555555555555'
+        },[],records),/Invalid BCI evidence lineage/);
+      }
+
+      // PORTFOLIO_CURRENT_SOURCE_ACCEPTANCE_20261027_1520:
+      // Exercise newly changed CONTENT singleton byte QA and DEMAND concurrent
+      // holdout proposal against the same BCI planner. Synthetic PNG fixture;
+      // no provider media, approved publication, actual assignment or audit write.
+      const pngBytes=Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGOQNPIGIgYIBQAPrgJZZFXdEgAAAABJRU5ErkJggg==',
+        'base64');
+      const qa=verifyDistinctPngSources([pngBytes],{expectedWidth:2,expectedHeight:2});
+      assert.equal(qa.status,'SOURCE_BYTES_STRUCTURALLY_VERIFIED');
+      assert.equal(qa.images.length,1);
+      assert.equal(qa.images[0].structuralIntegrity,'CRC_AND_DEFLATE_VALID');
+      for(const flag of ['visualDistinctnessVerified','approvalVerified','publishedVerified'])
+        assert.equal(qa[flag],false,flag);
+      assert.equal(qa.images[0].providerByteIdentityVerified,false);
+      const corrupted=Buffer.from(pngBytes);
+      corrupted[corrupted.length-1]^=1;
+      assert.throws(()=>verifyDistinctPngSources([corrupted],
+        {expectedWidth:2,expectedHeight:2}),/PNG_QA_/);
+      assert.throws(()=>verifyDistinctPngSources([],
+        {expectedWidth:2,expectedHeight:2}),/INVALID_ASSET_SET/);
+
+      const concurrent=proposeDemandConcurrentControl({
+        tenantId,product:'demand',pilotProduct:'bros_sell',
+        metaAccountId:'act_1997776120879476',campaignId:'123456789',
+        hypothesis:'Synthetic consented-visitor randomized holdout hypothesis',
+        action:'LANDING_PAGE_TEST',
+        treatmentChange:'Synthetic alternative educational landing explanation',
+        primaryKpi:'verified_paid_orders',
+        plannedStart:'2026-10-29',plannedEnd:'2026-11-05',
+        preRegisteredAt:'2026-10-27T06:00:00Z',
+        evidenceCandidateIds:['demand:synthetic:meta:01'],
+        assignmentUnit:'CONSENTED_LANDING_VISITOR',
+        assignmentMethod:'STICKY_RANDOM_50_50_PROPOSED',
+        controlExperience:'UNCHANGED_EXISTING_LANDING_PAGE',
+        analysisPolicy:'INTENTION_TO_TREAT',maxIncrementalSpendMinor:0,
+      });
+      assert.equal(concurrent.status,'PROPOSED_NOT_AUTHORIZED');
+      assert.equal(concurrent.experimentDesign,
+        'CONCURRENT_RANDOMIZED_HOLDOUT_PLAN_UNVERIFIED');
+      assert.deepEqual(concurrent.allocation,{controlPercent:50,treatmentPercent:50});
+      for(const flag of ['tenantAuthorizationVerified','preRegistrationAttested',
+        'assignmentAndExposureVerified','concurrentControlVerified',
+        'providerEvidenceAttested','actionApproved','actionExecuted',
+        'outcomeVerified','learningVerified','controlledExperimentVerified',
+        'causalInferenceEligible','executionAllowed'])
+        assert.equal(concurrent[flag],false,flag);
+      assert.equal(concurrent.verifiedPaidOrders,null);
+      assert.equal(concurrent.verifiedCacMinor,null);
+      assert.equal(concurrent.causalLift,null);
+
+      const contentEvidence=chain('content','content:source-png-sha256:'+qa.images[0].sha256);
+      const demandEvidence=chain('demand',concurrent.candidateId);
+      for(const [product,records] of [
+        ['content',contentEvidence],['demand',demandEvidence],
+      ]){
+        const plan=planUntrustedBciAuditAppend({tenantId,product},[],records);
+        assert.equal(plan.toInsert.length,8);
+        assert.equal(plan.structurallyLinkedLearnings,1);
+        for(const flag of ['authenticated','providerAttested','persisted'])
+          assert.equal(plan[flag],false,flag);
+        assert.equal(planUntrustedBciAuditAppend({tenantId,product},
+          records,records).toInsert.length,0);
+      }
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'demand'},[],contentEvidence),
+        /Invalid BCI evidence lineage/);
+      assert.throws(()=>planUntrustedBciAuditAppend(
+        {tenantId,product:'content'},[],demandEvidence),
+        /Invalid BCI evidence lineage/);
+    }finally{rmSync(dir,{recursive:true,force:true});}
+  });
+}
