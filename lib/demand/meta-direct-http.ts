@@ -113,6 +113,20 @@ export function createDemandMetaHttpHandler(deps: Dependencies) {
           pixelPurchaseEvents: observation.pixelPurchaseEvents,
           actionAliasMismatch: observation.actionAliasMismatch,
         } : null,
+        // Non-persistent candidate for future independently authenticated BCI
+        // intake. No tenant, principal, token, or raw provider body is exposed.
+        readCandidate: {
+          candidateKey: result.readCandidate.candidateKey,
+          stage: result.readCandidate.stage,
+          reportStatus: result.readCandidate.reportStatus,
+          windowStart: result.readCandidate.windowStart,
+          windowEndInclusive: result.readCandidate.windowEndInclusive,
+          collectedAt: result.readCandidate.collectedAt,
+          metricsPresent: result.readCandidate.metrics !== null,
+          independentProviderReceiptRecorded: false,
+          durableBciEvidenceRecorded: false,
+          executionAllowed: false,
+        },
         verifiedPaidOrders: null, verifiedCpaMinor: null,
         durableBciEvidenceRecorded: false,
         campaignExecutionAllowed: false,
