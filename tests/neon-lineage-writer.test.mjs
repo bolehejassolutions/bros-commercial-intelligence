@@ -27,7 +27,8 @@ const role = {
 };
 const posture = {
   databaseName: "bros_intelligence_dev", forcedRls: true, lineageOnly: true,
-  membershipDenied: true, evidenceDenied: true,
+  membershipFullSelectDenied:true, membershipColumnsAllowed:true, membershipMutationDenied:true,
+  membershipForcedRls:true, lineagePolicyCount:5, boundLineagePolicyCount:4, evidenceDenied:true,
   schemaCreateDenied: true, dbCreateDenied: true,
   otherBciDenied: true, externalTablesDenied: true, definerExecDenied: true,
   allSchemaCreateDenied: true, sequenceAccessDenied: true,
@@ -55,6 +56,7 @@ function harness(overrides = {}) {
       }
       if (sql.includes("FROM bci_dev.lineage_edges") && sql.includes("AND child_id = ANY($3::uuid[])"))
         return { rows: params[2].includes(childId) ? [{ parentId: rootId, childId }] : [] };
+      if (sql.includes("FROM bci_dev.tenant_memberships")) return { rows: [{activeCount:1}] };
       if (sql.includes("FROM bci_dev.lineage_nodes WHERE")) return { rows: [] };
       if (sql.includes("INSERT INTO bci_dev.lineage_nodes")) return { rows: [{ id: params[0] }] };
       if (sql.includes("INSERT INTO bci_dev.lineage_edges")) return { rows: [{ childId: params[3] }] };
@@ -73,7 +75,7 @@ test("authenticated membership scopes unverified node+edge inserts, with final r
   assert.deepEqual(result.replayedIds, []);
   assert.equal(h.checks(), 2);
   const scope = h.calls.find(c => c.sql.includes("set_config('bci.tenant_id'"));
-  assert.deepEqual(scope.params, [tenant, "content"]);
+  assert.deepEqual(scope.params, [tenant, "content", userId]);
   const inserts = h.calls.filter(c => c.sql.includes("INSERT INTO"));
   assert.equal(inserts.length, 3);
   assert.ok(inserts.every(c => !c.sql.includes("ON CONFLICT")));
@@ -95,6 +97,7 @@ test("writer rejects incomplete or altered transaction readback before commit", 
               (id === rootId ? evidence : signal).sourceRecordKey })) };
         if (sql.includes("FROM bci_dev.lineage_edges")) return { rows: [] };
       }
+      if (sql.includes("FROM bci_dev.tenant_memberships")) return { rows: [{activeCount:1}] };
       if (sql.includes("FROM bci_dev.lineage_nodes WHERE")) return { rows: [] };
       if (sql.includes("INSERT INTO bci_dev.lineage_nodes")) return { rows: [{ id: params[0] }] };
       if (sql.includes("INSERT INTO bci_dev.lineage_edges")) return { rows: [{ childId: params[3] }] };
@@ -127,7 +130,7 @@ test("wrong session/admin SET ROLE impersonation and privilege drift fail closed
   }
   const h = harness({ transaction: async fn => fn(async sql =>
     sql.includes('AS "roleName"') ? { rows: [role] } :
-      sql.includes('AS "forcedRls"') ? { rows: [{ ...posture, membershipDenied: false }] } : { rows: [] }) });
+      sql.includes('AS "forcedRls"') ? { rows: [{ ...posture, membershipColumnsAllowed: false }] } : { rows: [] }) });
   await assert.rejects(h.write({ product: "content", records: [evidence] }), denied);
 });
 
@@ -166,6 +169,7 @@ test("idempotent replay accepts equivalent UTC timestamps with different precisi
     h.calls.push({ sql, params });
     if (sql.includes('AS "roleName"')) return { rows: [role] };
     if (sql.includes('AS "forcedRls"')) return { rows: [posture] };
+    if (sql.includes("FROM bci_dev.tenant_memberships")) return { rows: [{activeCount:1}] };
     if (sql.includes("FROM bci_dev.lineage_nodes WHERE")) return { rows: [stored] };
     return { rows: [] };
   }) });
@@ -207,7 +211,7 @@ test("writer snapshots caller product and nested record bytes before asynchronou
   const result = await h.write(request);
   assert.deepEqual(result.insertedIds, [rootId]);
   const scope = h.calls.find(c => c.sql.includes("set_config('bci.tenant_id'"));
-  assert.deepEqual(scope.params, [tenant, "content"]);
+  assert.deepEqual(scope.params, [tenant, "content", userId]);
   const insert = h.calls.find(c => c.sql.includes("INSERT INTO bci_dev.lineage_nodes"));
   assert.equal(insert.params[2], "content");
   assert.equal(insert.params[5], "draft-1");
@@ -228,5 +232,40 @@ test("writer rejects sparse records before authentication and pins product acros
   const result = await h.write(request);
   assert.deepEqual(result.insertedIds, [rootId]);
   const scope = h.calls.find(c => c.sql.includes("set_config('bci.tenant_id'"));
-  assert.deepEqual(scope.params, [tenant, "content"]);
+  assert.deepEqual(scope.params, [tenant, "content", userId]);
+});
+
+test("writer fails closed when database-level membership or RLS binding is lost",async()=>{
+  for(const changed of [
+    {membershipColumnsAllowed:false},{membershipMutationDenied:false},
+    {membershipFullSelectDenied:false},{membershipForcedRls:false},
+    {lineagePolicyCount:6},{boundLineagePolicyCount:3},
+  ]){
+    const h=harness({transaction:async fn=>fn(async(sql)=>{
+      h.calls.push({sql});
+      if(sql.includes('AS "roleName"'))return {rows:[role]};
+      if(sql.includes('AS "forcedRls"'))return {rows:[{...posture,...changed}]};
+      throw new Error("unexpected SQL after failed privilege check");
+    })});
+    await assert.rejects(h.write({product:"content",records:[evidence]}),denied);
+    assert.equal(h.calls.some(x=>x.sql.includes("INSERT INTO")),false);
+  }
+});
+
+test("writer denies SQL membership revocation before writing and before commit",async()=>{
+  for(const when of [1,2]){
+    let dbChecks=0;
+    const h=harness({transaction:async fn=>fn(async(sql,params)=>{
+      h.calls.push({sql,params});
+      if(sql.includes('AS "roleName"'))return {rows:[role]};
+      if(sql.includes('AS "forcedRls"'))return {rows:[posture]};
+      if(sql.includes("FROM bci_dev.tenant_memberships"))return {rows:[{activeCount:++dbChecks===when?0:1}]};
+      if(sql.includes("FROM bci_dev.lineage_nodes WHERE"))return {rows:[]};
+      if(sql.includes("INSERT INTO bci_dev.lineage_nodes"))return {rows:[{id:params[0]}]};
+      return {rows:[]};
+    })});
+    await assert.rejects(h.write({product:"content",records:[evidence]}),denied);
+    assert.equal(dbChecks,when);
+    assert.equal(h.calls.some(x=>x.sql.includes("INSERT INTO")),when===2);
+  }
 });

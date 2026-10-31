@@ -147,14 +147,29 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
                   bool_and(has_table_privilege(current_user,c.oid,'SELECT') AND
                     has_table_privilege(current_user,c.oid,'INSERT') AND
                     NOT has_table_privilege(current_user,c.oid,'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')) AS "lineageOnly",
-                  NOT has_table_privilege(current_user,'bci_dev.tenant_memberships','SELECT,INSERT,UPDATE,DELETE') AS "membershipDenied",
+                  NOT has_table_privilege(current_user,'bci_dev.tenant_memberships','SELECT') AS "membershipFullSelectDenied",
+                  (SELECT bool_and(has_column_privilege(current_user,'bci_dev.tenant_memberships',m.col,'SELECT'))
+                     FROM (VALUES ('principal_id'),('tenant_id'),('product'),('active'),('revoked_at')) m(col)) AS "membershipColumnsAllowed",
+                  NOT has_table_privilege(current_user,'bci_dev.tenant_memberships','INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') AS "membershipMutationDenied",
+                  (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class
+                     WHERE oid='bci_dev.tenant_memberships'::regclass) AS "membershipForcedRls",
+                  (SELECT COUNT(*)::integer FROM pg_policies p
+                     WHERE p.schemaname='bci_dev'
+                       AND p.tablename IN ('lineage_nodes','lineage_edges','tenant_memberships')
+                       AND ('bci_dev_lineage_writer'=ANY(p.roles) OR 'public'=ANY(p.roles))) AS "lineagePolicyCount",
+                  (SELECT COUNT(*)::integer FROM pg_policies p
+                     WHERE p.schemaname='bci_dev' AND p.tablename IN ('lineage_nodes','lineage_edges')
+                       AND 'bci_dev_lineage_writer'=ANY(p.roles)
+                       AND position('tenant_memberships' in coalesce(p.qual,'') || coalesce(p.with_check,''))>0
+                       AND position('principal_id' in coalesce(p.qual,'') || coalesce(p.with_check,''))>0
+                       AND position('revoked_at' in coalesce(p.qual,'') || coalesce(p.with_check,''))>0) AS "boundLineagePolicyCount",
                   NOT has_table_privilege(current_user,'bci_dev.evidence','SELECT,INSERT,UPDATE,DELETE') AS "evidenceDenied",
                   NOT has_schema_privilege(current_user,'bci_dev','CREATE') AS "schemaCreateDenied",
                   NOT has_database_privilege(current_user,current_database(),'CREATE') AS "dbCreateDenied",
                   (SELECT NOT EXISTS (
                     SELECT 1 FROM pg_class t JOIN pg_namespace ns ON ns.oid=t.relnamespace
                     WHERE ns.nspname='bci_dev' AND t.relkind IN ('r','p','v','m','f')
-                      AND t.relname NOT IN ('lineage_nodes','lineage_edges')
+                      AND t.relname NOT IN ('lineage_nodes','lineage_edges','tenant_memberships')
                       AND has_table_privilege(current_user,t.oid,
                         'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
                   )) AS "otherBciDenied",
@@ -188,14 +203,31 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
         const p = posture.rows[0];
         if (posture.rows.length !== 1 || !obj(p) ||
             p.databaseName !== "bros_intelligence_dev" || p.forcedRls !== true ||
-            p.lineageOnly !== true || p.membershipDenied !== true ||
+            p.lineageOnly !== true || p.membershipFullSelectDenied !== true ||
+            p.membershipColumnsAllowed !== true || p.membershipMutationDenied !== true ||
+            p.membershipForcedRls !== true || p.lineagePolicyCount !== 5 ||
+            p.boundLineagePolicyCount !== 4 ||
             p.evidenceDenied !== true || p.schemaCreateDenied !== true ||
             p.dbCreateDenied !== true || p.otherBciDenied !== true ||
             p.externalTablesDenied !== true || p.definerExecDenied !== true ||
             p.allSchemaCreateDenied !== true || p.sequenceAccessDenied !== true) deny();
         await query(
-          "SELECT set_config('bci.tenant_id',$1::text,true), set_config('bci.product',$2::text,true)",
-          [tenantId, product]);
+          "SELECT set_config('bci.tenant_id',$1::text,true), set_config('bci.product',$2::text,true), set_config('bci.principal_id',$3::text,true)",
+          [tenantId, product, verifiedPrincipalId]);
+        // Defense in depth: the PostgreSQL RLS predicate itself needs the
+        // active membership. Session GUCs are NOT authentication; the JWT
+        // was verified independently by the private server boundary.
+        const recheckMembershipInSql = async () => {
+          const membership = await query(
+            `SELECT COUNT(*)::integer AS "activeCount"
+              FROM bci_dev.tenant_memberships
+              WHERE tenant_id=$1::uuid AND principal_id=$2::uuid AND product=$3::text
+                AND active IS TRUE AND revoked_at IS NULL`,
+            [tenantId, verifiedPrincipalId, product]);
+          if (membership.rows.length !== 1 || !obj(membership.rows[0]) ||
+              membership.rows[0].activeCount !== 1) deny();
+        };
+        await recheckMembershipInSql();
         const found = await query(
           `SELECT id::text AS "id", tenant_id::text AS "tenantId", product, stage,
                   source_system AS "sourceSystem", source_record_key AS "sourceRecordKey",
@@ -281,7 +313,8 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           }).sort();
           if (JSON.stringify(actualEdges) !== JSON.stringify(expectedEdges)) deny();
         }
-        // Revocation between initial membership lookup and append must roll back.
+        // Same-transaction membership recheck before commit catches revocation.
+        await recheckMembershipInSql();
         const fresh = scopeOf(await deps.membershipsFor(verifiedPrincipalId, product),
           verifiedPrincipalId, product);
         if (fresh !== tenantId) deny();
