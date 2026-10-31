@@ -125,3 +125,24 @@ test("CONTENT reserver connection is a distinct direct LOGIN, never owner or rea
   ]) assert.throws(() => parseNeonDevConnection(bad, role));
   assert.throws(() => parseNeonDevConnection(valid, "bci_dev_private_reader"));
 });
+
+
+test("restricted SQL-native DEMAND evidence writer URL allows direct TLS only, never deleted privileged role",()=>{
+  const host="ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech";
+  const role="bci_dev_evidence_writer_restricted";
+  const valid=`postgresql://${role}:synthetic-nonsecret@${host}/bros_intelligence_dev?sslmode=require`;
+  const parsed=parseNeonDevConnection(valid,role);
+  assert.equal(parsed.user,role);
+  assert.equal(parsed.ssl.rejectUnauthorized,true);
+  assert.equal(parsed.ssl.servername,host);
+  assert.equal(parsed.enableChannelBinding,true);
+  for(const invalid of [
+    valid.replace(role,"bci_dev_evidence_writer"),
+    valid.replace(role,"BROS"),
+    valid.replace(host,"attacker.example.net"),
+    valid.replace("sslmode=require","sslmode=disable"),
+    valid+"&options=-c%20role%3DBROS",
+    valid.replace("synthetic-nonsecret",""),
+  ]) assert.throws(()=>parseNeonDevConnection(invalid,role));
+  assert.throws(()=>parseNeonDevConnection(valid,"bci_dev_private_reader"));
+});
