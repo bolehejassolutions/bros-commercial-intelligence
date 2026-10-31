@@ -7,7 +7,7 @@ type Client = Readonly<{
   release: (destroy?: boolean) => void;
 }>;
 export type ReadOnlyPool = Readonly<{ connect: () => Promise<Client> }>;
-type RestrictedRole = "bci_dev_private_reader" | "bci_dev_membership_reader" | "bci_dev_lineage_writer" | "bci_dev_content_reserver";
+type RestrictedRole = "bci_dev_private_reader" | "bci_dev_membership_reader" | "bci_dev_lineage_writer" | "bci_dev_content_reserver" | "bci_dev_evidence_writer_restricted";
 
 export class NeonPreviewDatabaseDenied extends Error {
   constructor() { super("Neon development database access denied."); this.name = "NeonPreviewDatabaseDenied"; }
@@ -22,7 +22,7 @@ const hosts = new Set([
 export function parseNeonDevConnection(value: unknown, role: RestrictedRole) {
   try {
     if (typeof value !== "string" || value.length > 4096 ||
-        (role !== "bci_dev_private_reader" && role !== "bci_dev_membership_reader" && role !== "bci_dev_lineage_writer" && role !== "bci_dev_content_reserver")) throw new Error();
+        (role !== "bci_dev_private_reader" && role !== "bci_dev_membership_reader" && role !== "bci_dev_lineage_writer" && role !== "bci_dev_content_reserver" && role !== "bci_dev_evidence_writer_restricted")) throw new Error();
     const url = new URL(value);
     if ((url.protocol !== "postgres:" && url.protocol !== "postgresql:") ||
         !hosts.has(url.hostname) || (url.port && url.port !== "5432") ||
