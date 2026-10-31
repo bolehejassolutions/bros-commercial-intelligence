@@ -261,6 +261,10 @@ test("writer denies SQL membership revocation before writing and before commit",
       if(sql.includes('AS "forcedRls"'))return {rows:[posture]};
       if(sql.includes("FROM bci_dev.tenant_memberships"))return {rows:[{activeCount:++dbChecks===when?0:1}]};
       if(sql.includes("FROM bci_dev.lineage_nodes WHERE"))return {rows:[]};
+      if(sql.includes("AND id = ANY($3::uuid[])") &&
+         sql.includes("FROM bci_dev.lineage_nodes"))return {rows:params[2].map(()=>({
+           ...evidence, recordedAt:"2026-10-29T00:00:00.000Z"
+         }))};
       if(sql.includes("INSERT INTO bci_dev.lineage_nodes"))return {rows:[{id:params[0]}]};
       return {rows:[]};
     })});
