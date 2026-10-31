@@ -154,7 +154,7 @@ export function createBciDemandMetaEvidenceAppender(deps: Deps) {
              FROM pg_roles WHERE rolname=current_user`,[]);
         const r=identity.rows[0];
         if(identity.rows.length!==1 || !object(r) ||
-           r.roleName!=="bci_dev_evidence_writer" || r.sessionRoleName!=="bci_dev_evidence_writer" ||
+           r.roleName!=="bci_dev_evidence_writer_restricted" || r.sessionRoleName!=="bci_dev_evidence_writer_restricted" ||
            r.canLogin!==true || r.superuser!==false || r.bypassRls!==false ||
            r.canCreateDb!==false || r.canCreateRole!==false || r.canReplicate!==false ||
            r.inherits!==false || r.parentRoles!==0) deny();
@@ -164,7 +164,7 @@ export function createBciDemandMetaEvidenceAppender(deps: Deps) {
              has_table_privilege(current_user,'bci_dev.evidence','INSERT') AS "canInsert",
              has_table_privilege(current_user,'bci_dev.evidence','SELECT') AS "canSelect",
              NOT has_table_privilege(current_user,'bci_dev.evidence','UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') AS "noEvidenceMutation",
-             has_table_privilege(current_user,'bci_dev.tenant_memberships','SELECT') AS "canReadMembership",
+             (SELECT bool_and(has_column_privilege(current_user,'bci_dev.tenant_memberships',cols.col,'SELECT')) FROM (VALUES ('principal_id'),('tenant_id'),('product'),('active'),('revoked_at')) AS cols(col)) AS "canReadMembership",
              NOT has_table_privilege(current_user,'bci_dev.tenant_memberships','INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') AS "noMembershipMutation",
              NOT has_schema_privilege(current_user,'bci_dev','CREATE') AS "noSchemaCreate",
              NOT has_database_privilege(current_user,current_database(),'CREATE') AS "noDbCreate",
@@ -180,7 +180,7 @@ export function createBciDemandMetaEvidenceAppender(deps: Deps) {
 
         // GUCs only filter RLS; they are NOT authentication. Restricted direct
         // LOGIN + verified identity + fresh membership are mandatory above.
-        await query("SELECT set_config('bci.tenant_id',$1,true),set_config('bci.product',$2,true)",[tenantId,"demand"]);
+        await query("SELECT set_config('bci.tenant_id',$1,true),set_config('bci.product',$2,true),set_config('bci.principal_id',$3,true)",[tenantId,"demand",userId]);
         const recheck=async () => {
           const m=await query(
             `SELECT principal_id AS "principalId" FROM bci_dev.tenant_memberships
