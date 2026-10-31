@@ -75,7 +75,7 @@ function database(kind, rows, calls, error) {
 }
 
 function harness({ env = {}, grants = [grant], rows = [evidence],
-  membershipError, evidenceError, jwksError, afterEvidenceRead, directRows } = {}) {
+  membershipError, evidenceError, jwksError, afterEvidenceRead, directRows, probeWriter } = {}) {
   const calls = [];
   const verifierConfig = { issuer: ISSUER, audience: ISSUER,
     jwksUrl: `${ISSUER}/auth/.well-known/jwks.json`,
@@ -100,7 +100,7 @@ function harness({ env = {}, grants = [grant], rows = [evidence],
   const handler = createNeonPreviewHandler({ env: () => ({
     VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: BRANCH,
     BCI_NEON_DEV_PRIVATE_READS: "enabled", ...env,
-  }), verifierConfig, membershipsFor, readRows });
+  }), verifierConfig, membershipsFor, readRows, probeWriter });
   const request = (query = "product=content", jwt = token(), options = {}) => new Request(
     `https://preview.example.test/api/internal/neon-evidence?${query}`, {
       ...options, headers: { ...(jwt === null ? {} : { authorization: `Bearer ${jwt}` }),
@@ -312,5 +312,56 @@ test("native Netlify/Cloudflare Preview markers cannot open BCI without trusted 
     const f = harness({ env });
     await denied(await f.handler(f.request()), 404);
     assert.equal(f.calls.length, 0, "untrusted host must not fetch JWKS or query Neon");
+  }
+});
+
+
+test("writer probe requires DEV flag, DEMAND-only query, verified JWT and membership before connecting",async()=>{
+  const result={directRestrictedLoginVerified:true,forcedRlsAndPrivilegesVerified:true,
+    activeDemandMembershipVerified:true,readOnlyScopeSmokeVerified:true,
+    evidenceAppended:false,authenticatedProviderReceiptRecorded:false};
+  const calls=[];
+  const writer=async scope=>{calls.push(scope);return result;};
+  const grantDemand={...grant,product:"demand"};
+  for(const query of ["product=content&probe=writer",
+    "product=demand&probe=wrong","product=demand&probe=writer&limit=1",
+    "product=demand&probe=writer&probe=writer"]) {
+    const f=harness({grants:[grantDemand],probeWriter:writer,
+      env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+    await denied(await f.handler(f.request(query)),400);
+  }
+  const disabled=harness({grants:[grantDemand],probeWriter:writer});
+  await denied(await disabled.handler(disabled.request("product=demand&probe=writer")),404);
+  const noJwt=harness({grants:[grantDemand],probeWriter:writer,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await noJwt.handler(noJwt.request("product=demand&probe=writer",null)),401);
+  const forged=harness({grants:[grantDemand],probeWriter:writer,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await forged.handler(forged.request("product=demand&probe=writer",
+    token({exp:NOW}))),403);
+  assert.equal(calls.length,0);
+  const allowed=harness({grants:[grantDemand],probeWriter:writer,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  const response=await allowed.handler(allowed.request("product=demand&probe=writer"));
+  assert.equal(response.status,200);
+  assert.match(response.headers.get("cache-control"),/no-store/);
+  assert.deepEqual(await response.json(),{scope:"internal-development",
+    writerLoginProbe:"pass",evidenceAppended:false,providerReceiptRecorded:false});
+  assert.deepEqual(calls,[{principalId:USER,tenantId:TENANT,product:"demand"}]);
+});
+
+test("writer probe missing membership, non-boolean response and connector error all fail closed",async()=>{
+  const grantDemand={...grant,product:"demand"};
+  const invalid=[
+    {grants:[],probeWriter:async()=>{throw Error("unexpected probe");}},
+    {grants:[grant],probeWriter:async()=>{throw Error("unexpected probe");}},
+    {grants:[grantDemand],probeWriter:async()=>({directRestrictedLoginVerified:true})},
+    {grants:[grantDemand],probeWriter:async()=>{throw Error("secret-sentinel postgres://");}},
+  ];
+  for(const options of invalid) {
+    const h=harness({...options,env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+    const response=await h.handler(h.request("product=demand&probe=writer"));
+    const raw=await denied(response,403);
+    assert.equal(raw.includes("secret-sentinel"),false);
   }
 });
