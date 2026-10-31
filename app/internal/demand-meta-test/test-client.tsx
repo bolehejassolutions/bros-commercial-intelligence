@@ -176,6 +176,7 @@ export default function DemandMetaTestClient() {
         <p className="eyebrow">BROS DEMAND · INTERNAL PREVIEW ONLY</p>
         <h1 id="demand-test-heading">Direct Meta read-only verification</h1>
         <p className="sub">This page tests rejection controls and Neon Auth admission. It cannot create or change ads. The server's direct-read feature flag is OFF by default.</p>
+        <p className="sub">Vercel Authentication protects the Preview URL. Sign in to Vercel first if prompted. This is separate from Neon Auth email OTP. You can run no-token HTTP rejection checks without a Neon Auth session.</p>
         <p role="status" aria-live="polite">{notice}</p>
         <div className="auth-form">
           <button type="button" disabled={busy || stage === "loading"} onClick={checkDenials}>Run no-token HTTP rejection checks</button>
