@@ -165,3 +165,33 @@ test("admission snapshots mutable original bytes and dispatch binding before asy
   assert.equal(result.dispatchIntentId,request.dispatchIntentId);
   assert.equal(result.dispatchIntentSha256,signedDispatchIntentSha256);
 });
+
+test("signed proof fields cannot change after verification while JWT is awaited",async()=>{
+  const mutable={...signedVerified};
+  const h=setup({
+    verifySignedReceipt:async()=>mutable,
+    authenticateReviewer:async()=>{
+      mutable.signedReviewEvidenceId="forged-after-signature";
+      mutable.expiresAt="2026-11-02T00:00:00.000Z";
+      return {userId:reviewerId,authenticated:true};
+    }
+  });
+  const result=await h.admit(request);
+  assert.equal(result.signedReviewEvidenceId,verified.signedReviewEvidenceId);
+  assert.equal(result.expiresAt,verified.expiresAt);
+  assert.equal(result.bindingSha256,bindingSha256);
+});
+
+test("original-byte media manifest is pinned before asynchronous signature verification",async()=>{
+  const mutable={...media};
+  const h=setup({
+    recomputeOriginalMedia:async()=>mutable,
+    verifySignedReceipt:async()=>{
+      mutable.originalMediaSha256="b".repeat(64);
+      return signedVerified;
+    }
+  });
+  const result=await h.admit(request);
+  assert.equal(result.originalMediaSha256,sha);
+  assert.equal(result.mediaCount,1);
+});
