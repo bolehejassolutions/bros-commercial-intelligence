@@ -221,10 +221,11 @@ export function createBciDemandMetaEvidenceAppender(deps: Deps) {
            canon(actual.unknowns)!==canon(expected.unknowns)) deny();
         // Time fields may differ across repeated collection of the same logical
         // candidate. Preserve the first append; never UPDATE or DELETE.
+        const acceptedRecordId=String(actual.id);
         await recheck();
         return Object.freeze({
           status:inserted.rows.length===1?"inserted" as const:"replayed" as const,
-          recordId:String(actual.id), independentlyAttestedProvider:false as const,
+          recordId:acceptedRecordId, independentlyAttestedProvider:false as const,
           verifiedPaidOrders:null,
         });
       });
