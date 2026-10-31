@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { canonicalActionValues } from "./meta-ad-level-readback.ts";
 /**
  * BROS DEMAND internal, read-only Meta Ads campaign funnel projection.
  *
@@ -19,6 +20,8 @@ export type MetaCampaignInsight = Readonly<{
   clicks?: string | number;
   inline_link_clicks?: string | number;
   actions?: readonly MetaAction[];
+  /** Provider-attributed metadata only; never merchant revenue or settled orders. */
+  action_values?: readonly Readonly<{ action_type: string; value: string | number }>[];
 }>;
 export type MetaFunnelScope = Readonly<{
   tenantId: string; // authenticated product adapter, never client asserted
@@ -158,9 +161,20 @@ export function normalizeMetaCampaignFunnel(
   // changes. Fingerprint every normalized action label/value, independent
   // of provider array order or identical duplicate labels. This is an
   // observation identity, NOT a provider signature or verified sale.
+  const sortedActionCounts = [...actions.entries()].sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0);
+  // Provider may revise attributed monetary action_values without changing
+  // action counts. Bind the revised metadata to the immutable candidate ID,
+  // never treat it as HitPay revenue. Preserve legacy IDs when field is absent.
+  let actionValueEvidence: ReturnType<typeof canonicalActionValues> = null;
+  if (row.action_values !== undefined) {
+    try { actionValueEvidence = canonicalActionValues(row.action_values); }
+    catch { fail(); } // preserve campaign-level fail-closed error contract
+  }
   const normalizedActionDigest = createHash("sha256")
-    .update(JSON.stringify([...actions.entries()].sort(([a], [b]) =>
-      a < b ? -1 : a > b ? 1 : 0)))
+    .update(JSON.stringify(row.action_values === undefined
+      ? sortedActionCounts
+      : [sortedActionCounts, actionValueEvidence]))
     .digest("hex");
   // DEMAND_META_BOUNDED_SNAPSHOT_KEY_20261027: immutable evidence identity
   // is content-addressed, not collection-time-addressed. A provider report

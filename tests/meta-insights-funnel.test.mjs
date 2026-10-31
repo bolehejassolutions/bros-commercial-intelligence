@@ -246,3 +246,47 @@ test('sub-cent numeric Meta spend is rejected rather than rounded into a fabrica
   assert.equal(normalizeMetaCampaignFunnel(scope,{...row,spend:'0.29'}).spendMinor,29);
 });
 
+
+// DEMAND_META_CAMPAIGN_ACTION_VALUES_REVISION_20261031: live provider shows
+// overlapping MYR50 purchase aliases and a distinct MYR0.01 auxiliary value.
+test('campaign action_values revisions produce distinct immutable IDs without verified revenue',()=>{
+  const observed={...row,action_values:[
+    {action_type:'purchase',value:50},
+    {action_type:'web_app_in_store_purchase',value:0.01}]};
+  const first=normalizeMetaCampaignFunnel(scope,observed);
+  const revised=normalizeMetaCampaignFunnel(scope,{...observed,action_values:[
+    {action_type:'purchase',value:'50.00'},
+    {action_type:'web_app_in_store_purchase',value:'0.02'}]});
+  const shuffled=normalizeMetaCampaignFunnel(scope,{...observed,action_values:[
+    {action_type:'web_app_in_store_purchase',value:'0.010'},
+    {action_type:'purchase',value:'50.00'}]});
+  const without=normalizeMetaCampaignFunnel(scope,row);
+  assert.equal(first.sourceKey,revised.sourceKey);
+  assert.notEqual(first.snapshotKey,revised.snapshotKey);
+  assert.equal(first.snapshotKey,shuffled.snapshotKey);
+  assert.notEqual(first.snapshotKey,without.snapshotKey);
+  assert.equal(first.metaAttributedPurchases,1);
+  assert.equal(first.hitpayPaidOrders,null);
+  assert.equal(first.hitpaySettledOrders,null);
+  assert.equal(first.verifiedCacMinor,null);
+  assert.equal(first.causalLift,null);
+  assert.match(first.snapshotKey,/^meta_ads:sha256:[a-f0-9]{64}$/);
+});
+test('campaign action_values fail closed on conflicting aliases or malformed values',()=>{
+  for(const values of [
+    [{action_type:'purchase',value:50},{action_type:'purchase',value:51}],
+    [{action_type:'purchase',value:-1}],
+    [{action_type:'purchase',value:'not-money'}],
+    [{action_type:'purchase',value:'9999999999999'}],
+  ]) assert.throws(()=>normalizeMetaCampaignFunnel(scope,{...row,action_values:values}),invalid);
+  const base=normalizeMetaCampaignFunnel(scope,{...row,action_values:[
+    {action_type:'purchase',value:'999999999999.00000001'}]});
+  const revised=normalizeMetaCampaignFunnel(scope,{...row,action_values:[
+    {action_type:'purchase',value:'999999999999.00000002'}]});
+  assert.notEqual(base.snapshotKey,revised.snapshotKey);
+  const dup=normalizeMetaCampaignFunnel(scope,{...row,action_values:[
+    {action_type:'purchase',value:50},{action_type:'purchase',value:'50.00'}]});
+  const single=normalizeMetaCampaignFunnel(scope,{...row,action_values:[
+    {action_type:'purchase',value:50}]});
+  assert.equal(dup.snapshotKey,single.snapshotKey);
+});
