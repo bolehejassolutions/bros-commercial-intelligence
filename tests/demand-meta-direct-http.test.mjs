@@ -64,6 +64,12 @@ test("one authorized read returns only minimized fields and no tenant/token/priv
   assert.equal(payload.verifiedPaidOrders, null);
   assert.equal(payload.verifiedCpaMinor, null);
   assert.equal(payload.durableBciEvidenceRecorded, false);
+  assert.equal(payload.readCandidate.stage, "UNATTESTED_READ_CANDIDATE_ONLY");
+  assert.equal(payload.readCandidate.reportStatus, "CAMPAIGN_ROW_OBSERVED_UNATTESTED");
+  assert.equal(payload.readCandidate.metricsPresent, true);
+  assert.match(payload.readCandidate.candidateKey, /^demand:meta-read:sha256:[0-9a-f]{64}$/);
+  assert.equal(payload.readCandidate.durableBciEvidenceRecorded, false);
+  assert.equal(payload.readCandidate.independentProviderReceiptRecorded, false);
   assert.equal(payload.campaignExecutionAllowed, false);
   const raw = JSON.stringify(payload);
   for (const sensitive of [jwt, secret, principalId, tenantId]) {
@@ -147,5 +153,9 @@ test("empty provider read remains UNKNOWN, not zero business spend or purchase",
   const payload = await r.json();
   assert.equal(payload.status, "NO_ROWS_NOT_ZERO");
   assert.equal(payload.report, null);
+  assert.equal(payload.readCandidate.reportStatus, "NO_ROWS_NOT_ZERO");
+  assert.equal(payload.readCandidate.metricsPresent, false);
+  assert.equal(payload.readCandidate.durableBciEvidenceRecorded, false);
+  assert.equal(payload.readCandidate.independentProviderReceiptRecorded, false);
   assert.equal(payload.verifiedPaidOrders, null);
 });
