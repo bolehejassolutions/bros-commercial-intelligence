@@ -108,3 +108,44 @@ test('media identity survives URL token rotation and host changes but is scoped 
     await assert.rejects(verify(a,url,hostOpts(async()=>ok())),/CONTENT_MEDIA_URL_READBACK_DENIED/);
   }
 });
+
+
+test('caller mutation across awaited fetch cannot rewrite verified media identity',async()=>{
+  const mutable=admission();
+  const baseline=await verify(admission(),url,opts(async()=>ok()));
+  const result=await verify(mutable,url,opts(async()=>{
+    mutable.tenantId='tenant-evil';mutable.instanceId='instance-evil';
+    mutable.originalMedia.mediaSetId='media-evil';
+    mutable.originalMedia.originalMediaSha256='0'.repeat(64);
+    mutable.mediaBytes[20]^=1;
+    return ok();
+  }));
+  assert.equal(result.deliveryCandidateId,baseline.deliveryCandidateId);
+  assert.equal(result.originalMediaSha256,digest);
+  assert.equal(result.mediaSetId,'media-set-1');
+  assert.equal(result.byteLength,original.length);
+  assert.equal(result.executionAllowed,false);
+});
+
+test('caller swapping media bytes during fetch cannot substitute downloaded image',async()=>{
+  const mutable=admission();
+  await assert.rejects(verify(mutable,url,opts(async()=>{
+    mutable.mediaBytes=Buffer.from(original);
+    mutable.mediaBytes[30]^=1;
+    mutable.originalMedia.originalMediaSha256=createHash('sha256').update(mutable.mediaBytes).digest('hex');
+    return new Response(mutable.mediaBytes,{headers:{'content-type':'image/png','content-length':String(mutable.mediaBytes.length)}});
+  })),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+});
+
+test('caller buffer mutation while streaming cannot rewrite pinned readback proof',async()=>{
+  const mutable=admission();
+  const result=await verify(mutable,url,opts(async()=>new Response(new ReadableStream({
+    start(controller){
+      controller.enqueue(original.subarray(0,16));
+      mutable.mediaBytes[20]^=1;
+      controller.enqueue(original.subarray(16));controller.close();
+    }
+  }),{headers:{'content-type':'image/png'}})));
+  assert.equal(result.originalMediaSha256,digest);
+  assert.equal(result.executionAllowed,false);
+});
