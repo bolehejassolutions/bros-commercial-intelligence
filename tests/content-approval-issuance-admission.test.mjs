@@ -195,3 +195,27 @@ test("original-byte media manifest is pinned before asynchronous signature verif
   assert.equal(result.originalMediaSha256,sha);
   assert.equal(result.mediaCount,1);
 });
+
+test("receipt expiring during authoritative lookup fails closed",async()=>{
+  let clock=now;
+  const h=setup({
+    now:()=>clock,
+    readReviewerAuthority:async()=>{
+      clock=Date.parse(signedVerified.expiresAt);
+      return authority;
+    }
+  });
+  await assert.rejects(h.admit(request),denied);
+});
+
+test("clock rollback during asynchronous reviewer authentication fails closed",async()=>{
+  let clock=now;
+  const h=setup({
+    now:()=>clock,
+    authenticateReviewer:async()=>{
+      clock=now-1000;
+      return {userId:reviewerId,authenticated:true};
+    }
+  });
+  await assert.rejects(h.admit(request),denied);
+});
