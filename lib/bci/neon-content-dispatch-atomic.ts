@@ -102,7 +102,29 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
                   NOT has_schema_privilege(current_user,'bci_dev','CREATE') AS "noSchemaCreate",
                   NOT has_database_privilege(current_user,current_database(),'CREATE') AS "noDbCreate",
                   has_table_privilege(current_user,'bci_dev.tenant_memberships','SELECT') AS "canReadMembership",
-                  has_table_privilege(current_user,'bci_dev.content_dispatch_approvals','SELECT') AS "canReadApproval",
+                  (SELECT bool_and(has_column_privilege(current_user,
+                    'bci_dev.content_dispatch_approvals', x.col, 'SELECT'))
+                   FROM (VALUES ('approval_id'),('tenant_id'),('product'),
+                     ('dispatch_intent_id'),('binding_sha256'),
+                     ('approved_at'),('expires_at')) AS x(col)) AS "canReadApproval",
+                  (SELECT NOT EXISTS (
+                    SELECT 1 FROM pg_class t
+                    CROSS JOIN LATERAL aclexplode(COALESCE(
+                      t.relacl, acldefault('r',t.relowner))) acl
+                    WHERE t.oid='bci_dev.content_dispatch_approvals'::regclass
+                      AND acl.privilege_type='SELECT'
+                      AND acl.grantee IN (0,(SELECT oid FROM pg_roles WHERE rolname=current_user))
+                  )) AS "noBroadApprovalRead",
+                  NOT (
+                    has_column_privilege(current_user,'bci_dev.content_dispatch_approvals','signed_review_receipt','SELECT')
+                    OR has_column_privilege(current_user,'bci_dev.content_dispatch_approvals','signed_admission_receipt','SELECT')
+                    OR has_column_privilege(current_user,'bci_dev.content_dispatch_approvals','signed_admission_nonce','SELECT')
+                    OR has_column_privilege(current_user,'bci_dev.content_dispatch_approvals','signed_review_receipt_sha256','SELECT')
+                    OR has_column_privilege(current_user,'bci_dev.content_dispatch_approvals','signed_admission_receipt_sha256','SELECT')
+                    OR has_column_privilege(current_user,'bci_dev.content_dispatch_approvals','signed_review_evidence_id','SELECT')
+                    OR has_column_privilege(current_user,'bci_dev.content_dispatch_approvals','original_media_sha256','SELECT')
+                    OR has_column_privilege(current_user,'bci_dev.content_dispatch_approvals','signed_dispatch_intent_sha256','SELECT')
+                  ) AS "noApprovalProofRead",
                   has_table_privilege(current_user,'bci_dev.content_dispatch_revocations','SELECT') AS "canReadRevocation",
                   has_table_privilege(current_user,'bci_dev.content_dispatch_reservations','SELECT') AS "canReadReservations",
                   has_table_privilege(current_user,'bci_dev.content_dispatch_reservations','INSERT') AS "canReserve",
@@ -155,6 +177,7 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
         if (posture.rows.length !== 1 || !obj(p) || p.databaseName !== "bros_intelligence_dev" ||
             p.forcedRls !== true || p.noSchemaCreate !== true || p.noDbCreate !== true ||
             p.canReadMembership !== true || p.canReadApproval !== true ||
+            p.noBroadApprovalRead !== true || p.noApprovalProofRead !== true ||
             p.canReadRevocation !== true || p.canReadReservations !== true ||
             p.canReserve !== true || p.noMembershipWrites !== true ||
             p.noApprovalWrites !== true || p.noRevocationWrites !== true ||

@@ -11,7 +11,8 @@ const role={roleName:"bci_dev_content_reserver",sessionRoleName:"bci_dev_content
   canLogin:true,bypassRls:false,superuser:false,canCreateRole:false,canCreateDb:false,
   canReplicate:false,inherits:false,parentRoles:0};
 const posture={databaseName:"bros_intelligence_dev",forcedRls:true,noSchemaCreate:true,
-  noDbCreate:true,canReadMembership:true,canReadApproval:true,canReadRevocation:true,
+  noDbCreate:true,canReadMembership:true,canReadApproval:true,
+  noBroadApprovalRead:true,noApprovalProofRead:true,canReadRevocation:true,
   canReadReservations:true,canReserve:true,noMembershipWrites:true,noApprovalWrites:true,
   noRevocationWrites:true,noMutation:true,noOtherBci:true,
   noDefinerExec:true,noOtherSchemaCreate:true,noSequenceAccess:true,noExternalTables:true};
@@ -37,6 +38,10 @@ test("atomic SQL binds approval, membership, revocation and unique intent; no pr
     assert.match(h.calls[1].sql,new RegExp(guard));
   // BCI views (including owner-privilege views) must count as extra grants.
   assert.match(h.calls[1].sql,/n\.nspname='bci_dev' AND t\.relkind IN \('r','p','v','m','f'\)/);
+  assert.match(h.calls[1].sql,/noBroadApprovalRead/);
+  assert.match(h.calls[1].sql,/noApprovalProofRead/);
+  assert.match(h.calls[1].sql,/signed_review_receipt/);
+  assert.match(h.calls[1].sql,/signed_admission_receipt/);
   assert.match(h.calls[3].sql,/active_memberships AS MATERIALIZED/);
   assert.match(h.calls[3].sql,/principal_id=\$1::uuid AND tenant_id=\$3::uuid AND product='content'/);
   assert.match(h.calls[3].sql,/expires_at > clock_timestamp\(\)/);
@@ -68,6 +73,8 @@ test("admin impersonation, privilege drift and unforced RLS fail closed",async()
   }
   for(const p of [{...posture,forcedRls:false},{...posture,noOtherBci:false},
     {...posture,canReserve:false},{...posture,noApprovalWrites:false},
+    {...posture,noBroadApprovalRead:false},{...posture,noApprovalProofRead:false},
+    {...posture,canReadApproval:false},
     {...posture,noDefinerExec:false},{...posture,noOtherSchemaCreate:false},
     {...posture,noSequenceAccess:false},{...posture,noExternalTables:false}]){
     const h=harness({p});await assert.rejects(h.reserve(args),denied);
