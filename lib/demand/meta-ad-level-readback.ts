@@ -48,7 +48,7 @@ const purchaseLabels = new Set(["purchase", "omni_purchase", "offsite_conversion
 /** Action values are provider-attributed metadata, NEVER HitPay revenue.
  * Fingerprint all observed action counts and action_values so later Meta
  * revisions cannot reuse an earlier ad-level candidate ID. */
-function canonicalActionValues(input: unknown): readonly (readonly [string, string])[] | null {
+export function canonicalActionValues(input: unknown): readonly (readonly [string, string])[] | null {
   if (input === undefined) return null; // absent is not provider-reported zero
   if (!Array.isArray(input)) throw new Error("Invalid BROS DEMAND ad-level readback");
   if (input.length > 200) invalid();
