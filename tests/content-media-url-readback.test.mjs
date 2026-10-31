@@ -1,0 +1,77 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {verifyContentSingleImageUrlReadback as verify} from '../lib/content/media-url-readback.mjs';
+
+const original=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.alloc(64,42)]);
+const digest=createHash('sha256').update(original).digest('hex');
+const admission=()=>({
+  product:'content',status:'SINGLE_IMAGE_ORIGINAL_BYTES_RECHECKED_NONAUTHORIZING',
+  originalMedia:{mediaSetId:'media-set-1',originalMediaSha256:digest,mediaCount:1},
+  mediaBytes:Buffer.from(original),executionAllowed:false
+});
+const url='https://assets.example.com/published-proof.png?token=not-for-logs';
+const opts=(fetchImpl)=>({allowedHosts:['assets.example.com'],fetchImpl,now:()=>1793411600000});
+const ok=()=>new Response(original,{status:200,headers:{'content-type':'image/png','content-length':String(original.length)}});
+
+test('exact original bytes read back over strict HTTPS without authorizing publishing',async()=>{
+  let request;
+  const result=await verify(admission(),url,opts(async (u,o)=>{request={u,o};return ok();}));
+  assert.equal(request.u,url);
+  assert.equal(request.o.redirect,'manual');
+  assert.equal(request.o.credentials,'omit');
+  assert.equal(request.o.cache,'no-store');
+  assert.equal(result.originalMediaSha256,digest);
+  assert.equal(result.originHttpReadbackVerified,true);
+  for(const flag of ['providerFetchabilityVerified','durableHostingVerified',
+    'reviewerAuthenticated','durableApprovalRecorded','atomicReservationVerified',
+    'providerSentVerified','measurementVerified','sharedBciAuditVerified',
+    'executionAllowed','customerSaasReady'])assert.equal(result[flag],false,flag);
+  assert.equal(JSON.stringify(result).includes('token=not-for-logs'),false);
+  const again=await verify(admission(),url,opts(async()=>ok()));
+  assert.equal(result.deliveryCandidateId,again.deliveryCandidateId);
+});
+
+test('mismatched bytes, HTML and missing/false lengths fail closed',async()=>{
+  for(const response of [
+    new Response(Buffer.alloc(original.length,9),{headers:{'content-type':'image/png'}}),
+    new Response('<html>login</html>',{headers:{'content-type':'text/html'}}),
+    new Response(original,{headers:{'content-type':'image/png','content-length':'999'}}),
+    new Response(original.subarray(0,40),{headers:{'content-type':'image/png'}})
+  ])await assert.rejects(verify(admission(),url,opts(async()=>response)),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+});
+
+test('redirects, non-HTTPS, credentials, IPs, unknown hosts and fragments denied',async()=>{
+  const badUrls=[
+    'http://assets.example.com/image.png',
+    'https://user:pass@assets.example.com/image.png',
+    'https://127.0.0.1/image.png',
+    'https://assets.example.com.evil.test/image.png',
+    'https://assets.example.com:8443/image.png',
+    'https://assets.example.com/image.png#frag',
+    'https://localhost/image.png'
+  ];
+  for(const bad of badUrls)await assert.rejects(verify(admission(),bad,opts(async()=>ok())),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+  await assert.rejects(verify(admission(),url,{fetchImpl:async()=>ok()}),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+  await assert.rejects(verify(admission(),url,opts(async()=>Response.redirect('https://other.example.com',302))),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+});
+
+test('carousel, tampered admission, fake digest, oversized bytes and transport errors denied',async()=>{
+  for(const mutate of [
+    a=>{a.originalMedia.mediaCount=2;},
+    a=>{a.mediaBytes[20]^=1;},
+    a=>{a.originalMedia.originalMediaSha256='0'.repeat(64);},
+    a=>{a.mediaBytes=Buffer.alloc(20*1024*1024+1);}
+  ]){
+    const a=admission();mutate(a);
+    await assert.rejects(verify(a,url,opts(async()=>ok())),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+  }
+  await assert.rejects(verify(admission(),url,opts(async()=>{throw Error('transport unavailable');})),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+});
+
+test('streaming readback rejects excessive body before accepting response',async()=>{
+  const response=new Response(new ReadableStream({
+    start(controller){controller.enqueue(new Uint8Array(original.length+1));controller.close();}
+  }),{headers:{'content-type':'image/png'}});
+  await assert.rejects(verify(admission(),url,opts(async()=>response)),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+});
