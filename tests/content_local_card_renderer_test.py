@@ -14,7 +14,7 @@ spec.loader.exec_module(module)
 def payload():
     return {"planId": "content-plan-" + "a" * 64, "brandName": "BROS SELL",
             "cards": [{"slot": 1, "title": "Mulakan dengan satu soalan", "body": "Tanya model telefon sebelum membuat cadangan.", "accent": "gold"},
-                      {"slot": 2, "title": "Semak maklumat produk", "body": "Padankan model dan maklumat keserasian yang telah disahkan.", "accent": "teal"}]}
+                      {"slot": 2, "title": "Semak maklumat produk", "body": "Padankan model dan maklumat keserasian yang telah disahkan.", "accent": "teal", "layout": "editorial"}]}
 
 
 class LocalRendererTests(unittest.TestCase):
@@ -40,6 +40,30 @@ class LocalRendererTests(unittest.TestCase):
             first = module.render_cards(payload(), a)
             second = module.render_cards(payload(), b)
             self.assertEqual(first["images"], second["images"])
+
+    def test_explicit_layouts_are_distinct_and_deterministic(self):
+        from PIL import ImageChops
+        p = payload()
+        p["cards"][0]["layout"] = "split"
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            first = module.render_cards(p, a)
+            second = module.render_cards(p, b)
+            self.assertEqual(first["images"], second["images"])
+            with Image.open(Path(a) / "content_card_01.png") as one, Image.open(Path(a) / "content_card_02.png") as two:
+                one.load()
+                two.load()
+                self.assertIsNotNone(ImageChops.difference(one, two).getbbox())
+                points = [(x, y) for y in range(0, 1350, 20) for x in range(0, 1080, 20)]
+                changed = sum(one.getpixel(point) != two.getpixel(point) for point in points)
+                self.assertGreater(changed / len(points), 0.50)
+            self.assertFalse(first["editorialApprovalVerified"])
+            self.assertFalse(first["executionAllowed"])
+
+    def test_unknown_layout_fails_closed(self):
+        p = payload()
+        p["cards"][0]["layout"] = "unknown"
+        with tempfile.TemporaryDirectory() as d, self.assertRaisesRegex(ValueError, "INVALID_LAYOUT"):
+            module.render_cards(p, d)
 
     def test_duplicate_cards_rejected(self):
         p = payload()
