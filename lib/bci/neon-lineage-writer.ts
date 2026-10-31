@@ -24,6 +24,7 @@ type Client = Readonly<{
   release: (destroy?: boolean) => void;
 }>;
 type Pool = Readonly<{ connect: () => Promise<Client> }>;
+const EXPECTED_LINEAGE_POLICY_FINGERPRINTS = "dev_writer_lineage_edges_insert:INSERT:bci_dev_lineage_writer:c58bfc1b9817b66280dc58ad821616e92d16e6c6b3afefa69648b1339dbdd002|dev_writer_lineage_edges_select:SELECT:bci_dev_lineage_writer:c58bfc1b9817b66280dc58ad821616e92d16e6c6b3afefa69648b1339dbdd002|dev_writer_lineage_nodes_insert:INSERT:bci_dev_lineage_writer:84f54ea07e2377d431283bf312961386cfca4f09cc33a6f2890cdf845e090bcc|dev_writer_lineage_nodes_select:SELECT:bci_dev_lineage_writer:84f54ea07e2377d431283bf312961386cfca4f09cc33a6f2890cdf845e090bcc|dev_writer_lineage_membership_select:SELECT:bci_dev_lineage_writer:de99bcb63f98733281530ed1368d676a1038cf3b8cd4b114d4100e3ebebff622";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const lineageFields = ["id", "tenantId", "product", "stage", "sourceSystem",
   "sourceRecordKey", "recordedAt", "parentIds", "verification"] as const;
@@ -163,6 +164,13 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
                        AND position('tenant_memberships' in coalesce(p.qual,'') || coalesce(p.with_check,''))>0
                        AND position('principal_id' in coalesce(p.qual,'') || coalesce(p.with_check,''))>0
                        AND position('revoked_at' in coalesce(p.qual,'') || coalesce(p.with_check,''))>0) AS "boundLineagePolicyCount",
+                  (SELECT string_agg(p.policyname||':'||p.cmd||':'||array_to_string(p.roles,',')||':'||
+                      encode(sha256(convert_to(coalesce(p.qual,p.with_check),'UTF8')),'hex'),
+                      '|' ORDER BY p.tablename,p.policyname)
+                     FROM pg_policies p WHERE p.schemaname='bci_dev' AND p.policyname IN
+                      ('dev_writer_lineage_nodes_select','dev_writer_lineage_nodes_insert',
+                       'dev_writer_lineage_edges_select','dev_writer_lineage_edges_insert',
+                       'dev_writer_lineage_membership_select')) AS "lineagePolicyFingerprints",
                   NOT has_table_privilege(current_user,'bci_dev.evidence','SELECT,INSERT,UPDATE,DELETE') AS "evidenceDenied",
                   NOT has_schema_privilege(current_user,'bci_dev','CREATE') AS "schemaCreateDenied",
                   NOT has_database_privilege(current_user,current_database(),'CREATE') AS "dbCreateDenied",
@@ -207,6 +215,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
             p.membershipColumnsAllowed !== true || p.membershipMutationDenied !== true ||
             p.membershipForcedRls !== true || p.lineagePolicyCount !== 5 ||
             p.boundLineagePolicyCount !== 4 ||
+            p.lineagePolicyFingerprints !== EXPECTED_LINEAGE_POLICY_FINGERPRINTS ||
             p.evidenceDenied !== true || p.schemaCreateDenied !== true ||
             p.dbCreateDenied !== true || p.otherBciDenied !== true ||
             p.externalTablesDenied !== true || p.definerExecDenied !== true ||

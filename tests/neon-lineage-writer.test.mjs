@@ -28,7 +28,8 @@ const role = {
 const posture = {
   databaseName: "bros_intelligence_dev", forcedRls: true, lineageOnly: true,
   membershipFullSelectDenied:true, membershipColumnsAllowed:true, membershipMutationDenied:true,
-  membershipForcedRls:true, lineagePolicyCount:5, boundLineagePolicyCount:4, evidenceDenied:true,
+  membershipForcedRls:true, lineagePolicyCount:5, boundLineagePolicyCount:4,
+  lineagePolicyFingerprints: "dev_writer_lineage_edges_insert:INSERT:bci_dev_lineage_writer:c58bfc1b9817b66280dc58ad821616e92d16e6c6b3afefa69648b1339dbdd002|dev_writer_lineage_edges_select:SELECT:bci_dev_lineage_writer:c58bfc1b9817b66280dc58ad821616e92d16e6c6b3afefa69648b1339dbdd002|dev_writer_lineage_nodes_insert:INSERT:bci_dev_lineage_writer:84f54ea07e2377d431283bf312961386cfca4f09cc33a6f2890cdf845e090bcc|dev_writer_lineage_nodes_select:SELECT:bci_dev_lineage_writer:84f54ea07e2377d431283bf312961386cfca4f09cc33a6f2890cdf845e090bcc|dev_writer_lineage_membership_select:SELECT:bci_dev_lineage_writer:de99bcb63f98733281530ed1368d676a1038cf3b8cd4b114d4100e3ebebff622", evidenceDenied:true,
   schemaCreateDenied: true, dbCreateDenied: true,
   otherBciDenied: true, externalTablesDenied: true, definerExecDenied: true,
   allSchemaCreateDenied: true, sequenceAccessDenied: true,
@@ -240,6 +241,7 @@ test("writer fails closed when database-level membership or RLS binding is lost"
     {membershipColumnsAllowed:false},{membershipMutationDenied:false},
     {membershipFullSelectDenied:false},{membershipForcedRls:false},
     {lineagePolicyCount:6},{boundLineagePolicyCount:3},
+    {lineagePolicyFingerprints:'forged-policy-with-expected-keywords'},
   ]){
     const h=harness({transaction:async fn=>fn(async(sql)=>{
       h.calls.push({sql});
