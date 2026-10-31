@@ -42,12 +42,25 @@ function database(kind, rows, calls, error) {
           role_name: kind === "membership" ? "bci_dev_membership_reader" : "bci_dev_private_reader",
           session_role_name: kind === "membership" ? "bci_dev_membership_reader" : "bci_dev_private_reader",
           bypass_rls: false, is_superuser: false, can_login: true,
+          can_create_database: false, can_manage_roles: false,
+          can_replicate: false, inherits_roles: false, parent_role_count: 0,
         }] };
         if (sql.includes("current_database() AS database_name")) return { rows: [{
           database_name: "bros_intelligence_dev", rls_enabled: true, rls_forced: true,
           can_read_memberships: kind === "membership", can_insert_memberships: false,
+          can_update_memberships: false, can_delete_memberships: false,
+          can_truncate_memberships: false,
+          can_reference_memberships: false, can_trigger_memberships: false,
+          can_maintain_memberships: false,
           can_read_evidence: kind === "evidence", can_insert_evidence: false,
+          can_update_evidence: false, can_delete_evidence: false,
+          can_truncate_evidence: false,
+          can_reference_evidence: false, can_trigger_evidence: false,
+          can_maintain_evidence: false,
+          lineage_tables_readonly: true,
           can_create_schema_objects: false, can_create_database_objects: false,
+          no_definer_exec: true, no_external_definer_exec: true, no_external_schema_create: true, no_external_table_access: true,
+          other_bci_tables_denied: true,
         }] };
         if (sql.includes("set_config")) return { rows: [] };
         return { rows };
