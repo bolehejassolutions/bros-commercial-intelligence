@@ -1,0 +1,120 @@
+/** Private, development-only HTTP boundary; never accepts tenant identity from a request. */
+import { createNeonAuthPrincipalVerifier, type NeonAuthVerifierConfig } from "./neon-auth-principal.ts";
+import { createPrivateEvidenceReader, type PrivateEvidenceDependencies } from "./private-evidence-boundary.ts";
+
+export const NEON_PREVIEW_BRANCH = "feat/neon-bci-dev-ledger-20261025";
+export type NeonPreviewEnvironment = Readonly<Record<string, string | undefined>>;
+
+export function isNeonPreviewEnabled(env: NeonPreviewEnvironment): boolean {
+  return env.VERCEL_ENV === "preview" && env.VERCEL_GIT_COMMIT_REF === NEON_PREVIEW_BRANCH &&
+    env.BCI_NEON_DEV_PRIVATE_READS === "enabled";
+}
+
+type Dependencies = Readonly<{
+  env: () => NeonPreviewEnvironment;
+  verifierConfig: NeonAuthVerifierConfig;
+  membershipsFor: PrivateEvidenceDependencies["membershipsFor"];
+  readRows: PrivateEvidenceDependencies["readRows"];
+  // Optional DEV-only read-only direct LOGIN probe; no provider writes.
+  probeWriter?: (scope: Readonly<{ principalId: string; tenantId: string; product: "demand" }>) => Promise<unknown>;
+}>;
+
+const headers = {
+  "Cache-Control": "private, no-store, max-age=0",
+  "Pragma": "no-cache",
+  "Vary": "Authorization",
+  "X-Content-Type-Options": "nosniff",
+};
+const json = (body: unknown, status: number, extra?: Record<string, string>) =>
+  Response.json(body, { status, headers: { ...headers, ...extra } });
+const denied = (status: number) => json({ error: "BCI private evidence access denied." }, status);
+
+/** Uses the real signature verifier before authoritative membership and scoped database reads. */
+export function createNeonPreviewHandler(deps: Dependencies) {
+  const verify = createNeonAuthPrincipalVerifier({
+    ...deps.verifierConfig,
+    approvedOperator: { email: "rasymokh@gmail.com" },
+  });
+  return async (request: Request): Promise<Response> => {
+    if (!isNeonPreviewEnabled(deps.env())) return denied(404);
+    if (request.method !== "GET") return json({ error: "Method not allowed." }, 405, { Allow: "GET" });
+    if (request.url.length > 4096 || Number(request.headers.get("content-length") || 0) !== 0 ||
+        request.headers.has("transfer-encoding")) return denied(400);
+    let url: URL;
+    try { url = new URL(request.url); } catch { return denied(400); }
+    // Route identity is fixed by the server, not caller-provided path or role hints.
+    // Check here as well as in Next.js routing so direct handler reuse fails closed.
+    if (url.pathname !== "/api/internal/neon-evidence" ||
+        [...url.searchParams.keys()].some(key => key !== "product" && key !== "limit" && key !== "probe") ||
+        url.searchParams.getAll("product").length !== 1 || url.searchParams.getAll("limit").length > 1 ||
+        url.searchParams.getAll("probe").length > 1 ||
+        ["x-tenant-id", "x-user-id", "x-principal-id", "x-bci-tenant-id",
+         "x-admin", "x-role", "x-product", "x-operator-id"].some(key => request.headers.has(key))) {
+      return denied(400);
+    }
+    const product = url.searchParams.get("product");
+    const rawLimit = url.searchParams.get("limit");
+    const writerProbe = url.searchParams.get("probe");
+    if ((product !== "content" && product !== "demand") ||
+        (rawLimit !== null && !/^(?:[1-9]|[1-4][0-9]|50)$/.test(rawLimit))) return denied(400);
+    if (writerProbe !== null && (writerProbe !== "writer" || product !== "demand" || rawLimit !== null)) return denied(400);
+    if (writerProbe === "writer" &&
+        (deps.env().BCI_NEON_DEV_WRITER_LOGIN_PROBE !== "enabled" || typeof deps.probeWriter !== "function")) return denied(404);
+    const authorization = request.headers.get("authorization");
+    if (!authorization || authorization.length > 16007 ||
+        !/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(authorization)) return denied(401);
+    const token = authorization.slice(7);
+    try {
+      // The closure is request-local. No token, principal or membership is cached across requests.
+      let stage: "identity" | "membership" | "evidence" = "identity";
+      try {
+        if (writerProbe === "writer") {
+          stage = "membership";
+          // Explicit JWT and single authoritative DEMAND membership before any
+          // writer credential is loaded or any restricted SQL connection begins.
+          const principal = await verify(token);
+          const memberships = await deps.membershipsFor(principal.userId, "demand");
+          if (memberships.length !== 1 || memberships[0].principalId !== principal.userId ||
+              memberships[0].product !== "demand" || memberships[0].active !== true) return denied(403);
+          stage = "evidence";
+          const outcome = await deps.probeWriter!({
+            principalId: principal.userId, tenantId: memberships[0].tenantId, product: "demand",
+          });
+          // Do not serialize values returned by a dependency. Fixed booleans only.
+          if (!outcome || typeof outcome !== "object" ||
+              !("directRestrictedLoginVerified" in outcome) || outcome.directRestrictedLoginVerified !== true ||
+              !("forcedRlsAndPrivilegesVerified" in outcome) || outcome.forcedRlsAndPrivilegesVerified !== true ||
+              !("activeDemandMembershipVerified" in outcome) || outcome.activeDemandMembershipVerified !== true ||
+              !("readOnlyScopeSmokeVerified" in outcome) || outcome.readOnlyScopeSmokeVerified !== true ||
+              !("evidenceAppended" in outcome) || outcome.evidenceAppended !== false ||
+              !("authenticatedProviderReceiptRecorded" in outcome) || outcome.authenticatedProviderReceiptRecorded !== false) return denied(403);
+          return json({ scope: "internal-development", writerLoginProbe: "pass",
+            evidenceAppended: false, providerReceiptRecorded: false }, 200);
+        }
+        const reader = createPrivateEvidenceReader({
+          authenticate: () => verify(token),
+          membershipsFor: async (...args) => {
+            stage = "membership";
+            return deps.membershipsFor(...args);
+          },
+          readRows: async (...args) => {
+            stage = "evidence";
+            return deps.readRows(...args);
+          },
+        });
+        const evidence = await reader({ product, ...(rawLimit === null ? {} : { limit: Number(rawLimit) }) });
+        return json({ evidence, scope: "internal-development" }, 200);
+      } catch {
+        // Emit only a fixed stage label. Never log exception objects, identifiers,
+        // credentials, bearer tokens, SQL parameters or request URLs.
+        console.warn("bci_neon_preview_denied", stage);
+        // Keep bounded stage diagnostics server-side only. The HTTP envelope must
+        // not disclose whether identity, membership or evidence checks failed.
+        return denied(403);
+      }
+    } catch {
+      // Never serialize provider/driver errors, connection strings, tokens or SQL parameters.
+      return denied(403);
+    }
+  };
+}

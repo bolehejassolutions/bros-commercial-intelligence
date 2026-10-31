@@ -7,6 +7,9 @@ on:
       - "tests/**"
       - "lib/bci/**"
       - "app/api/operator/**"
+      - "app/api/internal/neon-evidence/**"
+      - "app/internal/neon-preview/**"
+      - "proxy.ts"
       - "supabase/migrations/**"
       - "tsconfig.json"
       - ".github/workflows/marketing-operator-checks.yml"
@@ -29,5 +32,6 @@ jobs:
       - name: Type-check and production-build
         run: |
           npm install --no-audit --no-fund
+          node --experimental-strip-types --test tests/sdk/*.test.mjs
           npx tsc --noEmit
           npm run build

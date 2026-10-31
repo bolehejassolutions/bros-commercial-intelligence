@@ -1,7 +1,13 @@
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
+  // This exact internal endpoint has its own Preview-only Neon JWT + membership
+  // boundary. Do not make it depend on the separate Supabase operator session.
+  if (request.nextUrl.pathname === "/api/internal/neon-evidence" ||
+      request.nextUrl.pathname === "/internal/neon-preview") {
+    return NextResponse.next({ request });
+  }
   return updateSession(request);
 }
 

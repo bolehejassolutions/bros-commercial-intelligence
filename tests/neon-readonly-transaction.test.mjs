@@ -1,0 +1,148 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createPgReadOnlyTransaction, parseNeonDevConnection } from "../lib/bci/neon-readonly-transaction.ts";
+
+function poolFixture({ failAt, failRollback = false } = {}) {
+  const calls = [];
+  let connections = 0;
+  const client = {
+    query: async (sql, params) => {
+      calls.push({ sql, params });
+      if ((failAt && sql.includes(failAt)) || (failRollback && sql === "ROLLBACK")) {
+        throw new Error("postgres://restricted:secret-sentinel@db/bros_intelligence_dev");
+      }
+      return { rows: [{ value: 42 }] };
+    },
+    release: value => calls.push({ release: value }),
+  };
+  const pool = { connect: async () => { connections++; return client; } };
+  return { calls, transaction: createPgReadOnlyTransaction(pool), connections: () => connections };
+}
+
+test("read-only transaction pins all queries to a single checkout and releases after commit", async () => {
+  const f = poolFixture();
+  const result = await f.transaction(async query => {
+    await query("SELECT $1::text AS scope", ["synthetic-tenant"]);
+    return (await query("SELECT 42 AS value", [])).rows[0].value;
+  });
+  assert.equal(result, 42);
+  assert.equal(f.connections(), 1);
+  assert.match(f.calls[0].sql, /^BEGIN.*READ ONLY/);
+  assert.equal(f.calls[1].sql, "SET LOCAL search_path = pg_catalog, pg_temp");
+  assert.ok(f.calls.findIndex(c => c.sql?.includes("statement_timeout")) > 1);
+  assert.ok(f.calls.some(c => c.sql?.includes("statement_timeout")));
+  assert.ok(f.calls.some(c => c.sql?.includes("idle_in_transaction_session_timeout")));
+  assert.deepEqual(f.calls.find(c => c.sql?.includes("SELECT $1")).params, ["synthetic-tenant"]);
+  assert.equal(f.calls.at(-2).sql, "COMMIT");
+  assert.ok(Object.hasOwn(f.calls.at(-1), "release"));
+});
+
+test("read-only transaction rolls back and destroys checkout after callback failure without leaking driver detail", async () => {
+  const f = poolFixture();
+  await assert.rejects(f.transaction(async () => {
+    throw new Error("postgres://restricted:secret-sentinel@db/bros_intelligence_dev");
+  }), error => {
+    assert.doesNotMatch(error.message, /secret-sentinel|postgres:|restricted/);
+    return true;
+  });
+  assert.equal(f.calls.some(c => c.sql === "COMMIT"), false);
+  assert.equal(f.calls.at(-2).sql, "ROLLBACK");
+  assert.equal(f.calls.at(-1).release, true);
+});
+
+test("read-only transaction destroys failed checkout even if rollback also fails", async () => {
+  const f = poolFixture({ failAt: "SELECT deliberate_failure", failRollback: true });
+  await assert.rejects(f.transaction(query => query("SELECT deliberate_failure", [])),
+    error => !/secret-sentinel|postgres:/.test(error.message));
+  assert.equal(f.calls.at(-1).release, true);
+});
+
+test("read-only transaction cannot reuse an abandoned query callback after its checkout is released", async () => {
+  const f = poolFixture();
+  let escapedQuery;
+  await f.transaction(async query => { escapedQuery = query; return null; });
+  const count = f.calls.length;
+  await assert.rejects(escapedQuery("SELECT 1", []));
+  assert.equal(f.calls.length, count);
+});
+
+test("restricted connection parser rejects owner roles, wrong target and insecure TLS URL options", () => {
+  const host = "ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech";
+  const role = "bci_dev_private_reader";
+  const valid = `postgresql://${role}:test-only-not-a-live-secret@${host}/bros_intelligence_dev?sslmode=require`;
+  const parsed = parseNeonDevConnection(valid, role);
+  assert.ok(parsed);
+  for (const value of [
+    valid.replace(role, "BROS"), valid.replace("bros_intelligence_dev", "neondb"),
+    valid.replace(host, "attacker.test"), valid.replace("sslmode=require", "sslmode=disable"),
+    valid + "&sslmode=disable", valid + "&options=-c%20role%3DBROS",
+    valid.replace("test-only-not-a-live-secret", ""),
+    valid.replace("postgresql:", "https:"),
+  ]) assert.throws(() => parseNeonDevConnection(value, role));
+});
+
+test("lineage writer URL requires its own direct LOGIN, pinned Neon host and verified TLS", () => {
+  const host = "ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech";
+  const role = "bci_dev_lineage_writer";
+  const valid = `postgresql://${role}:synthetic-nonsecret@ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev?sslmode=verify-full`;
+  const parsed = parseNeonDevConnection(valid, role);
+  assert.equal(parsed.user, role);
+  assert.equal(parsed.database, "bros_intelligence_dev");
+  assert.equal(parsed.ssl.rejectUnauthorized, true);
+  assert.equal(parsed.ssl.servername, host);
+  assert.equal(parsed.enableChannelBinding, true);
+  for (const value of [
+    valid.replace(role, "BROS"),
+    valid.replace(role, "bci_dev_membership_reader"),
+    valid.replace(host, "ep-attacker.c-4.ap-southeast-1.aws.neon.tech"),
+    valid.replace("sslmode=verify-full", "sslmode=disable"),
+    valid + "&options=-c%20role%3DBROS",
+    valid.replace("synthetic-nonsecret", ""),
+    valid.replace("bros_intelligence_dev", "neondb"),
+  ]) assert.throws(() => parseNeonDevConnection(value, role));
+  assert.throws(() => parseNeonDevConnection(valid, "bci_dev_private_reader"));
+});
+
+test("CONTENT reserver connection is a distinct direct LOGIN, never owner or reader fallback", () => {
+  const host = "ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech";
+  const role = "bci_dev_content_reserver";
+  const valid = `postgresql://${role}:synthetic-nonsecret@${host}/bros_intelligence_dev?sslmode=verify-full&channel_binding=require`;
+  const parsed = parseNeonDevConnection(valid, role);
+  assert.equal(parsed.user, role);
+  assert.equal(parsed.database, "bros_intelligence_dev");
+  assert.equal(parsed.ssl.rejectUnauthorized, true);
+  assert.equal(parsed.ssl.servername, host);
+  assert.equal(parsed.enableChannelBinding, true);
+  for (const bad of [
+    valid.replace(role, "BROS"),
+    valid.replace(role, "bci_dev_membership_reader"),
+    valid.replace(role, "bci_dev_lineage_writer"),
+    valid.replace(host, "attacker.test"),
+    valid.replace("verify-full", "disable"),
+    valid + "&options=-c%20role%3DBROS",
+    valid.replace("synthetic-nonsecret", ""),
+    valid.replace("bros_intelligence_dev", "neondb"),
+  ]) assert.throws(() => parseNeonDevConnection(bad, role));
+  assert.throws(() => parseNeonDevConnection(valid, "bci_dev_private_reader"));
+});
+
+
+test("restricted SQL-native DEMAND evidence writer URL allows direct TLS only, never deleted privileged role",()=>{
+  const host="ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech";
+  const role="bci_dev_evidence_writer_restricted";
+  const valid=`postgresql://${role}:synthetic-nonsecret@${host}/bros_intelligence_dev?sslmode=require`;
+  const parsed=parseNeonDevConnection(valid,role);
+  assert.equal(parsed.user,role);
+  assert.equal(parsed.ssl.rejectUnauthorized,true);
+  assert.equal(parsed.ssl.servername,host);
+  assert.equal(parsed.enableChannelBinding,true);
+  for(const invalid of [
+    valid.replace(role,"bci_dev_evidence_writer"),
+    valid.replace(role,"BROS"),
+    valid.replace(host,"attacker.example.net"),
+    valid.replace("sslmode=require","sslmode=disable"),
+    valid+"&options=-c%20role%3DBROS",
+    valid.replace("synthetic-nonsecret",""),
+  ]) assert.throws(()=>parseNeonDevConnection(invalid,role));
+  assert.throws(()=>parseNeonDevConnection(valid,"bci_dev_private_reader"));
+});
