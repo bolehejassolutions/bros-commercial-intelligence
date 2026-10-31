@@ -120,7 +120,13 @@ test("conflicting immutable same-key row fails closed, does not mutate record",a
 
 test("role/permission drift denies BEFORE SQL insert",async()=>{
   const wrong=[
+    // Neon API-created predecessor inherited neon_superuser; never accept it.
+    {role:{...role,roleName:"bci_dev_evidence_writer",
+      sessionRoleName:"bci_dev_evidence_writer",inherits:true,bypassRls:true}},
+    {role:{...role,roleName:"bci_dev_evidence_writer",
+      sessionRoleName:"bci_dev_evidence_writer"}},
     {role:{...role,sessionRoleName:"BROS"}},
+    {role:{...role,inherits:true}},
     {role:{...role,canLogin:false}},
     {role:{...role,bypassRls:true}},
     {role:{...role,parentRoles:1}},
