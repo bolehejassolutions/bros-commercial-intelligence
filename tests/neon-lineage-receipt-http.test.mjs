@@ -29,6 +29,24 @@ test("signed DEV POST returns only fixed UNVERIFIED evidence-stage receipt", asy
     verification: "unverified", providerAttested: false });
   assert.equal(h.calls(), 1);
 });
+test("accepts a zero-byte POST stream but rejects streamed payloads", async () => {
+  const h = make();
+  const headers = { origin: host, authorization: "Bearer aaa.bbb.ccc" };
+  const stream = (bytes) => new ReadableStream({ start(controller) {
+    if (bytes !== null) controller.enqueue(new Uint8Array(bytes));
+    controller.close();
+  } });
+  const empty = new Request(path, { method: "POST", headers,
+    body: stream(null), duplex: "half" });
+  assert.equal((await h.handle(empty)).status, 200);
+  assert.equal(h.calls(), 1);
+  for (const bytes of [[97], []]) {
+    const payload = new Request(path, { method: "POST", headers,
+      body: stream(bytes), duplex: "half" });
+    assert.equal((await h.handle(payload)).status, 400);
+  }
+  assert.equal(h.calls(), 1);
+});
 test("same snapshot replay remains bounded and does not claim attestation", async () => {
   const h = make({}, { status: "replayed" });
   assert.equal((await h.handle(req())).status, 200);
