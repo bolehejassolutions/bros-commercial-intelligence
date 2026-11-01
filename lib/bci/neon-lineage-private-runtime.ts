@@ -107,7 +107,11 @@ export async function linkPersistedDemandMetaReceiptPrivately(token: unknown, re
     caseLinkDeps ??= createCaseLinkDeps();
     return await createAuthenticatedDemandReceiptCaseLink({
       authenticate: async () => principal,
-      membershipsFor: (id, product) => caseLinkDeps!.membershipsFor(id, product),
+      membershipsFor: async (id, product) => {
+        const rows = await caseLinkDeps!.membershipsFor(id, product);
+        if (rows.some(row => row.product !== "demand")) throw new BciCaseLinkDenied();
+        return rows.map(row => Object.freeze({ ...row, product: "demand" as const }));
+      },
       transaction: caseLinkDeps.transaction,
     })(receiptId);
   } catch {
