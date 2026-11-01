@@ -4,6 +4,7 @@ import { EXPECTED_LINEAGE_POLICY_FINGERPRINTS } from "./neon-lineage-writer.ts";
 
 type Scope = Readonly<{ principalId: string; tenantId: string; product: "demand" }>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RECEIPT = "4b1d0b40-371f-4c82-aaa9-d77580f88fac";
 const FOREIGN_TENANT = "00000000-0000-4000-8000-000000000000";
 const FOREIGN_TENANT_2 = "ffffffff-ffff-4fff-bfff-ffffffffffff";
 const FOREIGN_PRINCIPAL = "00000000-0000-4000-8000-000000000001";
@@ -17,6 +18,7 @@ export type BciLineageLoginProbeResult = Readonly<{
   directLineageLoginVerified: true;
   leastPrivilegeAndForcedRlsVerified: true;
   activeMembershipVerified: true;
+  nonemptyLineageIsolationVerified: true;
   negativeTenantPrincipalProductVerified: true;
   revokedFixturePrincipalDenied: true;
   lineageAppended: false;
@@ -97,22 +99,36 @@ export function createRestrictedLineageReadOnlyProbe(transaction: ScopedTransact
           if (result.rows.length !== 1 || !obj(row) || typeof row.count !== "number") deny();
           return (row as { count: number }).count;
         };
+        // Real nonempty lineage must be visible only under the authorized scope.
+        // Membership-only checks cannot certify row-level lineage isolation.
+        const rootCount = async (): Promise<number> => {
+          const result = await query(`SELECT COUNT(*)::integer AS "count"
+            FROM bci_dev.lineage_nodes
+            WHERE tenant_id=$1::uuid AND product='demand' AND stage='evidence'
+              AND id=$2::uuid AND source_system='bci_dev.evidence'
+              AND source_record_key=$2::text AND assertion_status='unverified'
+              AND cardinality(parent_ids)=0`, [tenantId, RECEIPT]);
+          const row = result.rows[0];
+          if (result.rows.length !== 1 || !obj(row) || typeof row.count !== "number") deny();
+          return row.count as number;
+        };
         await setScope(principalId, tenantId, "demand");
-        if (await membershipCount() !== 1) deny();
+        if (await membershipCount() !== 1 || await rootCount() !== 1) deny();
         await setScope(principalId, otherTenant, "demand");
-        if (await membershipCount() !== 0) deny();
+        if (await membershipCount() !== 0 || await rootCount() !== 0) deny();
         await setScope(otherPrincipal, tenantId, "demand");
-        if (await membershipCount() !== 0) deny();
+        if (await membershipCount() !== 0 || await rootCount() !== 0) deny();
         // Neon DEV contains an independently read-back revoked principal.
         // Query that principal itself, not just the operator under foreign GUC.
         if (otherPrincipal !== FOREIGN_PRINCIPAL) deny();
-        if (await membershipCount(otherPrincipal) !== 0) deny();
+        if (await membershipCount(otherPrincipal) !== 0 || await rootCount() !== 0) deny();
         await setScope(principalId, tenantId, "content");
-        if (await membershipCount() !== 0) deny();
+        if (await membershipCount() !== 0 || await rootCount() !== 0) deny();
         await setScope(principalId, tenantId, "demand");
-        if (await membershipCount() !== 1) deny();
+        if (await membershipCount() !== 1 || await rootCount() !== 1) deny();
         return Object.freeze({ directLineageLoginVerified: true, leastPrivilegeAndForcedRlsVerified: true,
-          activeMembershipVerified: true, negativeTenantPrincipalProductVerified: true,
+          activeMembershipVerified: true, nonemptyLineageIsolationVerified: true,
+          negativeTenantPrincipalProductVerified: true,
           revokedFixturePrincipalDenied: true,
           lineageAppended: false });
       });
