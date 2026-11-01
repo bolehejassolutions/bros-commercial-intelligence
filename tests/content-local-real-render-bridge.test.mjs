@@ -160,15 +160,21 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
     ];
     const trusted=new Map([['test-only',publicKey]]);
     const reviewNow=Date.parse('2026-10-29T07:00:00.000Z');
+    const scriptReviewedAt='2026-10-29T07:00:00.000Z';
     const scriptPayload=prepareContentScriptMediaReviewPayload(trendArgs,receipt,
-      trusted,scriptChecks,'f'.repeat(32),reviewNow);
+      trusted,scriptChecks,'f'.repeat(32),scriptReviewedAt,reviewNow);
+    assert.equal(scriptPayload.schemaVersion,2);
+    assert.equal(scriptPayload.reviewedAt,reviewedAt);
+    assert.equal(scriptPayload.scriptReviewedAt,scriptReviewedAt);
     assert.equal(scriptPayload.scriptMediaReviewId,trendMedia.scriptMediaReviewId);
-    const scriptReceipt={schemaVersion:1,keyId:'test-only',payload:scriptPayload,
+    const scriptReceipt={schemaVersion:2,keyId:'test-only',payload:scriptPayload,
       signature:sign(null,contentScriptMediaSigningBytes(scriptPayload),privateKey)
         .toString('base64url')};
     const scriptProof=verifyContentScriptMediaReviewReceipt(trendArgs,receipt,
       scriptReceipt,trusted,reviewNow);
     assert.equal(scriptProof.signatureVerified,true);
+    assert.equal(scriptProof.scriptReviewedAt,scriptReviewedAt);
+    assert.equal(scriptProof.imageReviewedAt,reviewedAt);
     assert.equal(scriptProof.status,'SCRIPT_MEDIA_SIGNED_REVIEW_EVIDENCE_ONLY');
     assert.equal(scriptProof.approvalGranted,false);
     assert.equal(scriptProof.executionAllowed,false);
@@ -189,9 +195,23 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
       /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
     assert.throws(()=>prepareContentScriptMediaReviewPayload(trendArgs,receipt,
       trusted,[{...scriptChecks[0],passed:false},scriptChecks[1]],'f'.repeat(32),
-      reviewNow),/CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+      scriptReviewedAt,reviewNow),/CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
     assert.throws(()=>prepareContentScriptMediaReviewPayload(trendArgs,receipt,
-      trusted,scriptChecks,receipt.payload.nonce,reviewNow),
+      trusted,scriptChecks,receipt.payload.nonce,scriptReviewedAt,reviewNow),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    // Script review timing is separately signed and must not be backdated.
+    for(const invalidScriptTime of [
+      '2026-10-29T06:58:59.000Z',
+      '2026-10-29T07:00:01.000Z',
+      '2026-10-29T08:00:00.000Z',
+      '2026-10-29T07:00:00Z',
+      '2026-02-30T07:00:00.000Z'
+    ]) assert.throws(()=>prepareContentScriptMediaReviewPayload(trendArgs,
+      receipt,trusted,scriptChecks,'f'.repeat(32),invalidScriptTime,reviewNow),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    assert.throws(()=>verifyContentScriptMediaReviewReceipt(trendArgs,receipt,
+      {...scriptReceipt,payload:{...scriptPayload,
+        scriptReviewedAt:'2026-10-29T06:59:30.000Z'}},trusted,reviewNow),
       /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
     assert.throws(()=>verifyContentScriptMediaReviewReceipt(trendArgs,receipt,
       scriptReceipt,trusted,Date.parse('2026-10-29T09:00:00.000Z')),
