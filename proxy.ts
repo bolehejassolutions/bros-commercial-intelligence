@@ -9,7 +9,8 @@ export async function proxy(request: NextRequest) {
       // DEMAND has an exact-branch UI gate and a separate JWT/membership API gate.
       // Bypass only these exact paths, never the broader Supabase BCI login.
       request.nextUrl.pathname === "/internal/demand-meta-test" ||
-      request.nextUrl.pathname === "/api/internal/demand-meta") {
+      request.nextUrl.pathname === "/api/internal/demand-meta" ||
+      request.nextUrl.pathname === "/api/internal/demand-meta-evidence") {
     return NextResponse.next({ request });
   }
   return updateSession(request);
