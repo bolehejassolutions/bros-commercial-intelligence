@@ -85,8 +85,9 @@ test("HTTP denies unflagged, unsigned, foreign-origin and arbitrary case identit
  const off=createDemandProposalHttpHandler({env:()=>({}),execute});
  assert.equal((await off(request())).status,404);
  const on=createDemandProposalHttpHandler({env:()=>({
-  VERCEL_ENV:"preview",BCI_NEON_PREVIEW_ENABLED:"enabled",
-  BCI_NEON_DEV_PROPOSAL_WRITES:"enabled"}),execute});
+  VERCEL_ENV:"preview",VERCEL_GIT_COMMIT_REF:"feat/neon-bci-dev-ledger-20261025",
+  BCI_NEON_DEV_PRIVATE_READS:"enabled",BCI_NEON_DEV_PROPOSAL_WRITES:"enabled"}),execute});
+ assert.equal((await on(request())).status,200);
  assert.notEqual((await on(request("https://other.test"))).status,200);
  assert.notEqual((await on(request("https://example.test",{...input,caseId}))).status,200);
 });
