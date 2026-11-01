@@ -1,7 +1,7 @@
 /** BCI DEV restricted, server-owned receipt -> REVIEW case -> immutable link.
  * Not a public route. Does not infer diagnosis, verified sales, actions or outcomes.
  */
-type Value=string|number|boolean|null;
+type Value=string|null;
 type Query=(sql:string,params:readonly Value[])=>Promise<{rows:readonly unknown[]}>;
 export type CaseLinkTransaction=<T>(fn:(query:Query)=>Promise<T>)=>Promise<T>;
 type Principal=Readonly<{userId:string;authenticated:true}>;
