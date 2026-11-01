@@ -2,16 +2,17 @@ import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
-  // This exact internal endpoint has its own Preview-only Neon JWT + membership
-  // boundary. Do not make it depend on the separate Supabase operator session.
-  if (request.nextUrl.pathname === "/api/internal/neon-evidence" ||
-      request.nextUrl.pathname === "/internal/neon-preview" ||
-      // DEMAND has an exact-branch UI gate and a separate JWT/membership API gate.
-      // Bypass only these exact paths, never the broader Supabase BCI login.
-      request.nextUrl.pathname === "/internal/demand-meta-test" ||
+  // DEMAND exact paths have their own Preview-only JWT/membership gates.
+  // Keep this independent of BCI's bypass so both draft branches merge cleanly.
+  if (request.nextUrl.pathname === "/internal/demand-meta-test" ||
       request.nextUrl.pathname === "/api/internal/demand-meta" ||
       request.nextUrl.pathname === "/api/internal/demand-meta-evidence" ||
       request.nextUrl.pathname === "/api/internal/demand-meta-diagnosis") {
+    return NextResponse.next({ request });
+  }
+  // BCI's separate Neon JWT + membership gate remains unchanged.
+  if (request.nextUrl.pathname === "/api/internal/neon-evidence" ||
+      request.nextUrl.pathname === "/internal/neon-preview") {
     return NextResponse.next({ request });
   }
   return updateSession(request);
