@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildContentTrendResearchPacket,proposeContentBriefFromTrend} from '../lib/content/trend-evidence.mjs';
+import {buildContentTrendResearchPacket,proposeContentBriefFromTrend,proposeContentTrendHookScriptReview} from '../lib/content/trend-evidence.mjs';
 
 const metrics=()=>({views:null,likes:null,comments:0,shares:null,saves:null});
 const record=(overrides={})=>({
@@ -194,3 +194,67 @@ test('prevents cross-instance brief generation and unconfigured publisher channe
     {service:'instagram',channelId:'ig-A'},proposal()),/TREND_CANDIDATE_NOT_FOUND/);
 });
 
+
+test('short-form storyboard stays source-bound and nonexecuting, without pretending video exists',()=>{
+  const p=buildContentTrendResearchPacket(packet());
+  const script={
+    scriptId:'script-001',revisionId:'script-rev-001',
+    openingHook:proposal().hook,
+    sellerSituation:'Penjual sudah memberi harga tetapi pelanggan belum menjawab.',
+    diagnosticQuestion:'Adakah nilai tawaran telah dijelaskan sebelum harga?',
+    valueExplanation:'Tunjukkan skop dan hasil yang relevan tanpa janji pendapatan.',
+    sellerAction:'Tanya satu soalan untuk memahami keperluan pelanggan.',
+    closingLine:'Jelaskan nilai dahulu, kemudian minta keputusan yang jelas.',
+    shots:['Paparkan konteks perbualan tanpa maklumat peribadi.',
+      'Paparkan soalan diagnosis dan tindakan penjual.']
+  };
+  const a=proposeContentTrendHookScriptReview(instance(),p,p.candidates[0].candidateId,
+    {service:'instagram',channelId:'ig-A'},proposal(),script);
+  const b=proposeContentTrendHookScriptReview(instance(),JSON.parse(JSON.stringify(p)),
+    p.candidates[0].candidateId,{service:'instagram',channelId:'ig-A'},proposal(),script);
+  assert.equal(a.scriptIntentId,b.scriptIntentId);
+  assert.equal(a.planId,b.planId);
+  assert.equal(a.sourceLinks.length,3);
+  assert.equal(a.status,'SHORT_FORM_SCRIPT_REVIEW_REQUIRED');
+  assert.equal(a.intentKind,'STORYBOARD_AND_SCRIPT_ONLY');
+  for(const flag of ['providerTrendAuthenticated','sourceClaimsVerified',
+    'scriptEditoriallyApproved','independentMediaBytesVerified','videoRendered',
+    'providerCapabilityVerified','providerSentVerified','measurementVerified',
+    'sharedBciAuditVerified','executionAllowed','customerSaasReady'])
+    assert.equal(a[flag],false);
+  assert.throws(()=>{a.script.shots.push('Injected scene');},TypeError);
+  assert.throws(()=>{a.sourceLinks[0]='https://evil.example';},TypeError);
+});
+test('short-form script requires valid scope, exact brief hook and strict fields',()=>{
+  const p=buildContentTrendResearchPacket(packet());
+  const args=[instance(),p,p.candidates[0].candidateId,
+    {service:'instagram',channelId:'ig-A'},proposal()];
+  const valid={
+    scriptId:'script-001',revisionId:'rev-001',openingHook:proposal().hook,
+    sellerSituation:'Penjual sudah memberi harga tetapi pelanggan belum menjawab.',
+    diagnosticQuestion:'Adakah nilai tawaran sudah dijelaskan kepada pelanggan?',
+    valueExplanation:'Terangkan skop tawaran dan kaitkan dengan keperluan sebenar.',
+    sellerAction:'Tanya satu soalan diagnosis sebelum mencadangkan tindakan.',
+    closingLine:'Jelaskan dahulu sebelum meminta keputusan daripada pelanggan.',
+    shots:['Paparkan masalah penjual dengan jelas.','Paparkan tindakan penjual yang spesifik.']
+  };
+  for(const change of [
+    s=>{s.openingHook='Hook yang tidak sepadan dengan brief';},
+    s=>{s.videoRendered=true;},
+    s=>{s.shots=['Hanya satu adegan'];},
+    s=>{s.shots[0]='';},
+    s=>{s.scriptId='invalid id with spaces';}
+  ]){
+    const s=structuredClone(valid);change(s);
+    assert.throws(()=>proposeContentTrendHookScriptReview(...args,s),
+      /INVALID_TREND|TREND_SCRIPT_HOOK_BRIEF_MISMATCH/);
+  }
+  const forged=JSON.parse(JSON.stringify(p));forged.providerAuthenticated=true;
+  assert.throws(()=>proposeContentTrendHookScriptReview(instance(),forged,
+    p.candidates[0].candidateId,{service:'instagram',channelId:'ig-A'},proposal(),valid),
+    /TREND_PACKET_INTEGRITY_MISMATCH/);
+  const other=instance();other.instanceId='instance-B';
+  assert.throws(()=>proposeContentTrendHookScriptReview(other,p,
+    p.candidates[0].candidateId,{service:'instagram',channelId:'ig-A'},proposal(),valid),
+    /TREND_PACKET_SCOPE_MISMATCH/);
+});
