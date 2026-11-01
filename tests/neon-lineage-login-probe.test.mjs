@@ -31,7 +31,7 @@ test("direct restricted lineage login + nonempty membership and negative scope a
   assert.deepEqual(r,{directLineageLoginVerified:true,leastPrivilegeAndForcedRlsVerified:true,
     activeMembershipVerified:true,negativeTenantPrincipalProductVerified:true,lineageAppended:false});
   assert.equal(h.calls.filter(x=>x.sql.includes("FROM bci_dev.tenant_memberships")).length,5);
-  assert.ok(h.calls.every(x=>/^\\s*SELECT/.test(x.sql)));
+  assert.ok(h.calls.every(x=>x.sql.trimStart().startsWith("SELECT")));
   assert.ok(!JSON.stringify(r).includes(P));
 });
 test("administrator impersonation, privilege drift and policy fingerprint drift fail closed",async()=>{

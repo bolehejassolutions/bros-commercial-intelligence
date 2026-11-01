@@ -75,7 +75,7 @@ function database(kind, rows, calls, error) {
 }
 
 function harness({ env = {}, grants = [grant], rows = [evidence],
-  membershipError, evidenceError, jwksError, afterEvidenceRead, directRows, probeWriter } = {}) {
+  membershipError, evidenceError, jwksError, afterEvidenceRead, directRows, probeWriter, probeLineage } = {}) {
   const calls = [];
   const verifierConfig = { issuer: ISSUER, audience: ISSUER,
     jwksUrl: `${ISSUER}/auth/.well-known/jwks.json`,
@@ -100,7 +100,7 @@ function harness({ env = {}, grants = [grant], rows = [evidence],
   const handler = createNeonPreviewHandler({ env: () => ({
     VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: BRANCH,
     BCI_NEON_DEV_PRIVATE_READS: "enabled", ...env,
-  }), verifierConfig, membershipsFor, readRows, probeWriter });
+  }), verifierConfig, membershipsFor, readRows, probeWriter, probeLineage });
   const request = (query = "product=content", jwt = token(), options = {}) => new Request(
     `https://preview.example.test/api/internal/neon-evidence?${query}`, {
       ...options, headers: { ...(jwt === null ? {} : { authorization: `Bearer ${jwt}` }),
@@ -364,4 +364,46 @@ test("writer probe missing membership, non-boolean response and connector error 
     const raw=await denied(response,403);
     assert.equal(raw.includes("secret-sentinel"),false);
   }
+});
+
+test("lineage direct LOGIN probe is signed, membership-scoped and read-only",async()=>{
+  const grantDemand={...grant,product:"demand"};
+  const calls=[];
+  const probeLineage=async scope=>{
+    calls.push(scope);
+    return {directLineageLoginVerified:true,leastPrivilegeAndForcedRlsVerified:true,
+      activeMembershipVerified:true,negativeTenantPrincipalProductVerified:true,
+      lineageAppended:false};
+  };
+  const h=harness({grants:[grantDemand],probeLineage,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  const response=await h.handler(h.request("product=demand&probe=lineage"));
+  assert.equal(response.status,200);
+  assert.match(response.headers.get("cache-control"),/no-store/);
+  assert.deepEqual(await response.json(),{scope:"internal-development",
+    lineageLoginProbe:"pass",lineageAppended:false,providerReceiptRecorded:false});
+  assert.deepEqual(calls,[{principalId:USER,tenantId:TENANT,product:"demand"}]);
+  await denied(await h.handler(h.request("product=demand&probe=lineage",null)),401);
+  await denied(await h.handler(h.request("product=demand&probe=lineage",token({exp:NOW}))),403);
+  assert.equal(calls.length,1);
+});
+test("lineage probe rejects disabled flag, foreign product, revoked membership and forged result",async()=>{
+  const grantDemand={...grant,product:"demand"};
+  let invoked=0;
+  const probeLineage=async()=>{invoked++;return {directLineageLoginVerified:true,
+    leastPrivilegeAndForcedRlsVerified:true,activeMembershipVerified:true,
+    negativeTenantPrincipalProductVerified:true,lineageAppended:false};};
+  const off=harness({grants:[grantDemand],probeLineage});
+  await denied(await off.handler(off.request("product=demand&probe=lineage")),404);
+  const h=harness({grants:[grantDemand],probeLineage,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await h.handler(h.request("product=content&probe=lineage")),400);
+  const revoked=harness({grants:[],probeLineage,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await revoked.handler(revoked.request("product=demand&probe=lineage")),403);
+  assert.equal(invoked,0);
+  const forged=harness({grants:[grantDemand],
+    probeLineage:async()=>({directLineageLoginVerified:true,lineageAppended:true}),
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await forged.handler(forged.request("product=demand&probe=lineage")),403);
 });
