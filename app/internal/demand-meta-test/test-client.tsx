@@ -252,6 +252,54 @@ export default function DemandMetaTestClient() {
     } finally { setBusy(false); }
   }
 
+
+  async function reviewPersistedEvidence() {
+    if (busy) return;
+    setBusy(true);
+    setEvidenceNotice(null);
+    setNotice("Reading the existing persisted BCI receipt (no Meta API call)…");
+    try {
+      if (!(await verifiedSession())) throw new Error();
+      const jwt = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/demand-meta-diagnosis", {
+        method: "GET", headers: { Authorization: "Bearer " + jwt },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 || !probeHeaders(response)) {
+        setNotice("Persisted evidence review returned HTTP " + response.status +
+          ". No diagnosis acceptance is claimed; existing receipt is unchanged.");
+        return;
+      }
+      const raw = await response.text();
+      if (raw.length > 4096) throw new Error();
+      const body: unknown = JSON.parse(raw);
+      if (!body || typeof body !== "object" || Array.isArray(body) ||
+          !("source" in body) || body.source !== "NEON_DEV_BCI_PERSISTED_META_EVIDENCE" ||
+          !("recordId" in body) || body.recordId !== "4b1d0b40-371f-4c82-aaa9-d77580f88fac" ||
+          !("status" in body) || body.status !== "REVIEWABLE_NOT_APPROVED" ||
+          !("actionAuthorized" in body) || body.actionAuthorized !== false ||
+          !("outcomeVerified" in body) || body.outcomeVerified !== false ||
+          !("verifiedCpaMinor" in body) || body.verifiedCpaMinor !== null ||
+          !("observed" in body) || !body.observed || typeof body.observed !== "object" ||
+          !("diagnosis" in body) || typeof body.diagnosis !== "string" ||
+          !("proposedAction" in body) || typeof body.proposedAction !== "string") throw new Error();
+      const o = body.observed as Record<string, unknown>;
+      const format = (x: unknown) => x === null ? "unknown" :
+        typeof x === "number" && Number.isSafeInteger(x) && x >= 0 ? String(x) : "unverified";
+      const spend = typeof o.spendMinor === "number" && Number.isSafeInteger(o.spendMinor) ?
+        "MYR " + (o.spendMinor / 100).toFixed(2) : "unknown";
+      setEvidenceNotice("BCI persisted receipt verified for scoped review: " + body.recordId +
+        ". Meta observations: spend " + spend + ", link clicks " + format(o.inlineLinkClicks) +
+        ", LPV " + format(o.landingPageViews) + ", platform purchase signal " +
+        format(o.metaAttributedPurchases) + ". Diagnosis: " + body.diagnosis +
+        " Proposed action (NOT approved/executed): " + body.proposedAction +
+        " No HitPay attribution, CPA, outcome or learning verified.");
+      setNotice("Read-only persisted DEMAND diagnosis available; review only, no action executed.");
+    } catch {
+      setNotice("Persisted evidence diagnosis could not be independently reviewed in this session.");
+    } finally { setBusy(false); }
+  }
+
   async function signOut() {
     if (busy) return;
     setBusy(true);
@@ -297,6 +345,7 @@ export default function DemandMetaTestClient() {
             <>
               <button type="button" disabled={busy} onClick={() => checkReadOnly("pinned")}>Check signed JWT + pinned ACQ-V2 read-only API</button>
               <button type="button" disabled={busy} onClick={() => checkReadOnly("historical")}>Check historical PAUSED BROS SELL (8–27 Oct) read-only</button>
+              <button type="button" disabled={busy} onClick={reviewPersistedEvidence}>Review existing persisted BCI evidence + diagnosis (read-only)</button>
               <button type="button" disabled={busy} onClick={saveHistoricalEvidence}>Save historical Meta evidence + verify replay (DEV)</button>
               <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
             </>

@@ -10,7 +10,8 @@ export async function proxy(request: NextRequest) {
       // Bypass only these exact paths, never the broader Supabase BCI login.
       request.nextUrl.pathname === "/internal/demand-meta-test" ||
       request.nextUrl.pathname === "/api/internal/demand-meta" ||
-      request.nextUrl.pathname === "/api/internal/demand-meta-evidence") {
+      request.nextUrl.pathname === "/api/internal/demand-meta-evidence" ||
+      request.nextUrl.pathname === "/api/internal/demand-meta-diagnosis") {
     return NextResponse.next({ request });
   }
   return updateSession(request);

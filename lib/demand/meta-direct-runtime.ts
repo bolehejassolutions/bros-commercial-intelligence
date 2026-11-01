@@ -6,6 +6,7 @@ import { createPgReadOnlyTransaction, parseNeonDevConnection } from "../bci/neon
 import { createDemandMetaHttpHandler } from "./meta-direct-http.ts";
 import { createDemandMetaBciEvidenceHandler } from "./meta-bci-evidence-http.ts";
 import { createPgDemandEvidenceAppendTransaction } from "../bci/neon-demand-evidence-append.ts";
+import { createDemandMetaPersistedDiagnosisHandler, createDemandMetaReceiptReader } from "./meta-persisted-diagnosis.ts";
 
 /**
  * Existing BCI app, DEVELOPMENT Preview branch ONLY. Default OFF.
@@ -152,6 +153,17 @@ export const handleDemandMetaPrivatePreview = (request: Request) => handler(requ
 
 // Separate, default-OFF evidence action. Existing GET and its flags are unchanged.
 let evidenceWriterPool: Pool | undefined;
+function getEvidenceWriterPool(): Pool {
+  if (!evidenceWriterPool) {
+    const config = parseNeonDevConnection(process.env.BCI_NEON_DEV_EVIDENCE_WRITER_DATABASE_URL,
+      "bci_dev_evidence_writer_restricted");
+    evidenceWriterPool = new Pool({ ...config, max: 1, connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 10000, allowExitOnIdle: true, query_timeout: 7000,
+      application_name: "demand-bci-evidence-dev" });
+    evidenceWriterPool.on("error", () => { /* Never log credential-bearing driver errors. */ });
+  }
+  return evidenceWriterPool;
+}
 const evidenceHandler = createDemandMetaBciEvidenceHandler({
   enabled: () => enabled() &&
     process.env.BROS_DEMAND_BCI_EVIDENCE_APPEND === "enabled" &&
@@ -169,16 +181,25 @@ const evidenceHandler = createDemandMetaBciEvidenceHandler({
   now: () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
   transaction: async fn => {
     if (!enabled() || process.env.BROS_DEMAND_BCI_EVIDENCE_APPEND !== "enabled") throw Error();
-    if (!evidenceWriterPool) {
-      const config = parseNeonDevConnection(process.env.BCI_NEON_DEV_EVIDENCE_WRITER_DATABASE_URL,
-        "bci_dev_evidence_writer_restricted");
-      evidenceWriterPool = new Pool({ ...config, max: 1, connectionTimeoutMillis: 5000,
-        idleTimeoutMillis: 10000, allowExitOnIdle: true, query_timeout: 7000,
-        application_name: "demand-bci-evidence-dev" });
-      evidenceWriterPool.on("error", () => { /* Never log credential-bearing driver errors. */ });
-    }
-    return createPgDemandEvidenceAppendTransaction(evidenceWriterPool)(fn);
+    return createPgDemandEvidenceAppendTransaction(getEvidenceWriterPool())(fn);
   },
 });
 export const handleDemandMetaEvidenceAppend = (request: Request) => evidenceHandler(request);
 
+
+
+/** Product-only review of the existing immutable receipt; NO Meta call or DB write.
+ * Uses the existing restricted physical evidence-writer role in a READ ONLY
+ * transaction, with the same branch/flag/JWT/membership security envelope.
+ */
+const diagnosisHandler = createDemandMetaPersistedDiagnosisHandler({
+  enabled: () => enabled() &&
+    process.env.BROS_DEMAND_BCI_EVIDENCE_APPEND === "enabled" &&
+    Boolean(process.env.BCI_NEON_DEV_EVIDENCE_WRITER_DATABASE_URL),
+  tenantId: process.env.BROS_DEMAND_META_TENANT_ID ?? "",
+  verifyJwt: token => verifier(token),
+  membershipsFor: (userId, product) => getMemberships(() => {})(userId, product),
+  readReceipt: (tenantId, principalId) =>
+    createDemandMetaReceiptReader(createPgReadOnlyTransaction(getEvidenceWriterPool()))(tenantId, principalId),
+});
+export const handleDemandMetaPersistedDiagnosis = (request: Request) => diagnosisHandler(request);
