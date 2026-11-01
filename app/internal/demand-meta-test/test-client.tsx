@@ -157,9 +157,45 @@ export default function DemandMetaTestClient() {
             (!("report" in body) || !body.report || typeof body.report !== "object" ||
              !("campaignId" in body.report) ||
              body.report.campaignId !== "120250864977630697")) throw new Error();
+        // Product-level, observation-only diagnosis of the ACTUAL signed
+        // provider response. Never infer paid orders, CPA, causal lift or a
+        // durable BCI receipt from Meta actions or a nonempty HTTP response.
+        const report = "report" in body ? body.report : null;
+        let diagnosis = "Recheck the bounded Meta reporting window; no rows do not prove zero spend or conversions.";
+        let measured = "Provider metrics unavailable.";
+        if (body.status === "CAMPAIGN_ROW_OBSERVED_UNATTESTED") {
+          if (!report || typeof report !== "object" || Array.isArray(report) ||
+              !("spendMinor" in report) ||
+              !("metaAttributedPurchases" in report) ||
+              !("actionAliasMismatch" in report) ||
+              !("inlineLinkClicks" in report) ||
+              !("landingPageViews" in report)) throw new Error();
+          const countOrNull = (x: unknown): x is number | null =>
+            x === null || (typeof x === "number" && Number.isSafeInteger(x) && x >= 0);
+          if (!countOrNull(report.spendMinor) || !countOrNull(report.metaAttributedPurchases) ||
+              !countOrNull(report.inlineLinkClicks) || !countOrNull(report.landingPageViews) ||
+              typeof report.actionAliasMismatch !== "boolean") throw new Error();
+          const spend = report.spendMinor === null ? "unknown" :
+            "MYR " + (report.spendMinor / 100).toFixed(2);
+          const purchases = report.actionAliasMismatch ? "ambiguous" :
+            report.metaAttributedPurchases === null ? "unknown" :
+            String(report.metaAttributedPurchases);
+          measured = "Meta-reported spend: " + spend +
+            "; Meta-attributed purchase actions: " + purchases + ".";
+          diagnosis = report.actionAliasMismatch
+            ? "Review conflicting Meta purchase aliases; do not count them as settled orders."
+            : (report.metaAttributedPurchases ?? 0) > 0
+              ? "Reconcile independently paid HitPay charges and first-party order joins."
+              : report.spendMinor === null
+                ? "Verify the Meta spend field before acquisition cost analysis."
+                : (report.inlineLinkClicks ?? 0) > 0 && report.landingPageViews === null
+                  ? "Verify landing-page-view measurement before interpreting click quality."
+                  : "Verify first-party acquisition-to-order linkage before attributing sales.";
+        }
         setNotice("HTTP 200 — " + (mode === "historical" ? "historical PAUSED BROS SELL" : "pinned ACQ-V2") +
-          " Meta read-only response: " + body.status +
-          ". Provider-reported observations only; no HitPay attribution, BCI signed evidence, verified CPA or execution authority.");
+          " Meta read-only response: " + body.status + ". " + measured +
+          " Next diagnostic action: " + diagnosis +
+          " Provider observations only; no HitPay attribution, BCI signed evidence, verified CPA or execution authority.");
       } else {
         setNotice("API returned HTTP " + response.status + "; no success is attested.");
       }
