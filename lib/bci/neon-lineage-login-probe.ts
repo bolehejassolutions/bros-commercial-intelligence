@@ -110,7 +110,7 @@ export function createRestrictedLineageReadOnlyProbe(transaction: ScopedTransact
               AND cardinality(parent_ids)=0`, [tenantId, RECEIPT]);
           const row = result.rows[0];
           if (result.rows.length !== 1 || !obj(row) || typeof row.count !== "number") deny();
-          return row.count as number;
+          return (row as { count: number }).count;
         };
         await setScope(principalId, tenantId, "demand");
         if (await membershipCount() !== 1 || await rootCount() !== 1) deny();
