@@ -7,6 +7,9 @@ import "server-only";
  * BCI_NEON_DEV_PRIVATE_WRITES=enabled are explicitly configured.
  */
 import { Pool } from "pg";
+import { createNeonAuthPrincipalVerifier } from "./neon-auth-principal.ts";
+import { createAuthenticatedDemandReceiptCaseLink, BciCaseLinkDenied } from "./neon-demand-case-link.ts";
+import { createPgDemandEvidenceAppendTransaction } from "./neon-demand-evidence-append.ts";
 import { createNeonDevMembershipLookup } from "./neon-dev-membership-rows.ts";
 import { createNeonLineageServerBoundary } from "./neon-lineage-server-boundary.ts";
 import { BciLineageWriteDenied, createPgLineageWriteTransaction } from "./neon-lineage-writer.ts";
@@ -57,5 +60,57 @@ export async function appendNeonDevLineagePrivately(token: unknown, request: App
     return await privateWriter(token, request);
   } catch {
     throw new BciLineageWriteDenied();
+  }
+}
+
+/**
+ * Same EXISTING BCI server runtime, not a new backend or public route.
+ * The existing restricted evidence-writer LOGIN is scoped by migration 0021.
+ * No browser-controlled tenant, provider, case title, diagnosis or action.
+ * Private writes stay OFF until scoped RLS and hosted acceptance are verified.
+ */
+let caseLinkDeps: ReturnType<typeof createCaseLinkDeps> | undefined;
+const caseLinkAuthBase =
+  "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
+const verifyCaseLinkPrincipal = createNeonAuthPrincipalVerifier({
+  issuer: new URL(caseLinkAuthBase).origin,
+  audience: new URL(caseLinkAuthBase).origin,
+  jwksUrl: `${caseLinkAuthBase}/.well-known/jwks.json`,
+  approvedOperator: { email: "rasymokh@gmail.com" },
+});
+function createCaseLinkDeps() {
+  const membership = parseNeonDevConnection(
+    process.env.BCI_NEON_DEV_MEMBERSHIP_DATABASE_URL, "bci_dev_membership_reader");
+  const evidence = parseNeonDevConnection(
+    process.env.BCI_NEON_DEV_EVIDENCE_WRITER_DATABASE_URL, "bci_dev_evidence_writer_restricted");
+  const pool = (config: ReturnType<typeof parseNeonDevConnection>) => {
+    const p = new Pool({ ...config, max: 1, connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 10000, allowExitOnIdle: true, query_timeout: 7000,
+      application_name: "bci-private-demand-case-link-dev" });
+    p.on("error", () => { /* No driver errors or credentials in logs. */ });
+    return p;
+  };
+  return {
+    membershipsFor: createNeonDevMembershipLookup(createPgReadOnlyTransaction(pool(membership))),
+    transaction: createPgDemandEvidenceAppendTransaction(pool(evidence)),
+  };
+}
+
+/** Server-only explicit receipt admission; never imported into a public route. */
+export async function linkPersistedDemandMetaReceiptPrivately(token: unknown, receiptId: unknown) {
+  if (!isNeonPreviewEnabled(process.env) ||
+      process.env.BCI_NEON_DEV_PRIVATE_WRITES !== "enabled") {
+    throw new BciCaseLinkDenied();
+  }
+  try {
+    const principal = await verifyCaseLinkPrincipal(token);
+    caseLinkDeps ??= createCaseLinkDeps();
+    return await createAuthenticatedDemandReceiptCaseLink({
+      authenticate: async () => principal,
+      membershipsFor: (id, product) => caseLinkDeps!.membershipsFor(id, product),
+      transaction: caseLinkDeps.transaction,
+    })(receiptId);
+  } catch {
+    throw new BciCaseLinkDenied();
   }
 }
