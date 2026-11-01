@@ -146,7 +146,8 @@ export function createDemandMetaReceiptReader(transaction: ReadTransaction) {
         [DEMAND_PILOT_RECEIPT_ID, tenantId]);
       if (linked.rows.length > 1) reject();
       const linkedCase = linked.rows[0] ?? null;
-      if (linkedCase !== null && (!object(linkedCase) || !uuid.test(linkedCase.caseId) ||
+      if (linkedCase !== null && (!object(linkedCase) || typeof linkedCase.caseId !== "string" ||
+          !uuid.test(linkedCase.caseId) ||
           linkedCase.evidenceId !== DEMAND_PILOT_RECEIPT_ID || linkedCase.tenantId !== tenantId ||
           linkedCase.product !== "demand" || linkedCase.status !== "REVIEW")) reject();
       await membership();
