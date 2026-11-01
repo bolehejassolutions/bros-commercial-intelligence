@@ -36,12 +36,14 @@ const object = (v: unknown): v is Record<string, unknown> =>
 const reject = (): never => { throw Error("DEMAND_EVIDENCE_REVIEW_DENIED"); };
 const numberOrNull = (v: unknown): number | null => {
   if (v === null || v === undefined) return null;
-  if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) reject();
+  if (typeof v !== "number") return reject();
+  if (!Number.isSafeInteger(v) || v < 0) return reject();
   return v;
 };
 const timestamp = (v: unknown): string => {
   const d = v instanceof Date ? v : typeof v === "string" ? new Date(v) : null;
-  if (!d || !Number.isFinite(d.getTime())) reject();
+  if (d === null) return reject();
+  if (!Number.isFinite(d.getTime())) return reject();
   return d.toISOString();
 };
 
@@ -122,12 +124,14 @@ export function createDemandMetaReceiptReader(transaction: ReadTransaction) {
         [tenantId, DEMAND_PILOT_RECEIPT_ID]);
       if (result.rows.length > 1) reject();
       const row = result.rows[0];
-      if (row !== undefined && (!object(row) || row.id !== DEMAND_PILOT_RECEIPT_ID ||
+      if (row !== undefined && !object(row)) return reject();
+      if (row !== undefined && (row.id !== DEMAND_PILOT_RECEIPT_ID ||
           row.tenantId !== tenantId || row.product !== "demand" || row.provider !== "meta_ads" ||
           row.completeness !== "unverified" || !object(row.metrics) ||
-          !Array.isArray(row.unknowns))) reject();
+          !Array.isArray(row.unknowns))) return reject();
       await membership();
       if (row === undefined) return null;
+      if (!object(row)) return reject();
       const normalized = { ...row, collectedAt: timestamp(row.collectedAt),
         periodStart: timestamp(row.periodStart), periodEnd: timestamp(row.periodEnd) } as Receipt;
       reviewPersistedDemandMetaReceipt(normalized);
@@ -155,8 +159,9 @@ export function createDemandMetaPersistedDiagnosisHandler(deps: Deps) {
         !/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(authorization)) return deny(401);
     try {
       const principal = await deps.verifyJwt(authorization.slice(7));
-      if (!principal || principal.authenticated !== true || !uuid.test(principal.userId) ||
-          !uuid.test(deps.tenantId)) reject();
+      if (!principal) return deny(403);
+      if (principal.authenticated !== true || !uuid.test(principal.userId) ||
+          !uuid.test(deps.tenantId)) return deny(403);
       const tenantId = deps.tenantId.toLowerCase();
       const membership = async () => {
         const grants = await deps.membershipsFor(principal.userId, "demand");

@@ -198,7 +198,11 @@ const diagnosisHandler = createDemandMetaPersistedDiagnosisHandler({
     Boolean(process.env.BCI_NEON_DEV_EVIDENCE_WRITER_DATABASE_URL),
   tenantId: process.env.BROS_DEMAND_META_TENANT_ID ?? "",
   verifyJwt: token => verifier(token),
-  membershipsFor: (userId, product) => getMemberships(() => {})(userId, product),
+  membershipsFor: async (userId, product) => {
+    const grants = await getMemberships(() => {})(userId, product);
+    if (grants.some(g => g.product !== "demand")) throw Error();
+    return grants.map(g => ({ ...g, product: "demand" as const }));
+  },
   readReceipt: (tenantId, principalId) =>
     createDemandMetaReceiptReader(createPgReadOnlyTransaction(getEvidenceWriterPool()))(tenantId, principalId),
 });
