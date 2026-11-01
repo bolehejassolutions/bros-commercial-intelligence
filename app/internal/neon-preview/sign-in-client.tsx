@@ -32,7 +32,8 @@ export default function NeonPreviewSignIn() {
   const [httpCheckResult, setHttpCheckResult] = useState<string | null>(null);
   const [tenantCheckResult, setTenantCheckResult] = useState<string | null>(null);
   const [writerCheckResult, setWriterCheckResult] = useState<string | null>(null);
-  const [lineageCheckResult, setLineageCheckResult] = useState<string | null>(null);\n  const [caseLinkResult, setCaseLinkResult] = useState<string | null>(null);
+  const [lineageCheckResult, setLineageCheckResult] = useState<string | null>(null);
+  const [caseLinkResult, setCaseLinkResult] = useState<string | null>(null);
   const [product, setProduct] = useState<"content" | "demand">("content");
 
   useEffect(() => {
@@ -288,7 +289,8 @@ export default function NeonPreviewSignIn() {
         {step === "ready" && httpCheckResult !== null ? <p role="status" aria-label="HTTP rejection check result">{httpCheckResult}</p> : null}
         {step === "ready" && tenantCheckResult !== null ? <p role="status" aria-label="Empty-tenant isolation result">{tenantCheckResult}</p> : null}
         {step === "ready" && writerCheckResult !== null ? <p role="status" aria-label="Restricted writer login result">{writerCheckResult}</p> : null}
-        {step === "ready" && lineageCheckResult !== null ? <p role="status" aria-label="Lineage writer login result">{lineageCheckResult}</p> : null}\n        {step === "ready" && caseLinkResult !== null ? <p role="status" aria-label="Restricted case/link result">{caseLinkResult}</p> : null}
+        {step === "ready" && lineageCheckResult !== null ? <p role="status" aria-label="Lineage writer login result">{lineageCheckResult}</p> : null}
+        {step === "ready" && caseLinkResult !== null ? <p role="status" aria-label="Restricted case/link result">{caseLinkResult}</p> : null}
         {step === "start" ? <div className="auth-form">
           <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>
             {cooldown > 0 ? `Wait ${cooldown}s` : "Send sign-in code (verified email)"}
@@ -325,7 +327,8 @@ export default function NeonPreviewSignIn() {
             <button type="button" disabled={busy} onClick={checkEmptyTenantIsolation}>Check empty-tenant isolation (DEV)</button>
             <button type="button" disabled={busy} onClick={checkRestrictedWriterLogin}>Check restricted evidence writer LOGIN (DEV read-only)</button>
             <button type="button" disabled={busy} onClick={checkLineageLogin}>Check lineage writer LOGIN + tenant/product negatives (DEV read-only)</button>
-            <button type="button" disabled={busy || product !== "demand"} onClick={createDemandReviewCase}>Save existing Meta receipt as REVIEW case (DEV only)</button>\n            <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
+            <button type="button" disabled={busy || product !== "demand"} onClick={createDemandReviewCase}>Save existing Meta receipt as REVIEW case (DEV only)</button>
+            <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
           </div>
         ) : null}
       </section>
