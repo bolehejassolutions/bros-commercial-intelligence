@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {planContentJobCandidate} from '../lib/content/instance-plan.mjs';
+import {buildContentTrendResearchPacket,prepareContentTrendScriptMediaReview} from '../lib/content/trend-evidence.mjs';
 import {bindLocalContentRenderToPlan} from '../lib/content/local-render-manifest-gate.mjs';
 import {prepareLocalContentEditorialHandoff} from '../lib/content/local-render-editorial-handoff.mjs';
 import {generateKeyPairSync,sign} from 'node:crypto';
@@ -70,6 +71,72 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
       aiDisclosure:'DECLARED_NON_AI',claimEvidenceRefs:[]};
     const handoff=prepareLocalContentEditorialHandoff(config,brief,manifest,buffers,copy);
     assert.equal(handoff.status,'LOCAL_MEDIA_EDITORIAL_REVIEW_PENDING');
+    // Real original PNGs, source-bound script and image-only review remain
+    // distinct; no script approval, provider SENT or durable BCI authority.
+    const research=buildContentTrendResearchPacket({
+      schemaVersion:1,product:'content',tenantId:config.tenantId,
+      instanceId:config.instanceId,asOf:'2026-11-01T08:00:00Z',windowDays:30,
+      records:[{sourceId:'r-trend-01',platform:'reddit',
+        url:'https://reddit.com/r/sales/comments/abc123/review',
+        publishedAt:'2026-10-27',observedAt:'2026-10-29T08:00:00Z',
+        topic:brief.topic,hookPattern:'Seller-first question',
+        visualStyle:'Practical visual cards',format:'text',
+        metrics:{views:null,likes:null,comments:null,shares:null,saves:null}}]});
+    const candidateId=research.candidates[0].candidateId;
+    const channel={service:brief.channelService,channelId:brief.channelId};
+    const proposal={briefId:brief.briefId,revisionId:brief.revisionId,
+      format:brief.format,assetCount:brief.assetCount,hook:brief.hook,
+      hypothesis:brief.hypothesis,measurementQuestion:brief.measurementQuestion};
+    const script={scriptId:'script-real-media-01',revisionId:'script-rev-01',
+      openingHook:brief.hook,
+      sellerSituation:'Penjual belum memahami masalah sebenar pelanggan.',
+      diagnosticQuestion:'Apakah hasil yang pelanggan mahu capai?',
+      valueExplanation:'Jelaskan nilai berdasarkan keperluan yang dikenal pasti.',
+      sellerAction:'Tanya satu soalan diagnosis sebelum mencadangkan produk.',
+      closingLine:'Menjelaskan dahulu, bukan memujuk pelanggan.',
+      shots:['Paparkan situasi penjual yang memerlukan soalan.',
+        'Paparkan langkah diagnosis yang praktikal.']};
+    const trendArgs=[config,research,candidateId,channel,proposal,script,
+      manifest,buffers,copy];
+    const trendMedia=prepareContentTrendScriptMediaReview(...trendArgs);
+    assert.equal(trendMedia.planId,plan.planId);
+    assert.equal(trendMedia.mediaSetId,handoff.mediaSetId);
+    assert.equal(trendMedia.handoffId,handoff.handoffId);
+    assert.equal(trendMedia.status,'TREND_SCRIPT_MEDIA_EDITORIAL_REVIEW_PENDING');
+    assert.equal(trendMedia.originalPngBytesDecoded,true);
+    assert.equal(trendMedia.distinctRenderedPixelsVerified,true);
+    assert.match(trendMedia.scriptMediaReviewId,
+      /^content-trend-script-media-[a-f0-9]{64}$/);
+    assert.equal(prepareContentTrendScriptMediaReview(...trendArgs).scriptMediaReviewId,
+      trendMedia.scriptMediaReviewId);
+    const changedScript={...script,sellerAction:
+      'Tanya soalan lain yang memerlukan semakan editorial baharu.'};
+    const changed=prepareContentTrendScriptMediaReview(config,research,candidateId,
+      channel,proposal,changedScript,manifest,buffers,copy);
+    assert.equal(changed.handoffId,trendMedia.handoffId);
+    assert.notEqual(changed.scriptMediaReviewId,trendMedia.scriptMediaReviewId);
+    for(const flag of ['scriptMediaBindingAuthenticated',
+      'scriptEditorialApprovalIncludedInSignedReceipt',
+      'scriptToImageSemanticMatchVerified','sourceClaimsVerified',
+      'providerTrendAuthenticated','reviewerAuthenticated','approvalGranted',
+      'durableApprovalRecorded','atomicReservationVerified',
+      'providerCapabilityVerified','providerSentVerified',
+      'measurementVerified','learningVerified','sharedBciAuditVerified',
+      'executionAllowed','customerSaasReady'])
+      assert.equal(trendMedia[flag],false,flag);
+    assert.ok(trendMedia.requiredHumanChecks.includes(
+      'VERIFY_SCRIPT_STORYBOARD_AND_EACH_RENDERED_IMAGE_SEMANTICALLY'));
+    assert.throws(()=>{trendMedia.sourceLinks.push('https://invalid.example');},TypeError);
+    const forgedTrendManifest=structuredClone(manifest);
+    forgedTrendManifest.images[0].decodedRgbSha256='0'.repeat(64);
+    assert.throws(()=>prepareContentTrendScriptMediaReview(config,research,
+      candidateId,channel,proposal,script,forgedTrendManifest,buffers,copy),
+      /CONTENT_LOCAL_RENDER_BYTES_OR_ORDER_MISMATCH/);
+    const wrongScope={...research,tenantId:'different-tenant'};
+    assert.throws(()=>prepareContentTrendScriptMediaReview(config,wrongScope,
+      candidateId,channel,proposal,script,manifest,buffers,copy),
+      /TREND_PACKET_SCOPE_MISMATCH/);
+
     // Real Pillow source bytes -> editorial handoff -> cryptographically signed
     // review evidence. Test-only key; NEVER a human auth or publish grant.
     const {privateKey,publicKey}=generateKeyPairSync('ed25519');
