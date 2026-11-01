@@ -53,6 +53,8 @@ type TransferInput = Readonly<{
   now: string;
   /** Explicitly unused; refusing replacement protects existing order linkage. */
   existingReferenceNumber: null;
+  /** Trusted server-owned checkout adapter; storefront links cannot assert this. */
+  checkoutChannel: "api_payment_request";
 }>;
 
 const BRANCH = "feat/demand-direct-meta-readonly-20261031";
@@ -65,7 +67,7 @@ const HEX = /^[a-f0-9]{64}$/;
 const SCOPE_KEYS = ["tenantId", "product", "pilotProduct", "environment", "branch"];
 const RECORD_KEYS = ["version", "acquisitionId", "scope", "consent", "issuedAt", "expiresAt", "source"];
 const TICKET_KEYS = ["version", "acquisitionId", "scope", "issuedAt", "expiresAt", "landingDigest", "signature"];
-const TRANSFER_KEYS = ["ticket", "landingRecord", "scope", "now", "existingReferenceNumber"];
+const TRANSFER_KEYS = ["ticket", "landingRecord", "scope", "now", "existingReferenceNumber", "checkoutChannel"];
 const invalid = (): never => { throw new Error("BROS_DEMAND_ACQUISITION_TRANSFER_REJECTED"); };
 const object = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === "object" && !Array.isArray(x) &&
@@ -158,7 +160,8 @@ export function issueDemandAcquisitionTransfer(
 }
 
 function validateTransfer(input: TransferInput, serverKey: Uint8Array): DemandAcquisitionLandingRecord {
-  if (!exact(input, TRANSFER_KEYS) || input.existingReferenceNumber !== null || !utc(input.now)) return invalid();
+  if (!exact(input, TRANSFER_KEYS) || input.checkoutChannel !== "api_payment_request" ||
+      input.existingReferenceNumber !== null || !utc(input.now)) return invalid();
   const key = keyValue(serverKey);
   const record = recordValue(input.landingRecord);
   const expectedScope = scopeValue(input.scope);

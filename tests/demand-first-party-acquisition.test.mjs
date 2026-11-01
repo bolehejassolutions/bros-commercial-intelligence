@@ -14,7 +14,8 @@ const key = new Uint8Array(32).fill(0x6a); // synthetic fixture, never a runtime
 const requestId = "22222222-2222-4222-8222-222222222222";
 const rejected = /^BROS_DEMAND_ACQUISITION_TRANSFER_REJECTED$/;
 const fail = fn => assert.throws(fn, e => e instanceof Error && rejected.test(e.message));
-const input = issued => ({ ...issued, scope, now, existingReferenceNumber: null });
+const input = issued => ({ ...issued, scope, now, existingReferenceNumber: null,
+  checkoutChannel: "api_payment_request" });
 
 test("server issues random opaque IDs and keeps source labels out of ticket/reference", () => {
   const a = issue(config, key), b = issue(config, key);
@@ -97,6 +98,20 @@ test("wrong scope, future issue, expiry and occupied merchant reference reject",
     { existingReferenceNumber: undefined }, { providerAuthenticated: true },
   ]) fail(() => prepare({ ...original, ...change }, key));
   assert.ok(prepare({ ...original, now: "2026-11-01T00:04:59.999Z" }, key));
+});
+
+test("store checkout, POS, payment link and missing channel cannot borrow Payment Request reference", () => {
+  const original = input(issue(config, key));
+  const providerEcho = { id: requestId, reference_number: original.ticket.acquisitionId };
+  for (const channel of ["store_checkout", "pos", "payment_link", "", null, undefined]) {
+    fail(() => prepare({ ...original, checkoutChannel: channel }, key));
+    fail(() => bind({ ...original, checkoutChannel: channel }, providerEcho, key));
+  }
+  const missing = { ...original };
+  delete missing.checkoutChannel;
+  fail(() => prepare(missing, key));
+  fail(() => bind(missing, providerEcho, key));
+  assert.deepEqual(prepare(original, key), { reference_number: original.ticket.acquisitionId });
 });
 
 test("matching provider reference produces stable candidate only, replay prevention remains false", () => {
