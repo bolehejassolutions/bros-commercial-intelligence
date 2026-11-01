@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,sign,createHash} from 'node:crypto';
+import {deflateSync} from 'node:zlib';
 import {contentSignedReviewSigningBytes} from '../lib/content/signed-editorial-decision.mjs';
 import {prepareContentAdmissionV2Payload as prepare,
   contentAdmissionV2SigningBytes as signingBytes,
@@ -22,8 +23,26 @@ const handoff=()=>({product:'content',status:'LOCAL_MEDIA_EDITORIAL_REVIEW_PENDI
  planId:H('plan'),mediaSetId:H('media'),approvalRequestId:H('review'),
  reviewPacketId:H('editorial'),handoffId:H('local-editorial'),
  requiredHumanChecks:checks,automatedReviewFlags:[],approvalGranted:false,executionAllowed:false});
+// Genuine 1080x1350 RGB PNG with valid IHDR/IDAT/IEND and decoded pixels.
+const sig=Buffer.from([137,80,78,71,13,10,26,10]);
+const crcTable=Array.from({length:256},(_,n)=>{let c=n;for(let i=0;i<8;i++)c=c&1?0xedb88320^(c>>>1):c>>>1;return c>>>0;});
+function crc32(bytes){let c=0xffffffff;for(const b of bytes)c=crcTable[(c^b)&255]^(c>>>8);return (c^0xffffffff)>>>0;}
+function chunk(name,bytes){
+ const length=Buffer.alloc(4),body=Buffer.concat([Buffer.from(name),bytes]),check=Buffer.alloc(4);
+ length.writeUInt32BE(bytes.length);check.writeUInt32BE(crc32(body));
+ return Buffer.concat([length,body,check]);
+}
+function png(){
+ const width=1080,height=1350,stride=width*3+1,ihdr=Buffer.alloc(13);
+ ihdr.writeUInt32BE(width,0);ihdr.writeUInt32BE(height,4);ihdr[8]=8;ihdr[9]=2;
+ const scanlines=Buffer.alloc(height*stride);
+ for(let y=0;y<height;y++)scanlines.fill(42,y*stride+1,(y+1)*stride);
+ return Buffer.concat([sig,chunk('IHDR',ihdr),chunk('IDAT',deflateSync(scanlines)),chunk('IEND',Buffer.alloc(0))]);
+}
+const validPng=png();
+
 function setup(){
- const h=handoff(),bytes=Buffer.alloc(64,42);
+ const h=handoff(),bytes=Buffer.from(validPng);
  const p={schemaVersion:1,product:'content',tenantId:h.tenantId,
    instanceId:h.instanceId,planId:h.planId,mediaSetId:h.mediaSetId,
    approvalRequestId:h.approvalRequestId,reviewPacketId:h.reviewPacketId,
@@ -105,4 +124,16 @@ test('mutable or malformed input and unreviewed media cannot acquire authority',
    {...x.attestation,payload:{...x.attestation.payload,nonce:'bad'}},keys,now),denied);
  assert.throws(()=>verify(x.h,x.editorial,x.media,x.dispatch,x.attestation,
    new Map([['pilot-key-v1',generateKeyPairSync('ed25519').publicKey]]),now),denied);
+});
+
+test('signed V2 admission rejects forged or CRC-corrupted original PNG even with matching digest',()=>{
+ for(const bytes of [Buffer.alloc(64,42),Buffer.concat([sig,Buffer.alloc(64,42)]),(()=>{
+   const damaged=Buffer.from(validPng);damaged[32]^=1;return damaged;
+ })()]){
+   const x=setup();
+   x.media.mediaBytes=bytes;
+   x.media.originalMedia.originalMediaSha256=sha(bytes);
+   assert.throws(()=>prepare(x.h,x.editorial,x.media,x.dispatch,keys,'d'.repeat(32),now),denied);
+   assert.throws(()=>verify(x.h,x.editorial,x.media,x.dispatch,x.attestation,keys,now),denied);
+ }
 });
