@@ -37,3 +37,10 @@ test("no secret-bearing error leakage",async()=>{
  const h=createDemandCaseLinkHttpHandler({env:()=>env,execute:async()=>{throw Error("secret");}});
  const r=await h(req());assert.equal(r.status,403);assert.doesNotMatch(JSON.stringify(await r.json()),/secret/);
 });
+
+// Regression: the signed Neon route must not be swallowed by Supabase operator proxy.
+import {readFileSync} from "node:fs";
+test("signed case route is exempt from unrelated Supabase session middleware",()=>{
+ const proxy=readFileSync(new URL("../proxy.ts",import.meta.url),"utf8");
+ assert.match(proxy,/request\.nextUrl\.pathname === "\/api\/internal\/neon-demand-case"/);
+});
