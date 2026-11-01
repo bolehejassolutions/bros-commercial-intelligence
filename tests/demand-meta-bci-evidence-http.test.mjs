@@ -114,6 +114,20 @@ test("GET, missing JWT, query/body authority, cross-origin and scope headers can
   }
 });
 
+test("Next-style empty POST stream reaches JWT admission and completes the same protected composition", async () => {
+  const empty = () => new ReadableStream({ start(controller) { controller.close(); } });
+  const missing = fixture();
+  const denied = await missing.handler(req({ body: empty(), duplex: "half", headers: { Authorization: "" } }));
+  assert.equal(denied.status, 401);
+  assert.equal(missing.state.reads, 0);
+  assert.equal(missing.state.connects, 0);
+  const authorized = fixture();
+  const response = await authorized.handler(req({ body: empty(), duplex: "half" }));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).postCommitReplayVerified, true);
+  assert.equal(authorized.state.commits, 2);
+});
+
 test("default-OFF and invalid signed identity deny before Meta and database access", async () => {
   for (const patch of [{ enabled: false }, { badIdentity: true }]) {
     const { state, handler } = fixture(patch);

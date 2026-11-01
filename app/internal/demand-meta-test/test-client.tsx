@@ -106,16 +106,18 @@ export default function DemandMetaTestClient() {
         fetch(endpoint, { method: "POST", cache: "no-store", redirect: "error" }),
         fetch(endpoint, { headers: { "x-tenant-id": "unauthorized-scope" }, cache: "no-store", redirect: "error" }),
         fetch(endpoint, { headers: { Authorization: "Bearer invalid.token.value" }, cache: "no-store", redirect: "error" }),
+        fetch("/api/internal/demand-meta-evidence", { method: "POST", cache: "no-store", redirect: "error" }),
       ]);
       const mode = calls[0].status === 404 ? "OFF" : calls[0].status === 401 ? "ENABLED" : "UNKNOWN";
       const expected = mode === "OFF" ? [404, 404, 404, 404] : [401, 405, 400, 403];
       // Invalid-but-shaped JWT can yield a sanitized 403 only after the enable gate.
       const statusesOK = mode !== "UNKNOWN" && calls.every((r, i) => (
+        i === 4 ? (r.status === 401 || r.status === 404) :
         i === 3 && mode === "ENABLED" ? (r.status === 403 || r.status === 401) : r.status === expected[i]
       ));
       const headersOK = calls.every(probeHeaders);
       if (!statusesOK || !headersOK) throw new Error();
-      setNotice("PASS — " + mode + " mode. All 4 denial probes and no-store/security headers verified. This does not verify Neon DB or Meta access.");
+      setNotice("PASS — " + mode + " mode. All 5 denial probes and no-store/security headers verified, including the bodyless DEV POST (HTTP " + calls[4].status + "). This does not verify Neon DB or Meta access.");
     } catch {
       setNotice("FAIL — denial checks not independently verified. Do not enable live reads.");
     } finally { setBusy(false); }
@@ -222,7 +224,12 @@ export default function DemandMetaTestClient() {
         setNotice("DEV evidence action is disabled or not configured. No success is claimed.");
         return;
       }
-      if (response.status !== 200 || !probeHeaders(response)) throw new Error();
+      if (response.status !== 200) {
+        setNotice("DEV evidence action returned HTTP " + response.status +
+          "; no completion is attested. A first append may have committed; database reconciliation is required before assuming nothing was saved.");
+        return;
+      }
+      if (!probeHeaders(response)) throw new Error();
       const raw = await response.text();
       if (raw.length > 2048) throw new Error();
       const body: unknown = JSON.parse(raw);
