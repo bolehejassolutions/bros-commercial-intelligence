@@ -1,9 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {deflateSync} from 'node:zlib';
 import {verifyContentSingleImageUrlReadback as verify} from '../lib/content/media-url-readback.mjs';
 
-const original=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.alloc(64,42)]);
+// Genuine 1080x1350 RGB PNG fixture: valid IHDR/IDAT/IEND CRCs and zlib pixels.
+const sig=Buffer.from([137,80,78,71,13,10,26,10]);
+const crcTable=Array.from({length:256},(_,n)=>{let c=n;for(let i=0;i<8;i++)c=c&1?0xedb88320^(c>>>1):c>>>1;return c>>>0;});
+function crc32(bytes){let c=0xffffffff;for(const b of bytes)c=crcTable[(c^b)&255]^(c>>>8);return (c^0xffffffff)>>>0;}
+function chunk(name,bytes){
+  const len=Buffer.alloc(4),body=Buffer.concat([Buffer.from(name),bytes]),check=Buffer.alloc(4);
+  len.writeUInt32BE(bytes.length);check.writeUInt32BE(crc32(body));
+  return Buffer.concat([len,body,check]);
+}
+function png(pixel=42){
+  const width=1080,height=1350,stride=width*3+1;
+  const ihdr=Buffer.alloc(13);
+  ihdr.writeUInt32BE(width,0);ihdr.writeUInt32BE(height,4);ihdr[8]=8;ihdr[9]=2;
+  const scanlines=Buffer.alloc(height*stride);
+  for(let y=0;y<height;y++)scanlines.fill(pixel,y*stride+1,(y+1)*stride);
+  return Buffer.concat([sig,chunk('IHDR',ihdr),chunk('IDAT',deflateSync(scanlines)),chunk('IEND',Buffer.alloc(0))]);
+}
+const original=png();
 const digest=createHash('sha256').update(original).digest('hex');
 const admission=()=>({
   product:'content',tenantId:'tenant-1',instanceId:'instance-1',
@@ -24,6 +42,8 @@ test('exact original bytes read back over strict HTTPS without authorizing publi
   assert.equal(request.o.cache,'no-store');
   assert.equal(result.originalMediaSha256,digest);
   assert.equal(result.originHttpReadbackVerified,true);
+  assert.equal(result.originalPngStructureVerified,true);
+  assert.match(result.originalDecodedPixelSha256,/^[a-f0-9]{64}$/);
   for(const flag of ['providerFetchabilityVerified','durableHostingVerified',
     'reviewerAuthenticated','durableApprovalRecorded','atomicReservationVerified',
     'providerSentVerified','measurementVerified','sharedBciAuditVerified',
@@ -97,7 +117,7 @@ test('media identity survives URL token rotation and host changes but is scoped 
     assert.notEqual(result.deliveryCandidateId,first.deliveryCandidateId);
   }
   const changed=admission();
-  changed.mediaBytes[20]^=1;
+  changed.mediaBytes=png(99);
   changed.originalMedia.originalMediaSha256=createHash('sha256').update(changed.mediaBytes).digest('hex');
   const changedResult=await verify(changed,url,hostOpts(async()=>new Response(changed.mediaBytes,{
     status:200,headers:{'content-type':'image/png','content-length':String(changed.mediaBytes.length)}
@@ -148,4 +168,17 @@ test('caller buffer mutation while streaming cannot rewrite pinned readback proo
   }),{headers:{'content-type':'image/png'}})));
   assert.equal(result.originalMediaSha256,digest);
   assert.equal(result.executionAllowed,false);
+});
+
+
+test('PNG magic-prefix forgery and CRC-corrupted bytes fail even with matching SHA and HTTP 200',async()=>{
+  const forged=Buffer.concat([sig,Buffer.alloc(64,42)]);
+  const damaged=Buffer.from(original);damaged[32]^=1;
+  for(const bytes of [forged,damaged]){
+    const a=admission();a.mediaBytes=bytes;
+    a.originalMedia.originalMediaSha256=createHash('sha256').update(bytes).digest('hex');
+    await assert.rejects(verify(a,url,opts(async()=>new Response(bytes,{
+      status:200,headers:{'content-type':'image/png','content-length':String(bytes.length)}
+    }))),/CONTENT_MEDIA_URL_READBACK_DENIED/);
+  }
 });
