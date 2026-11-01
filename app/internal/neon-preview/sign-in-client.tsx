@@ -5,6 +5,7 @@ import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/au
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
 import { requestNeonPreviewToken, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
 import { runNeonPreviewNegativeChecks, runNeonPreviewEmptyTenantIsolationSmoke } from "@/lib/bci/neon-preview-negative-checks";
+import { demandReviewProposal, parseDemandProposalResponse } from "@/lib/bci/neon-demand-proposal-client";
 
 const operatorEmail = "rasymokh@gmail.com";
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
@@ -35,6 +36,7 @@ export default function NeonPreviewSignIn() {
   const [lineageCheckResult, setLineageCheckResult] = useState<string | null>(null);
   const [caseLinkResult, setCaseLinkResult] = useState<string | null>(null);
   const [lineageReceiptResult, setLineageReceiptResult] = useState<string | null>(null);
+  const [proposalResult, setProposalResult] = useState<string | null>(null);
   const [product, setProduct] = useState<"content" | "demand">("content");
 
   useEffect(() => {
@@ -291,6 +293,34 @@ export default function NeonPreviewSignIn() {
     } finally { setBusy(false); }
   }
 
+  async function submitDemandProposal() {
+    if (busy || product !== "demand" || step !== "ready") return;
+    setBusy(true);
+    setProposalResult(null);
+    setMessage("Submitting the reviewed DEV-only PROPOSED record…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/neon-demand-proposal", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(demandReviewProposal),
+        credentials: "same-origin", cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 ||
+          !/no-store/i.test(response.headers.get("cache-control") || "") ||
+          !/Authorization/i.test(response.headers.get("vary") || "")) throw new Error();
+      const raw = await response.text();
+      if (raw.length > 1024) throw new Error();
+      const result = parseDemandProposalResponse(JSON.parse(raw));
+      setProposalResult(`DEV proposal ${result.status}: ${result.proposalId}. PROPOSED for review only; NOT approved, executed, provider-attested or an outcome. Independent Neon post-COMMIT readback remains required.`);
+      setMessage("DEV proposal request completed; see the bounded result below.");
+    } catch {
+      setProposalResult("DEV proposal was not accepted or verified. No durable proposal is certified.");
+      setMessage("DEV proposal submission denied or unavailable.");
+    } finally { setBusy(false); }
+  }
+
   async function signOut() {
     if (busy) return;
     setBusy(true);
@@ -304,6 +334,8 @@ export default function NeonPreviewSignIn() {
       setWriterCheckResult(null);
       setLineageCheckResult(null);
       setLineageReceiptResult(null);
+      setCaseLinkResult(null);
+      setProposalResult(null);
       setMessage("You have signed out of this development session.");
     } catch { setMessage("Sign-out could not be confirmed. Please try again."); }
     finally { setBusy(false); }
@@ -326,6 +358,7 @@ export default function NeonPreviewSignIn() {
         {step === "ready" && lineageCheckResult !== null ? <p role="status" aria-label="Lineage writer login result">{lineageCheckResult}</p> : null}
         {step === "ready" && caseLinkResult !== null ? <p role="status" aria-label="Restricted case/link result">{caseLinkResult}</p> : null}
         {step === "ready" && lineageReceiptResult !== null ? <p role="status" aria-label="Restricted lineage receipt result">{lineageReceiptResult}</p> : null}
+        {step === "ready" && proposalResult !== null ? <p role="status" aria-label="Restricted DEMAND proposal result">{proposalResult}</p> : null}
         {step === "start" ? <div className="auth-form">
           <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>
             {cooldown > 0 ? `Wait ${cooldown}s` : "Send sign-in code (verified email)"}
@@ -364,6 +397,15 @@ export default function NeonPreviewSignIn() {
             <button type="button" disabled={busy} onClick={checkLineageLogin}>Check lineage writer LOGIN + tenant/product negatives (DEV read-only)</button>
             <button type="button" disabled={busy || product !== "demand"} onClick={createDemandReviewCase}>Save existing Meta receipt as REVIEW case (DEV only)</button>
             <button type="button" disabled={busy || product !== "demand"} onClick={saveDemandEvidenceLineage}>Append existing Meta receipt to unverified lineage (DEV only)</button>
+            {product === "demand" ? <section className="auth-form" aria-label="Review BROS DEMAND DEV proposal">
+              <h2>Review proposed diagnosis (DEV only)</h2>
+              <p><strong>Hypothesis:</strong> {demandReviewProposal.hypothesis}</p>
+              <p><strong>Proposed action:</strong> {demandReviewProposal.proposedAction}</p>
+              <p><strong>Success metric:</strong> {demandReviewProposal.proposedSuccessMetric}</p>
+              <p><strong>Confidence:</strong> {demandReviewProposal.confidence}. First-party joins remain unknown.</p>
+              <p><strong>PROPOSED ≠ approved or executed.</strong> No live Meta changes, order attribution or outcome is claimed.</p>
+              <button type="button" disabled={busy} onClick={submitDemandProposal}>Submit reviewed PROPOSED record (DEV only)</button>
+            </section> : null}
             <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
           </div>
         ) : null}
