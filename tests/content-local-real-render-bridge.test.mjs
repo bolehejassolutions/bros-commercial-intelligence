@@ -13,6 +13,7 @@ import {generateKeyPairSync,sign} from 'node:crypto';
 import {contentSignedReviewSigningBytes,verifyContentSignedEditorialDecision} from '../lib/content/signed-editorial-decision.mjs';
 import {prepareContentReviewDispatchPreflight} from '../lib/content/review-dispatch-binding.mjs';
 import {prepareContentBufferDispatchIntent} from '../lib/content/buffer-dispatch-intent.mjs';
+import {prepareContentScriptMediaReviewPayload,contentScriptMediaSigningBytes,verifyContentScriptMediaReviewReceipt} from '../lib/content/signed-script-media-review.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const config={
@@ -151,6 +152,50 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
       signature:sign(null,contentSignedReviewSigningBytes(payload),privateKey).toString('base64url')};
     const signed=verifyContentSignedEditorialDecision(handoff,receipt,
       new Map([['test-only',publicKey]]),Date.parse('2026-10-29T07:00:00.000Z'));
+    // A second test-only human signature MUST bind the actual script to the
+    // original PNG/image-only receipt; it is never BCI authorization.
+    const scriptChecks=[
+      {check:'VERIFY_SCRIPT_STORYBOARD_AND_EACH_RENDERED_IMAGE_SEMANTICALLY',passed:true},
+      {check:'VERIFY_SCRIPT_SOURCE_RIGHTS_CLAIMS_AND_BRAND_SAFETY',passed:true}
+    ];
+    const trusted=new Map([['test-only',publicKey]]);
+    const reviewNow=Date.parse('2026-10-29T07:00:00.000Z');
+    const scriptPayload=prepareContentScriptMediaReviewPayload(trendArgs,receipt,
+      trusted,scriptChecks,'f'.repeat(32),reviewNow);
+    assert.equal(scriptPayload.scriptMediaReviewId,trendMedia.scriptMediaReviewId);
+    const scriptReceipt={schemaVersion:1,keyId:'test-only',payload:scriptPayload,
+      signature:sign(null,contentScriptMediaSigningBytes(scriptPayload),privateKey)
+        .toString('base64url')};
+    const scriptProof=verifyContentScriptMediaReviewReceipt(trendArgs,receipt,
+      scriptReceipt,trusted,reviewNow);
+    assert.equal(scriptProof.signatureVerified,true);
+    assert.equal(scriptProof.status,'SCRIPT_MEDIA_SIGNED_REVIEW_EVIDENCE_ONLY');
+    assert.equal(scriptProof.approvalGranted,false);
+    assert.equal(scriptProof.executionAllowed,false);
+    assert.match(scriptProof.signedScriptMediaEvidenceId,
+      /^content-script-media-signed-[a-f0-9]{64}$/);
+    assert.equal(verifyContentScriptMediaReviewReceipt(trendArgs,receipt,
+      scriptReceipt,trusted,reviewNow).signedScriptMediaEvidenceId,
+      scriptProof.signedScriptMediaEvidenceId);
+    assert.throws(()=>verifyContentScriptMediaReviewReceipt(
+      [config,research,candidateId,channel,proposal,changedScript,manifest,buffers,copy],
+      receipt,scriptReceipt,trusted,reviewNow),/CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    assert.throws(()=>verifyContentScriptMediaReviewReceipt(
+      [config,research,candidateId,channel,proposal,script,manifest,buffers,
+        {...copy,caption:copy.caption+' Revised'}],
+      receipt,scriptReceipt,trusted,reviewNow),/CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    assert.throws(()=>verifyContentScriptMediaReviewReceipt(trendArgs,receipt,
+      {...scriptReceipt,payload:{...scriptPayload,decision:'REJECT'}},trusted,reviewNow),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    assert.throws(()=>prepareContentScriptMediaReviewPayload(trendArgs,receipt,
+      trusted,[{...scriptChecks[0],passed:false},scriptChecks[1]],'f'.repeat(32),
+      reviewNow),/CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    assert.throws(()=>prepareContentScriptMediaReviewPayload(trendArgs,receipt,
+      trusted,scriptChecks,receipt.payload.nonce,reviewNow),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    assert.throws(()=>verifyContentScriptMediaReviewReceipt(trendArgs,receipt,
+      scriptReceipt,trusted,Date.parse('2026-10-29T09:00:00.000Z')),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
     // Real Pillow media -> freshly recomputed handoff -> test-signed Neon-shaped
     // reviewer/membership -> exact Buffer dispatch candidate. No actual provider
     // authentication, human approval, reservation, publish or SENT occurs.
