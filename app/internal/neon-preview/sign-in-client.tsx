@@ -32,6 +32,7 @@ export default function NeonPreviewSignIn() {
   const [httpCheckResult, setHttpCheckResult] = useState<string | null>(null);
   const [tenantCheckResult, setTenantCheckResult] = useState<string | null>(null);
   const [writerCheckResult, setWriterCheckResult] = useState<string | null>(null);
+  const [lineageCheckResult, setLineageCheckResult] = useState<string | null>(null);
   const [product, setProduct] = useState<"content" | "demand">("content");
 
   useEffect(() => {
@@ -197,6 +198,37 @@ export default function NeonPreviewSignIn() {
     } finally { setBusy(false); }
   }
 
+  async function checkLineageLogin() {
+    if (busy) return;
+    setBusy(true);
+    setLineageCheckResult(null);
+    setMessage("Checking restricted lineage writer physical LOGIN in Neon DEV (read-only)…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/neon-evidence?product=demand&probe=lineage", {
+        method: "GET", headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 || !/no-store/i.test(response.headers.get("cache-control") || "") ||
+          !/Authorization/i.test(response.headers.get("vary") || "")) throw new Error();
+      const raw = await response.text();
+      if (raw.length > 1024) throw new Error();
+      const payload: unknown = JSON.parse(raw);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          Object.keys(payload).length !== 4 || !("scope" in payload) ||
+          payload.scope !== "internal-development" ||
+          !("lineageLoginProbe" in payload) || payload.lineageLoginProbe !== "pass" ||
+          !("lineageAppended" in payload) || payload.lineageAppended !== false ||
+          !("providerReceiptRecorded" in payload) || payload.providerReceiptRecorded !== false) throw new Error();
+      setLineageCheckResult("Lineage writer physical LOGIN, least privilege, active membership and foreign scope negatives: read-only smoke PASS. No lineage appended; revoked membership and durable E2E remain OPEN.");
+      setMessage("Lineage direct LOGIN check completed.");
+    } catch {
+      setLineageCheckResult("Lineage writer authenticated direct LOGIN check failed. No acceptance gate certified.");
+      setMessage("Lineage direct LOGIN check failed.");
+    } finally { setBusy(false); }
+  }
+
   async function signOut() {
     if (busy) return;
     setBusy(true);
@@ -208,6 +240,7 @@ export default function NeonPreviewSignIn() {
       setHttpCheckResult(null);
       setTenantCheckResult(null);
       setWriterCheckResult(null);
+      setLineageCheckResult(null);
       setMessage("You have signed out of this development session.");
     } catch { setMessage("Sign-out could not be confirmed. Please try again."); }
     finally { setBusy(false); }
@@ -227,6 +260,7 @@ export default function NeonPreviewSignIn() {
         {step === "ready" && httpCheckResult !== null ? <p role="status" aria-label="HTTP rejection check result">{httpCheckResult}</p> : null}
         {step === "ready" && tenantCheckResult !== null ? <p role="status" aria-label="Empty-tenant isolation result">{tenantCheckResult}</p> : null}
         {step === "ready" && writerCheckResult !== null ? <p role="status" aria-label="Restricted writer login result">{writerCheckResult}</p> : null}
+        {step === "ready" && lineageCheckResult !== null ? <p role="status" aria-label="Lineage writer login result">{lineageCheckResult}</p> : null}
         {step === "start" ? <div className="auth-form">
           <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>
             {cooldown > 0 ? `Wait ${cooldown}s` : "Send sign-in code (verified email)"}
@@ -262,6 +296,7 @@ export default function NeonPreviewSignIn() {
             <button type="button" disabled={busy} onClick={checkNegativeAccess}>Run HTTP rejection checks</button>
             <button type="button" disabled={busy} onClick={checkEmptyTenantIsolation}>Check empty-tenant isolation (DEV)</button>
             <button type="button" disabled={busy} onClick={checkRestrictedWriterLogin}>Check restricted evidence writer LOGIN (DEV read-only)</button>
+            <button type="button" disabled={busy} onClick={checkLineageLogin}>Check lineage writer LOGIN + tenant/product negatives (DEV read-only)</button>
             <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
           </div>
         ) : null}

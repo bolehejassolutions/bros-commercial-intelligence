@@ -3,12 +3,14 @@ import { Pool } from "pg";
 import { createNeonDevMembershipLookup } from "./neon-dev-membership-rows.ts";
 import { createNeonDevReadRows } from "./neon-dev-read-rows.ts";
 import { createRestrictedEvidenceWriterReadOnlyProbe } from "./neon-evidence-writer-login-probe.ts";
+import { createRestrictedLineageReadOnlyProbe } from "./neon-lineage-login-probe.ts";
 import { createNeonPreviewHandler, isNeonPreviewEnabled } from "./neon-preview-handler.ts";
 import { createPgReadOnlyTransaction, parseNeonDevConnection, NeonPreviewDatabaseDenied } from "./neon-readonly-transaction.ts";
 
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
 let readers: ReturnType<typeof createReaders> | undefined;
 let writerProbe: ReturnType<typeof createWriterProbe> | undefined;
+let lineageProbe: ReturnType<typeof createLineageProbe> | undefined;
 
 function createWriterProbe() {
   if (!isNeonPreviewEnabled(process.env) ||
@@ -20,6 +22,18 @@ function createWriterProbe() {
     application_name: "bci-dev-restricted-evidence-writer-readonly-probe" });
   pool.on("error", () => { /* No secret-bearing exception is logged. */ });
   return createRestrictedEvidenceWriterReadOnlyProbe(createPgReadOnlyTransaction(pool));
+}
+
+function createLineageProbe() {
+  if (!isNeonPreviewEnabled(process.env) ||
+      process.env.BCI_NEON_DEV_WRITER_LOGIN_PROBE !== "enabled") throw new NeonPreviewDatabaseDenied();
+  const config = parseNeonDevConnection(
+    process.env.BCI_NEON_DEV_LINEAGE_WRITER_DATABASE_URL, "bci_dev_lineage_writer");
+  const pool = new Pool({ ...config, max: 1, connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 10000, allowExitOnIdle: true, query_timeout: 7000,
+    application_name: "bci-dev-lineage-direct-login-readonly-probe" });
+  pool.on("error", () => { /* Never log secret-bearing errors. */ });
+  return createRestrictedLineageReadOnlyProbe(createPgReadOnlyTransaction(pool));
 }
 
 function createReaders() {
@@ -60,6 +74,10 @@ const handle = createNeonPreviewHandler({
   probeWriter: async scope => {
     writerProbe ??= createWriterProbe();
     return writerProbe(scope);
+  },
+  probeLineage: async scope => {
+    lineageProbe ??= createLineageProbe();
+    return lineageProbe(scope);
   },
 });
 

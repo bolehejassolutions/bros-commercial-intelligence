@@ -17,6 +17,7 @@ type Dependencies = Readonly<{
   readRows: PrivateEvidenceDependencies["readRows"];
   // Optional DEV-only read-only direct LOGIN probe; no provider writes.
   probeWriter?: (scope: Readonly<{ principalId: string; tenantId: string; product: "demand" }>) => Promise<unknown>;
+  probeLineage?: (scope: Readonly<{ principalId: string; tenantId: string; product: "demand" }>) => Promise<unknown>;
 }>;
 
 const headers = {
@@ -57,9 +58,11 @@ export function createNeonPreviewHandler(deps: Dependencies) {
     const writerProbe = url.searchParams.get("probe");
     if ((product !== "content" && product !== "demand") ||
         (rawLimit !== null && !/^(?:[1-9]|[1-4][0-9]|50)$/.test(rawLimit))) return denied(400);
-    if (writerProbe !== null && (writerProbe !== "writer" || product !== "demand" || rawLimit !== null)) return denied(400);
-    if (writerProbe === "writer" &&
-        (deps.env().BCI_NEON_DEV_WRITER_LOGIN_PROBE !== "enabled" || typeof deps.probeWriter !== "function")) return denied(404);
+    if (writerProbe !== null && (!["writer", "lineage"].includes(writerProbe) || product !== "demand" || rawLimit !== null)) return denied(400);
+    if (writerProbe !== null &&
+        (deps.env().BCI_NEON_DEV_WRITER_LOGIN_PROBE !== "enabled" ||
+         (writerProbe === "writer" ? typeof deps.probeWriter !== "function" :
+          typeof deps.probeLineage !== "function"))) return denied(404);
     const authorization = request.headers.get("authorization");
     if (!authorization || authorization.length > 16007 ||
         !/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(authorization)) return denied(401);
@@ -68,7 +71,7 @@ export function createNeonPreviewHandler(deps: Dependencies) {
       // The closure is request-local. No token, principal or membership is cached across requests.
       let stage: "identity" | "membership" | "evidence" = "identity";
       try {
-        if (writerProbe === "writer") {
+        if (writerProbe === "writer" || writerProbe === "lineage") {
           stage = "membership";
           // Explicit JWT and single authoritative DEMAND membership before any
           // writer credential is loaded or any restricted SQL connection begins.
@@ -77,9 +80,18 @@ export function createNeonPreviewHandler(deps: Dependencies) {
           if (memberships.length !== 1 || memberships[0].principalId !== principal.userId ||
               memberships[0].product !== "demand" || memberships[0].active !== true) return denied(403);
           stage = "evidence";
-          const outcome = await deps.probeWriter!({
-            principalId: principal.userId, tenantId: memberships[0].tenantId, product: "demand",
-          });
+          const scope = { principalId: principal.userId, tenantId: memberships[0].tenantId, product: "demand" as const };
+          const outcome = writerProbe === "writer" ? await deps.probeWriter!(scope) : await deps.probeLineage!(scope);
+          if (writerProbe === "lineage") {
+            if (!outcome || typeof outcome !== "object" ||
+                !("directLineageLoginVerified" in outcome) || outcome.directLineageLoginVerified !== true ||
+                !("leastPrivilegeAndForcedRlsVerified" in outcome) || outcome.leastPrivilegeAndForcedRlsVerified !== true ||
+                !("activeMembershipVerified" in outcome) || outcome.activeMembershipVerified !== true ||
+                !("negativeTenantPrincipalProductVerified" in outcome) || outcome.negativeTenantPrincipalProductVerified !== true ||
+                !("lineageAppended" in outcome) || outcome.lineageAppended !== false) return denied(403);
+            return json({ scope: "internal-development", lineageLoginProbe: "pass",
+              lineageAppended: false, providerReceiptRecorded: false }, 200);
+          }
           // Do not serialize values returned by a dependency. Fixed booleans only.
           if (!outcome || typeof outcome !== "object" ||
               !("directRestrictedLoginVerified" in outcome) || outcome.directRestrictedLoginVerified !== true ||

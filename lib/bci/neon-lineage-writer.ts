@@ -24,7 +24,7 @@ type Client = Readonly<{
   release: (destroy?: boolean) => void;
 }>;
 type Pool = Readonly<{ connect: () => Promise<Client> }>;
-const EXPECTED_LINEAGE_POLICY_FINGERPRINTS = "dev_writer_lineage_edges_insert:INSERT:bci_dev_lineage_writer:c58bfc1b9817b66280dc58ad821616e92d16e6c6b3afefa69648b1339dbdd002|dev_writer_lineage_edges_select:SELECT:bci_dev_lineage_writer:c58bfc1b9817b66280dc58ad821616e92d16e6c6b3afefa69648b1339dbdd002|dev_writer_lineage_nodes_insert:INSERT:bci_dev_lineage_writer:84f54ea07e2377d431283bf312961386cfca4f09cc33a6f2890cdf845e090bcc|dev_writer_lineage_nodes_select:SELECT:bci_dev_lineage_writer:84f54ea07e2377d431283bf312961386cfca4f09cc33a6f2890cdf845e090bcc|dev_writer_lineage_membership_select:SELECT:bci_dev_lineage_writer:de99bcb63f98733281530ed1368d676a1038cf3b8cd4b114d4100e3ebebff622";
+export const EXPECTED_LINEAGE_POLICY_FINGERPRINTS = "dev_writer_lineage_edges_insert:INSERT:bci_dev_lineage_writer:c58bfc1b9817b66280dc58ad821616e92d16e6c6b3afefa69648b1339dbdd002|dev_writer_lineage_edges_select:SELECT:bci_dev_lineage_writer:c58bfc1b9817b66280dc58ad821616e92d16e6c6b3afefa69648b1339dbdd002|dev_writer_lineage_nodes_insert:INSERT:bci_dev_lineage_writer:84f54ea07e2377d431283bf312961386cfca4f09cc33a6f2890cdf845e090bcc|dev_writer_lineage_nodes_select:SELECT:bci_dev_lineage_writer:84f54ea07e2377d431283bf312961386cfca4f09cc33a6f2890cdf845e090bcc|dev_writer_lineage_membership_select:SELECT:bci_dev_lineage_writer:de99bcb63f98733281530ed1368d676a1038cf3b8cd4b114d4100e3ebebff622";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const lineageFields = ["id", "tenantId", "product", "stage", "sourceSystem",
   "sourceRecordKey", "recordedAt", "parentIds", "verification"] as const;
