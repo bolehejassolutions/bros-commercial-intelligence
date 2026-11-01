@@ -31,7 +31,7 @@ export function createAuthenticatedDemandReceiptCaseLink(deps:Deps){
   typeof deps.membershipsFor!=="function"||typeof deps.transaction!=="function")deny();
  return async(receiptId:unknown):Promise<Readonly<{caseId:string;receiptId:string;
   status:"inserted"|"replayed";reviewOnly:true;providerAttested:false}>>=>{
-  if(typeof receiptId!=="string"||!UUID.test(receiptId))deny();
+  if(typeof receiptId!=="string"||!UUID.test(receiptId)) throw new BciCaseLinkDenied();
   const receipt=receiptId.toLowerCase();
   try{
    const p=await deps.authenticate();
@@ -106,7 +106,7 @@ export function createAuthenticatedDemandReceiptCaseLink(deps:Deps){
         AND case_key=$2 LIMIT 2`,[tenant,key]);
     const c=found.rows[0];
     if(found.rows.length!==1||!obj(c)||typeof c.id!=="string"||!UUID.test(c.id)||
-      c.title!==title||c.question!==question||c.status!=="REVIEW")deny();
+      c.title!==title||c.question!==question||c.status!=="REVIEW") throw new BciCaseLinkDenied();
     await query(`INSERT INTO bci_dev.case_evidence(case_id,evidence_id,tenant_id,product)
       VALUES ($1::uuid,$2::uuid,$3::uuid,'demand')
       ON CONFLICT (case_id,evidence_id) DO NOTHING`,[c.id,receipt,tenant]);
