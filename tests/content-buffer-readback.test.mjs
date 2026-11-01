@@ -150,3 +150,22 @@ test('live-shaped Instagram carousel readback flags duplicate published alt text
   // Older provider assets without altText do not get a fabricated duplicate.
   assert.equal(summarizeBufferReadback({post:ig,scope:igScope}).status,'MEASURED');
 });
+
+test('native permalink identity is separately hashed without rewriting historical snapshot IDs',()=>{
+  const original=summarizeBufferReadback({post:ig,scope:igScope});
+  const changed=summarizeBufferReadback({post:{...ig,
+    externalLink:'https://www.instagram.com/p/DfCK-3YIDRE/'},scope:igScope});
+  assert.equal(original.snapshotFingerprint,changed.snapshotFingerprint);
+  assert.match(original.nativePostReferenceFingerprint,
+    /^content-buffer-native-post-[a-f0-9]{64}$/);
+  assert.notEqual(original.nativePostReferenceFingerprint,
+    changed.nativePostReferenceFingerprint);
+  assert.equal(summarizeBufferReadback({post:{...ig,status:'scheduled'},
+    scope:igScope}).nativePostReferenceFingerprint,null);
+  assert.equal(summarizeBufferReadback({post:{...ig,
+    externalLink:'https://www.instagram.com/'},scope:igScope})
+    .nativePostReferenceFingerprint,null);
+  assert.equal(JSON.stringify(original).includes('instagram.com'),false);
+  assert.equal(original.providerAuthenticated,false);
+  assert.equal(original.contentPublisherVerified,false);
+});

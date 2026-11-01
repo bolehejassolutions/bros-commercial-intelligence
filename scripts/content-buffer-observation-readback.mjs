@@ -16,9 +16,18 @@ export function summarizeBufferReadback(input){
     1,o.tenantId,o.instanceId,o.contentId,o.postId,o.channelId,o.channelService,
     o.status,o.sentAt,o.metricsUpdatedAt,o.format,o.assetCount,counts,o.flags
   ])).digest('hex');
+  // Keep the historical snapshotFingerprint stable for replay/idempotency.
+  // Buffer list projections may omit native permalinks; a detailed get_post
+  // permalink is separate provenance, never provider authentication by itself.
+  const nativePostReferenceFingerprint=o.nativeUrl===null?null:
+    'content-buffer-native-post-'+createHash('sha256').update(JSON.stringify([
+      1,o.tenantId,o.instanceId,o.contentId,o.postId,o.channelId,
+      o.channelService,o.nativeUrl
+    ])).digest('hex');
   return Object.freeze({
     schemaVersion:1,sourceTrust:'UNATTESTED_CONNECTOR_RESPONSE',
-    snapshotFingerprint:fingerprint,channelService:o.channelService,
+    snapshotFingerprint:fingerprint,nativePostReferenceFingerprint,
+    channelService:o.channelService,
     status:o.status,format:o.format,assetCount:o.assetCount,
     providerMediaIdsPresent:o.providerMediaIdsPresent,
     providerMediaIdsComplete:o.providerMediaIdsComplete,
