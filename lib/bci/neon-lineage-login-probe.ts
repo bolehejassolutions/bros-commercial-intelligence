@@ -105,15 +105,15 @@ export function createRestrictedLineageReadOnlyProbe(transaction: ScopedTransact
         if (await membershipCount() !== 0) deny();
         // Neon DEV contains an independently read-back revoked principal.
         // Query that principal itself, not just the operator under foreign GUC.
-        if (otherPrincipal === FOREIGN_PRINCIPAL &&
-            await membershipCount(otherPrincipal) !== 0) deny();
+        if (otherPrincipal !== FOREIGN_PRINCIPAL) deny();
+        if (await membershipCount(otherPrincipal) !== 0) deny();
         await setScope(principalId, tenantId, "content");
         if (await membershipCount() !== 0) deny();
         await setScope(principalId, tenantId, "demand");
         if (await membershipCount() !== 1) deny();
         return Object.freeze({ directLineageLoginVerified: true, leastPrivilegeAndForcedRlsVerified: true,
           activeMembershipVerified: true, negativeTenantPrincipalProductVerified: true,
-          revokedFixturePrincipalDenied: otherPrincipal === FOREIGN_PRINCIPAL,
+          revokedFixturePrincipalDenied: true,
           lineageAppended: false });
       });
     } catch { return deny(); }
