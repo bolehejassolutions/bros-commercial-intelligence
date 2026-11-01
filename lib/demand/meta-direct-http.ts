@@ -40,6 +40,53 @@ const historicalControl = Object.freeze({
   until: "2026-10-27",
 });
 
+/**
+ * DEMAND-owned projection for the EXISTING BCI intake boundary.
+ * BCI preflight requires exact keys, not DEMAND's larger internal candidate
+ * and observation objects. Never pass tenant/principal/token/raw Meta JSON.
+ * This is NOT a signed provider receipt or permission to append.
+ *
+ * An integrated BCI-owned runtime can inject this projection as its
+ * observeServerMeta(scope) result after its OWN fresh authentication,
+ * membership checks and server-side Meta GET.
+ */
+type DemandReadResult = NonNullable<Awaited<ReturnType<ReturnType<typeof createDemandDirectMetaReader>>>>;
+export function projectDemandMetaBciIntake(result: DemandReadResult) {
+  const candidate = result.readCandidate;
+  const observation = result.observation;
+  if (candidate.reportStatus !== result.status ||
+      (result.status === "NO_ROWS_NOT_ZERO") !== (observation === null) ||
+      (candidate.metrics === null) !== (observation === null)) {
+    throw new Error("BROS_DEMAND_BCI_INTAKE_SHAPE_DENIED");
+  }
+  const bciCandidate = Object.freeze({
+    candidateKey: candidate.candidateKey,
+    stage: candidate.stage,
+    reportStatus: candidate.reportStatus,
+    windowStart: candidate.windowStart,
+    windowEndInclusive: candidate.windowEndInclusive,
+    collectedAt: candidate.collectedAt,
+    metricsPresent: observation !== null,
+    independentProviderReceiptRecorded: false as const,
+    durableBciEvidenceRecorded: false as const,
+    executionAllowed: false as const,
+  });
+  const bciReport = observation ? Object.freeze({
+    campaignId: observation.campaignId,
+    windowStart: observation.windowStart,
+    windowEndInclusive: observation.windowEndInclusive,
+    snapshotKey: observation.snapshotKey,
+    currency: observation.currency,
+    spendMinor: observation.spendMinor,
+    inlineLinkClicks: observation.inlineLinkClicks,
+    landingPageViews: observation.landingPageViews,
+    metaAttributedPurchases: observation.metaAttributedPurchases,
+    pixelPurchaseEvents: observation.pixelPurchaseEvents,
+    actionAliasMismatch: observation.actionAliasMismatch,
+  }) : null;
+  return Object.freeze({ candidate: bciCandidate, report: bciReport });
+}
+
 export function createDemandMetaHttpHandler(deps: Dependencies) {
   if (!deps || typeof deps.enabled !== "function" ||
       typeof deps.verifyJwt !== "function" ||
@@ -110,6 +157,7 @@ export function createDemandMetaHttpHandler(deps: Dependencies) {
       // Whitelist fields. Never expose JWT, server token, raw provider JSON,
       // tenant/private principal or provider error details.
       const observation = result.observation;
+      const bciIntake = projectDemandMetaBciIntake(result);
       return json({
         status: result.status,
         source: "DIRECT_META_GRAPH_API",
@@ -129,18 +177,7 @@ export function createDemandMetaHttpHandler(deps: Dependencies) {
         } : null,
         // Non-persistent candidate for future independently authenticated BCI
         // intake. No tenant, principal, token, or raw provider body is exposed.
-        readCandidate: {
-          candidateKey: result.readCandidate.candidateKey,
-          stage: result.readCandidate.stage,
-          reportStatus: result.readCandidate.reportStatus,
-          windowStart: result.readCandidate.windowStart,
-          windowEndInclusive: result.readCandidate.windowEndInclusive,
-          collectedAt: result.readCandidate.collectedAt,
-          metricsPresent: result.readCandidate.metrics !== null,
-          independentProviderReceiptRecorded: false,
-          durableBciEvidenceRecorded: false,
-          executionAllowed: false,
-        },
+        readCandidate: bciIntake.candidate,
         verifiedPaidOrders: null, verifiedCpaMinor: null,
         durableBciEvidenceRecorded: false,
         campaignExecutionAllowed: false,
