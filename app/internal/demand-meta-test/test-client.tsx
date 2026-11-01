@@ -282,7 +282,12 @@ export default function DemandMetaTestClient() {
           !("verifiedCpaMinor" in body) || body.verifiedCpaMinor !== null ||
           !("observed" in body) || !body.observed || typeof body.observed !== "object" ||
           !("diagnosis" in body) || typeof body.diagnosis !== "string" ||
-          !("proposedAction" in body) || typeof body.proposedAction !== "string") throw new Error();
+          !("proposedAction" in body) || typeof body.proposedAction !== "string" ||
+          !("hypothesis" in body) || typeof body.hypothesis !== "string" ||
+          !("primaryKpi" in body) || typeof body.primaryKpi !== "string" ||
+          !("guardrails" in body) || typeof body.guardrails !== "string" ||
+          !("actionExecuted" in body) || body.actionExecuted !== false ||
+          !("learningRecorded" in body) || body.learningRecorded !== false) throw new Error();
       if (!("caseLink" in body)) throw new Error();
       let caseSummary = " No durable BCI case link observed in this scoped read.";
       if (body.caseLink !== null) {
@@ -304,8 +309,11 @@ export default function DemandMetaTestClient() {
         ". Meta observations: spend " + spend + ", link clicks " + format(o.inlineLinkClicks) +
         ", LPV " + format(o.landingPageViews) + ", platform purchase signal " +
         format(o.metaAttributedPurchases) + ". Diagnosis: " + body.diagnosis +
+        " Hypothesis (UNVERIFIED): " + body.hypothesis +
         " Proposed action (NOT approved/executed): " + body.proposedAction +
-        caseSummary + " No HitPay attribution, CPA, outcome or learning verified.");
+        " Proposed success metric (NOT measured): " + body.primaryKpi +
+        " Guardrails: " + body.guardrails +
+        caseSummary + " Proposal not yet persisted; no HitPay attribution, CPA, outcome or learning verified.");
       setNotice("Read-only persisted DEMAND diagnosis available; review only, no action executed.");
     } catch {
       setNotice("Persisted evidence diagnosis could not be independently reviewed in this session.");
