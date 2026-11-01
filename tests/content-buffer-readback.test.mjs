@@ -160,8 +160,23 @@ test('native permalink identity is separately hashed without rewriting historica
     /^content-buffer-native-post-[a-f0-9]{64}$/);
   assert.notEqual(original.nativePostReferenceFingerprint,
     changed.nativePostReferenceFingerprint);
+  // A native URL's www/bare-host and trailing-slash aliases denote one post.
+  // Keep historical exact-reference fingerprint unchanged for compatibility.
+  const alias=summarizeBufferReadback({post:{...ig,
+    externalLink:'https://instagram.com/p/DfCK-3YIDRD'},scope:igScope});
+  assert.notEqual(original.nativePostReferenceFingerprint,
+    alias.nativePostReferenceFingerprint);
+  assert.equal(original.nativePostCanonicalFingerprint,
+    alias.nativePostCanonicalFingerprint);
+  assert.notEqual(original.nativePostCanonicalFingerprint,
+    changed.nativePostCanonicalFingerprint);
+  assert.match(original.nativePostCanonicalFingerprint,
+    /^content-buffer-native-canonical-[a-f0-9]{64}$/);
+  assert.equal(JSON.stringify(alias).includes('instagram.com'),false);
   assert.equal(summarizeBufferReadback({post:{...ig,status:'scheduled'},
     scope:igScope}).nativePostReferenceFingerprint,null);
+  assert.equal(summarizeBufferReadback({post:{...ig,status:'scheduled'},
+    scope:igScope}).nativePostCanonicalFingerprint,null);
   assert.equal(summarizeBufferReadback({post:{...ig,
     externalLink:'https://www.instagram.com/'},scope:igScope})
     .nativePostReferenceFingerprint,null);

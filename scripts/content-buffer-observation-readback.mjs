@@ -24,9 +24,21 @@ export function summarizeBufferReadback(input){
       1,o.tenantId,o.instanceId,o.contentId,o.postId,o.channelId,
       o.channelService,o.nativeUrl
     ])).digest('hex');
+  // Supplementary canonical native-post identity. Provider may return www/bare
+  // host and optional trailing slash for the SAME post. Preserve both the
+  // historical snapshot ID and exact-reference fingerprint for existing replays.
+  // This alias identity is advisory, NOT proof of authenticated provider SENT.
+  const canonicalNativePost=o.nativeUrl===null?null:
+    o.nativeUrl.replace(/^https:\/\/(?:www\.)?/,'https://').replace(/\/$/,'');
+  const nativePostCanonicalFingerprint=canonicalNativePost===null?null:
+    'content-buffer-native-canonical-'+createHash('sha256').update(JSON.stringify([
+      2,o.tenantId,o.instanceId,o.contentId,o.postId,o.channelId,
+      o.channelService,canonicalNativePost
+    ])).digest('hex');
   return Object.freeze({
     schemaVersion:1,sourceTrust:'UNATTESTED_CONNECTOR_RESPONSE',
     snapshotFingerprint:fingerprint,nativePostReferenceFingerprint,
+    nativePostCanonicalFingerprint,
     channelService:o.channelService,
     status:o.status,format:o.format,assetCount:o.assetCount,
     providerMediaIdsPresent:o.providerMediaIdsPresent,
