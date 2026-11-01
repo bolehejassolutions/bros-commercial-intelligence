@@ -34,6 +34,7 @@ export default function NeonPreviewSignIn() {
   const [writerCheckResult, setWriterCheckResult] = useState<string | null>(null);
   const [lineageCheckResult, setLineageCheckResult] = useState<string | null>(null);
   const [caseLinkResult, setCaseLinkResult] = useState<string | null>(null);
+  const [lineageReceiptResult, setLineageReceiptResult] = useState<string | null>(null);
   const [product, setProduct] = useState<"content" | "demand">("content");
 
   useEffect(() => {
@@ -258,6 +259,38 @@ export default function NeonPreviewSignIn() {
     } finally { setBusy(false); }
   }
 
+
+  async function saveDemandEvidenceLineage() {
+    if (busy || product !== "demand") return;
+    setBusy(true);
+    setLineageReceiptResult(null);
+    setMessage("Checking the existing Meta receipt for an unverified DEV lineage root…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/neon-lineage-receipt", {
+        method: "POST", headers: { Authorization: "Bearer " + token },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 ||
+          !/no-store/i.test(response.headers.get("cache-control") || "")) throw new Error();
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          Object.keys(payload).length !== 5 ||
+          !("receiptId" in payload) || payload.receiptId !== "4b1d0b40-371f-4c82-aaa9-d77580f88fac" ||
+          !("status" in payload) || (payload.status !== "inserted" && payload.status !== "replayed") ||
+          !("stage" in payload) || payload.stage !== "evidence" ||
+          !("verification" in payload) || payload.verification !== "unverified" ||
+          !("providerAttested" in payload) || payload.providerAttested !== false) throw new Error();
+      setLineageReceiptResult("DEV evidence-stage lineage " + payload.status +
+        " (UNVERIFIED). Independent Neon post-commit readback/replay still required. No diagnosis, action, outcome or learning executed.");
+      setMessage("Bounded DEV lineage action completed; see the result below.");
+    } catch {
+      setLineageReceiptResult("DEV lineage action was not accepted; no durable append certified.");
+      setMessage("DEV lineage action denied or unavailable.");
+    } finally { setBusy(false); }
+  }
+
   async function signOut() {
     if (busy) return;
     setBusy(true);
@@ -270,6 +303,7 @@ export default function NeonPreviewSignIn() {
       setTenantCheckResult(null);
       setWriterCheckResult(null);
       setLineageCheckResult(null);
+      setLineageReceiptResult(null);
       setMessage("You have signed out of this development session.");
     } catch { setMessage("Sign-out could not be confirmed. Please try again."); }
     finally { setBusy(false); }
@@ -291,6 +325,7 @@ export default function NeonPreviewSignIn() {
         {step === "ready" && writerCheckResult !== null ? <p role="status" aria-label="Restricted writer login result">{writerCheckResult}</p> : null}
         {step === "ready" && lineageCheckResult !== null ? <p role="status" aria-label="Lineage writer login result">{lineageCheckResult}</p> : null}
         {step === "ready" && caseLinkResult !== null ? <p role="status" aria-label="Restricted case/link result">{caseLinkResult}</p> : null}
+        {step === "ready" && lineageReceiptResult !== null ? <p role="status" aria-label="Restricted lineage receipt result">{lineageReceiptResult}</p> : null}
         {step === "start" ? <div className="auth-form">
           <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>
             {cooldown > 0 ? `Wait ${cooldown}s` : "Send sign-in code (verified email)"}
@@ -328,6 +363,7 @@ export default function NeonPreviewSignIn() {
             <button type="button" disabled={busy} onClick={checkRestrictedWriterLogin}>Check restricted evidence writer LOGIN (DEV read-only)</button>
             <button type="button" disabled={busy} onClick={checkLineageLogin}>Check lineage writer LOGIN + tenant/product negatives (DEV read-only)</button>
             <button type="button" disabled={busy || product !== "demand"} onClick={createDemandReviewCase}>Save existing Meta receipt as REVIEW case (DEV only)</button>
+            <button type="button" disabled={busy || product !== "demand"} onClick={saveDemandEvidenceLineage}>Append existing Meta receipt to unverified lineage (DEV only)</button>
             <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
           </div>
         ) : null}

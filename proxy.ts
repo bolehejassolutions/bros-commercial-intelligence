@@ -6,6 +6,7 @@ export async function proxy(request: NextRequest) {
   // boundary. Do not make it depend on the separate Supabase operator session.
   if (request.nextUrl.pathname === "/api/internal/neon-evidence" ||
       request.nextUrl.pathname === "/api/internal/neon-demand-case" ||
+      request.nextUrl.pathname === "/api/internal/neon-lineage-receipt" ||
       request.nextUrl.pathname === "/internal/neon-preview") {
     return NextResponse.next({ request });
   }
