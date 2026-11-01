@@ -31,14 +31,15 @@ function normalize(input:unknown):ProposalInput {
  if(!exact(input,["hypothesis","proposedAction","proposedSuccessMetric","confidence"]))deny();
  const v=input as Record<string,unknown>;
  const text=(s:unknown):string=>{
-  if(typeof s!=="string")deny();
+  if(typeof s!=="string")return deny();
   const x=s.trim();
   if(x.length<5||x.length>600||/[\u0000-\u001f\u007f\u202a-\u202e]/.test(x))deny();
   return x;
  };
- if(v.confidence!=="low"&&v.confidence!=="medium"&&v.confidence!=="high")deny();
+ if(v.confidence!=="low"&&v.confidence!=="medium"&&v.confidence!=="high")return deny();
+ const confidence=v.confidence as ProposalInput["confidence"];
  return Object.freeze({hypothesis:text(v.hypothesis),proposedAction:text(v.proposedAction),
-  proposedSuccessMetric:text(v.proposedSuccessMetric),confidence:v.confidence});
+  proposedSuccessMetric:text(v.proposedSuccessMetric),confidence});
 }
 function stableId(tenant:string,v:ProposalInput):string {
  const h=createHash("sha256").update(JSON.stringify(["bci-demand-proposal:v1",tenant,CASE_ID,
@@ -173,8 +174,9 @@ export function createDemandProposalHttpHandler(deps:HttpDeps){
     !/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(auth))
    return response({error:"Unauthorized."},401);
   try{
-   if(!request.body)deny();
-   const reader=request.body.getReader();
+   const body=request.body;
+   if(body===null)return deny();
+   const reader=body.getReader();
    const parts:Uint8Array[]=[];let length=0;
    while(true){
     const next=await reader.read();
