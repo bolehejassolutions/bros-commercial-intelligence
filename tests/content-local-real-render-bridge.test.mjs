@@ -13,7 +13,7 @@ import {generateKeyPairSync,sign} from 'node:crypto';
 import {contentSignedReviewSigningBytes,verifyContentSignedEditorialDecision} from '../lib/content/signed-editorial-decision.mjs';
 import {prepareContentReviewDispatchPreflight} from '../lib/content/review-dispatch-binding.mjs';
 import {prepareContentBufferDispatchIntent} from '../lib/content/buffer-dispatch-intent.mjs';
-import {prepareContentScriptMediaReviewPayload,contentScriptMediaSigningBytes,verifyContentScriptMediaReviewReceipt} from '../lib/content/signed-script-media-review.mjs';
+import {prepareContentScriptMediaReviewPayload,contentScriptMediaSigningBytes,verifyContentScriptMediaReviewReceipt,prepareContentScriptMediaAuthBindingPreflight} from '../lib/content/signed-script-media-review.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const config={
@@ -227,6 +227,40 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
     const authDeps={authenticateReviewer:async()=>({userId:reviewer,authenticated:true}),
       membershipsFor:async(id,product)=>[{
         principalId:id,tenantId:config.tenantId,product,active:true}]};
+    // Test-only BCI-shaped reviewer dependencies bind BOTH image and script
+    // signatures to one principal. This is not authenticated provider evidence.
+    const scopedScriptPayload=prepareContentScriptMediaReviewPayload(trendArgs,
+      scopedReceipt,trusted,scriptChecks,'a'.repeat(32),scriptReviewedAt,reviewNow);
+    const scopedScriptReceipt={schemaVersion:2,keyId:'test-only',
+      payload:scopedScriptPayload,
+      signature:sign(null,contentScriptMediaSigningBytes(scopedScriptPayload),
+        privateKey).toString('base64url')};
+    const scriptAuthBound=await prepareContentScriptMediaAuthBindingPreflight(
+      trendArgs,scopedReceipt,scopedScriptReceipt,trusted,authDeps,reviewNow);
+    assert.equal(scriptAuthBound.status,
+      'SCRIPT_MEDIA_AUTH_DEPENDENCY_MATCHED_PREFLIGHT_ONLY');
+    assert.equal(scriptAuthBound.signedReviewEvidenceId,
+      verifyContentSignedEditorialDecision(handoff,scopedReceipt,trusted,
+        reviewNow).signedReviewEvidenceId);
+    assert.equal(scriptAuthBound.scriptMediaReviewId,trendMedia.scriptMediaReviewId);
+    assert.equal(scriptAuthBound.serverAuthDependenciesMatched,true);
+    for(const k of ['reviewerAuthenticatedByThisModule','independentSemanticQaVerified',
+      'durableApprovalRecorded','atomicReservationVerified','providerSentVerified',
+      'measurementVerified','learningVerified','sharedBciAuditVerified',
+      'executionAllowed','customerSaasReady'])assert.equal(scriptAuthBound[k],false,k);
+    await assert.rejects(prepareContentScriptMediaAuthBindingPreflight(
+      [config,research,candidateId,channel,proposal,changedScript,manifest,buffers,copy],
+      scopedReceipt,scopedScriptReceipt,trusted,authDeps,reviewNow),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    await assert.rejects(prepareContentScriptMediaAuthBindingPreflight(
+      trendArgs,scopedReceipt,scopedScriptReceipt,trusted,
+      {...authDeps,authenticateReviewer:async()=>({
+        userId:'33333333-3333-4333-8333-333333333333',authenticated:true})},reviewNow),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    await assert.rejects(prepareContentScriptMediaAuthBindingPreflight(
+      trendArgs,scopedReceipt,{...scopedScriptReceipt,
+        payload:{...scopedScriptPayload,scriptReviewedAt:'2026-10-29T06:59:30.000Z'}},
+      trusted,authDeps,reviewNow),/CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
     const dispatchOptions={providerOrganizationId:'5c8ff5094c54ee487265a5c6'};
     const bindingArgs=[config,brief,manifest,buffers,copy,dispatchOptions,
       scopedReceipt,new Map([['test-only',publicKey]]),authDeps,
