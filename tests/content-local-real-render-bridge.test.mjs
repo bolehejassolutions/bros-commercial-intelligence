@@ -13,7 +13,8 @@ import {generateKeyPairSync,sign} from 'node:crypto';
 import {contentSignedReviewSigningBytes,verifyContentSignedEditorialDecision} from '../lib/content/signed-editorial-decision.mjs';
 import {prepareContentReviewDispatchPreflight} from '../lib/content/review-dispatch-binding.mjs';
 import {prepareContentBufferDispatchIntent} from '../lib/content/buffer-dispatch-intent.mjs';
-import {prepareContentScriptMediaReviewPayload,contentScriptMediaSigningBytes,verifyContentScriptMediaReviewReceipt,prepareContentScriptMediaAuthBindingPreflight} from '../lib/content/signed-script-media-review.mjs';
+import {prepareContentScriptMediaReviewPayload,contentScriptMediaSigningBytes,verifyContentScriptMediaReviewReceipt,prepareContentScriptMediaAuthBindingPreflight,
+  prepareContentScriptDispatchBlockedPreflight} from '../lib/content/signed-script-media-review.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const config={
@@ -272,6 +273,37 @@ test('real canonical plan -> Pillow 1080x1350 RGB PNG bytes -> manifest -> indep
     assert.match(candidate.dispatchIntentId,/^content-buffer-dispatch-[a-f0-9]{64}$/);
     // Cross-branch BCI private contract shape; no database adapter, approval
     // persistence or provider action is supplied by this CONTENT mapping.
+    // Script publishing must FAIL CLOSED: BCI's existing eight-field image-only
+    // reservation cannot authorize the separately signed script/media review.
+    const blocked=await prepareContentScriptDispatchBlockedPreflight(trendArgs,
+      scopedReceipt,scopedScriptReceipt,trusted,authDeps,dispatchOptions,reviewNow);
+    assert.equal(blocked.status,'SCRIPT_DISPATCH_BCI_BINDING_UNSUPPORTED_BLOCKED');
+    assert.equal(blocked.bciReservationRequestCandidate,null);
+    assert.equal(blocked.imageOnlyDispatchIntentId,candidate.dispatchIntentId);
+    assert.equal(blocked.signedScriptMediaEvidenceId,
+      scriptAuthBound.signedScriptMediaEvidenceId);
+    assert.match(blocked.scriptDispatchScopeId,
+      /^content-script-dispatch-scope-[a-f0-9]{64}$/);
+    assert.equal((await prepareContentScriptDispatchBlockedPreflight(trendArgs,
+      scopedReceipt,scopedScriptReceipt,trusted,authDeps,dispatchOptions,reviewNow))
+      .scriptDispatchScopeId,blocked.scriptDispatchScopeId);
+    for(const k of ['bciScriptDispatchBindingSupported','durableApprovalRecorded',
+      'atomicReservationVerified','providerSentVerified','measurementVerified',
+      'learningVerified','executionAllowed','customerSaasReady'])
+      assert.equal(blocked[k],false,k);
+    await assert.rejects(prepareContentScriptDispatchBlockedPreflight(
+      [config,research,candidateId,channel,proposal,changedScript,manifest,buffers,copy],
+      scopedReceipt,scopedScriptReceipt,trusted,authDeps,dispatchOptions,reviewNow),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    await assert.rejects(prepareContentScriptDispatchBlockedPreflight(trendArgs,
+      scopedReceipt,{...scopedScriptReceipt,payload:{...scopedScriptPayload,
+        scriptReviewedAt:'2026-10-29T06:59:30.000Z'}},
+      trusted,authDeps,dispatchOptions,reviewNow),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
+    await assert.rejects(prepareContentScriptDispatchBlockedPreflight(trendArgs,
+      scopedReceipt,scopedScriptReceipt,trusted,authDeps,
+      {...dispatchOptions,approvalGranted:true},reviewNow),
+      /CONTENT_SCRIPT_MEDIA_SIGNED_REVIEW_DENIED/);
     const bciRequest=candidate.bciReservationRequestCandidate;
     const dispatch=prepareContentBufferDispatchIntent(config,brief,buffers,copy,dispatchOptions);
     assert.deepEqual(Object.keys(bciRequest),['dispatchIntentId','binding']);
