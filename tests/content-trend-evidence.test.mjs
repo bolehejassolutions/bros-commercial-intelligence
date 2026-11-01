@@ -62,7 +62,7 @@ test('only observed single-channel samples retain single-platform uncertainty',(
   assert.equal(p.candidates[0].evidenceClass,'SINGLE_PLATFORM_HYPOTHESIS');
   assert.equal(p.candidates[0].performanceRankingVerified,false);
 });
-test('rejects wrong host, platform, trackers, inaccessible pages and duplicate URLs',()=>{
+test('rejects wrong host, platform, trackers, malformed locators and duplicate URLs',()=>{
   for(const url of [
     'http://instagram.com/reel/a','https://instagram.com/login',
     'https://instagram.com/reel/abc?utm=unsafe',
@@ -77,6 +77,64 @@ test('rejects wrong host, platform, trackers, inaccessible pages and duplicate U
   assert.throws(()=>buildContentTrendResearchPacket(packet([
     record({platform:'reddit'})
   ])),/TREND_PLATFORM_URL_MISMATCH/);
+});
+
+test('rejects aliases of one native post even when source IDs and URL paths differ',()=>{
+  for(const [platform,first,alias] of [
+    ['instagram','https://instagram.com/reel/CxABCDE12','https://www.instagram.com/p/CxABCDE12/'],
+    ['tiktok','https://tiktok.com/@first/video/123456789','https://www.tiktok.com/@renamed/video/123456789'],
+    ['reddit','https://reddit.com/r/sales/comments/abc123/original_title','https://reddit.com/comments/ABC123/new_title']
+  ]){
+    assert.throws(()=>buildContentTrendResearchPacket(packet([
+      record({platform,url:first}),record({platform,sourceId:'alias-002',url:alias})
+    ])),/DUPLICATE_TREND_SOURCE/);
+  }
+});
+
+test('packet snapshots and proposed brief provenance are deeply immutable',()=>{
+  const p=buildContentTrendResearchPacket(packet());
+  assert.throws(()=>{p.candidates[0].topic='Forged topic';},TypeError);
+  assert.throws(()=>{p.records[0].metrics.views=999999;},TypeError);
+  assert.throws(()=>{p.candidates[0].sourceUrls.push('https://evil.example');},TypeError);
+  const plan=proposeContentBriefFromTrend(instance(),p,p.candidates[0].candidateId,
+    {service:'instagram',channelId:'ig-A'},proposal());
+  assert.throws(()=>{plan.sourceLinks[0]='https://evil.example';},TypeError);
+  assert.throws(()=>{plan.brief.topic='Forged topic';},TypeError);
+});
+
+test('revalidates serialized packet provenance and derived claims before proposing a brief',()=>{
+  const original=buildContentTrendResearchPacket(packet());
+  for(const change of [
+    p=>{p.candidates[0].topic='Forged topic';},
+    p=>{p.candidates[0].sourceUrls[0]='https://evil.example';},
+    p=>{p.candidates[0].observedSourceCount=999;},
+    p=>{p.candidates[0].candidateId='forged-candidate';},
+    p=>{p.records[0].metrics.views=999999;},
+    p=>{p.packetId='forged-packet';},
+    p=>{p.viralityVerified=true;},
+    p=>{p.providerAuthenticated=true;},
+    p=>{p.candidates[0].marketDemandVerified=true;},
+    p=>{p.extraClaim=true;}
+  ]){
+    const p=JSON.parse(JSON.stringify(original));change(p);
+    assert.throws(()=>proposeContentBriefFromTrend(instance(),p,p.candidates[0].candidateId,
+      {service:'instagram',channelId:'ig-A'},proposal()),/INVALID_TREND_RESEARCH_PACKET|TREND_PACKET_INTEGRITY_MISMATCH/);
+  }
+  // JSON object-key order is irrelevant; source/candidate array order remains part of the snapshot.
+  const reorder=v=>Array.isArray(v)?v.map(reorder):v&&typeof v==='object'
+    ?Object.fromEntries(Object.entries(v).reverse().map(([k,x])=>[k,reorder(x)])):v;
+  const p=reorder(JSON.parse(JSON.stringify(original)));
+  assert.equal(proposeContentBriefFromTrend(instance(),p,p.candidates[0].candidateId,
+    {service:'instagram',channelId:'ig-A'},proposal()).sourcePacketId,original.packetId);
+});
+
+test('rejects derived accessor fields without invoking them',()=>{
+  const p=JSON.parse(JSON.stringify(buildContentTrendResearchPacket(packet())));
+  let reads=0;
+  Object.defineProperty(p.candidates[0],'topic',{enumerable:true,get(){reads++;return 'Forged topic';}});
+  assert.throws(()=>proposeContentBriefFromTrend(instance(),p,p.candidates[0].candidateId,
+    {service:'instagram',channelId:'ig-A'},proposal()),/TREND_PACKET_INTEGRITY_MISMATCH/);
+  assert.equal(reads,0);
 });
 test('strict date, metric and unknown field constraints',()=>{
   assert.throws(()=>buildContentTrendResearchPacket(packet([
@@ -95,6 +153,22 @@ test('strict date, metric and unknown field constraints',()=>{
     /INVALID_TREND_PACKET/);
   const p=packet();p.records=new Array(2);
   assert.throws(()=>buildContentTrendResearchPacket(p),/INVALID_TREND_RECORDS/);
+});
+test('preserves date-only publication precision without fabricating a UTC instant',()=>{
+  const p=buildContentTrendResearchPacket(packet([record({publishedAt:'2026-10-20'})]));
+  assert.equal(p.records[0].publishedAt,'2026-10-20');
+  assert.equal(p.providerAuthenticated,false);
+  assert.equal(p.viralityVerified,false);
+  const result=proposeContentBriefFromTrend(instance(),JSON.parse(JSON.stringify(p)),
+    p.candidates[0].candidateId,{service:'instagram',channelId:'ig-A'},proposal());
+  assert.equal(result.executionAllowed,false);
+});
+test('date-only sources must fit wholly inside the observation and lookback bounds',()=>{
+  for(const publishedAt of ['2026-10-02','2026-10-30','2026-11-01',
+    '2026-02-30','2026-13-01','2026-10-2']){
+    assert.throws(()=>buildContentTrendResearchPacket(packet([record({publishedAt})])),
+      /TREND_SOURCE_OUTSIDE_WINDOW/);
+  }
 });
 test('converts evidence only to review-required existing CONTENT plan, not publisher permission',()=>{
   const p=buildContentTrendResearchPacket(packet());
@@ -119,3 +193,4 @@ test('prevents cross-instance brief generation and unconfigured publisher channe
   assert.throws(()=>proposeContentBriefFromTrend(instance(),p,'nonexistent',
     {service:'instagram',channelId:'ig-A'},proposal()),/TREND_CANDIDATE_NOT_FOUND/);
 });
+
