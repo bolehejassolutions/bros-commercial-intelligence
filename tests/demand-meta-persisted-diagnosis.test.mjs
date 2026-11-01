@@ -43,6 +43,18 @@ test("real stored Meta receipt projects reviewable diagnosis, never a paid order
   assert.equal(r.outcomeVerified,false);
   assert.equal(r.learningRecorded,false);
   assert.equal(r.firstPartyAttribution,"unknown");
+  assert.equal(r.caseLink,null);
+});
+test("real same-scope BCI REVIEW case is projected without implying approval or outcomes",()=>{
+  const linkedCase={caseId:"a474cd88-76a3-4c96-8cde-4fcfea45be83",
+    evidenceId:DEMAND_PILOT_RECEIPT_ID,tenantId:tenant,product:"demand",status:"REVIEW"};
+  const r=reviewPersistedDemandMetaReceipt({...receipt,linkedCase});
+  assert.equal(r.caseLink.caseId,linkedCase.caseId);
+  assert.equal(r.caseLink.status,"REVIEW");
+  assert.equal(r.caseLink.actionAuthorized,false);
+  assert.equal(r.caseLink.outcomeVerified,false);
+  assert.throws(()=>reviewPersistedDemandMetaReceipt({...receipt,linkedCase:{...linkedCase,tenantId:"11111111-1111-4111-8111-111111111111"}}));
+  assert.throws(()=>reviewPersistedDemandMetaReceipt({...receipt,linkedCase:{...linkedCase,status:"APPROVED"}}));
 });
 test("missing fields are unknown, never fabricated zero",()=>{
   const r=reviewPersistedDemandMetaReceipt({...receipt,metrics:{...receipt.metrics,spend_minor:null,landing_page_views:null}});
@@ -87,15 +99,19 @@ test("existing BCI restricted physical writer performs only a scoped READ ONLY t
       session_role_name:"bci_dev_evidence_writer_restricted",can_login:true,bypass_rls:false,
       superuser:false,inherits:false,parent_roles:0}]};
     if(sql.includes("AS database_name"))return {rows:[{database_name:"bros_intelligence_dev",
-      forced_rls:true,can_read:true,no_mutation:true}]};
+      forced_rls:true,can_read:true,no_mutation:true,cases_rls:true,links_rls:true,
+      cases_read:true,links_read:true,cases_no_mutation:true,links_no_mutation:true}]};
     if(sql.includes("FROM pg_policies"))return {rows:RESTRICTED_EVIDENCE_WRITER_POLICIES};
     if(sql.includes("FROM bci_dev.tenant_memberships"))return {rows:[{principal_id:principal}]};
     if(sql.includes("FROM bci_dev.evidence"))return {rows:[receipt]};
+    if(sql.includes("FROM bci_dev.case_evidence"))return {rows:[{caseId:"a474cd88-76a3-4c96-8cde-4fcfea45be83",evidenceId:DEMAND_PILOT_RECEIPT_ID,tenantId:tenant,product:"demand",status:"REVIEW"}]};
     return {rows:[]};
   }})};
   const reader=createDemandMetaReceiptReader(createPgReadOnlyTransaction(pool));
   const result=await reader(tenant,principal);
   assert.equal(result.id,DEMAND_PILOT_RECEIPT_ID);
+  assert.equal(result.linkedCase?.status,"REVIEW");
+  assert.equal(result.linkedCase?.evidenceId,DEMAND_PILOT_RECEIPT_ID);
   assert.ok(statements.includes("BEGIN READ ONLY"));
   assert.equal(statements.some(s=>/\b(INSERT|UPDATE|DELETE)\s+(INTO|bci_dev)/i.test(s)),false);
   assert.equal(statements.filter(s=>s.includes("FROM bci_dev.tenant_memberships")).length,2);

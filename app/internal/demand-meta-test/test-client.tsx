@@ -283,6 +283,18 @@ export default function DemandMetaTestClient() {
           !("observed" in body) || !body.observed || typeof body.observed !== "object" ||
           !("diagnosis" in body) || typeof body.diagnosis !== "string" ||
           !("proposedAction" in body) || typeof body.proposedAction !== "string") throw new Error();
+      if (!("caseLink" in body)) throw new Error();
+      let caseSummary = " No durable BCI case link observed in this scoped read.";
+      if (body.caseLink !== null) {
+        if (!body.caseLink || typeof body.caseLink !== "object" || Array.isArray(body.caseLink) ||
+            !("caseId" in body.caseLink) || typeof body.caseLink.caseId !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.caseLink.caseId) ||
+            !("evidenceId" in body.caseLink) || body.caseLink.evidenceId !== body.recordId ||
+            !("status" in body.caseLink) || body.caseLink.status !== "REVIEW" ||
+            !("actionAuthorized" in body.caseLink) || body.caseLink.actionAuthorized !== false ||
+            !("outcomeVerified" in body.caseLink) || body.caseLink.outcomeVerified !== false) throw new Error();
+        caseSummary = " Durable BCI case link: " + body.caseLink.caseId + " (REVIEW only; no approval).";
+      }
       const o = body.observed as Record<string, unknown>;
       const format = (x: unknown) => x === null ? "unknown" :
         typeof x === "number" && Number.isSafeInteger(x) && x >= 0 ? String(x) : "unverified";
@@ -293,7 +305,7 @@ export default function DemandMetaTestClient() {
         ", LPV " + format(o.landingPageViews) + ", platform purchase signal " +
         format(o.metaAttributedPurchases) + ". Diagnosis: " + body.diagnosis +
         " Proposed action (NOT approved/executed): " + body.proposedAction +
-        " No HitPay attribution, CPA, outcome or learning verified.");
+        caseSummary + " No HitPay attribution, CPA, outcome or learning verified.");
       setNotice("Read-only persisted DEMAND diagnosis available; review only, no action executed.");
     } catch {
       setNotice("Persisted evidence diagnosis could not be independently reviewed in this session.");

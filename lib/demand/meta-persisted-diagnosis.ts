@@ -16,6 +16,7 @@ type Receipt = Readonly<{
   completeness: "unverified"; collectedAt: string; periodStart: string; periodEnd: string;
   providerRecordKey: string; metrics: Readonly<Record<string, unknown>>;
   unknowns: readonly string[];
+  linkedCase?: null | Readonly<{ caseId: string; evidenceId: string; tenantId: string; product: "demand"; status: "REVIEW" }>;
 }>;
 type Deps = Readonly<{
   enabled: () => boolean;
@@ -65,10 +66,18 @@ export function reviewPersistedDemandMetaReceipt(row: Receipt) {
   const landingPageViews = numberOrNull(row.metrics.landing_page_views);
   const metaAttributedPurchases = numberOrNull(row.metrics.meta_attributed_purchases);
   const pixelPurchaseEvents = numberOrNull(row.metrics.pixel_purchase_events);
+  const linkedCase = row.linkedCase ?? null;
+  if (linkedCase !== null && (!object(linkedCase) || !uuid.test(linkedCase.caseId) ||
+      linkedCase.evidenceId !== row.id || linkedCase.tenantId !== row.tenantId ||
+      linkedCase.product !== "demand" || linkedCase.status !== "REVIEW")) reject();
   return Object.freeze({
     status: "REVIEWABLE_NOT_APPROVED" as const,
     source: "NEON_DEV_BCI_PERSISTED_META_EVIDENCE" as const,
     recordId: row.id, completeness: "unverified" as const,
+    caseLink: linkedCase === null ? null : Object.freeze({
+      caseId: linkedCase.caseId, evidenceId: row.id, status: "REVIEW" as const,
+      actionAuthorized: false as const, outcomeVerified: false as const,
+    }),
     periodStart, periodEnd, collectedAt,
     observed: { spendMinor, inlineLinkClicks, landingPageViews,
       metaAttributedPurchases, pixelPurchaseEvents },
@@ -104,11 +113,13 @@ export function createDemandMetaReceiptReader(transaction: ReadTransaction) {
           r.can_login !== true || r.bypass_rls !== false ||
           r.superuser !== false || r.inherits !== false || r.parent_roles !== 0) reject();
       const posture = await query(
-        "SELECT current_database() AS database_name, (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid='bci_dev.evidence'::regclass) AS forced_rls, has_table_privilege(current_user,'bci_dev.evidence','SELECT') AS can_read, NOT has_table_privilege(current_user,'bci_dev.evidence','UPDATE,DELETE,TRUNCATE') AS no_mutation", []);
+        "SELECT current_database() AS database_name, (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid='bci_dev.evidence'::regclass) AS forced_rls, has_table_privilege(current_user,'bci_dev.evidence','SELECT') AS can_read, NOT has_table_privilege(current_user,'bci_dev.evidence','UPDATE,DELETE,TRUNCATE') AS no_mutation, (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid='bci_dev.cases'::regclass) AS cases_rls, (SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid='bci_dev.case_evidence'::regclass) AS links_rls, has_table_privilege(current_user,'bci_dev.cases','SELECT') AS cases_read, has_table_privilege(current_user,'bci_dev.case_evidence','SELECT') AS links_read, NOT has_table_privilege(current_user,'bci_dev.cases','UPDATE,DELETE,TRUNCATE') AS cases_no_mutation, NOT has_table_privilege(current_user,'bci_dev.case_evidence','UPDATE,DELETE,TRUNCATE') AS links_no_mutation", []);
       const p = posture.rows[0];
       if (posture.rows.length !== 1 || !object(p) ||
           p.database_name !== "bros_intelligence_dev" ||
-          p.forced_rls !== true || p.can_read !== true || p.no_mutation !== true) reject();
+          p.forced_rls !== true || p.can_read !== true || p.no_mutation !== true ||
+          p.cases_rls !== true || p.links_rls !== true || p.cases_read !== true ||
+          p.links_read !== true || p.cases_no_mutation !== true || p.links_no_mutation !== true) reject();
       await assertRestrictedEvidenceWriterPolicies(query);
       await query("SELECT set_config('bci.tenant_id',$1,true),set_config('bci.product','demand',true),set_config('bci.principal_id',$2,true)", [tenantId, principalId]);
       const membership = async () => {
@@ -129,10 +140,18 @@ export function createDemandMetaReceiptReader(transaction: ReadTransaction) {
           row.tenantId !== tenantId || row.product !== "demand" || row.provider !== "meta_ads" ||
           row.completeness !== "unverified" || !object(row.metrics) ||
           !Array.isArray(row.unknowns))) return reject();
+      if (row === undefined) { await membership(); return null; }
+      const linked = await query(
+        "SELECT c.id::text AS \"caseId\", ce.evidence_id::text AS \"evidenceId\", c.tenant_id::text AS \"tenantId\", c.product, c.status FROM bci_dev.case_evidence ce JOIN bci_dev.cases c ON c.id=ce.case_id AND c.tenant_id=ce.tenant_id AND c.product=ce.product WHERE ce.evidence_id=$1::uuid AND ce.tenant_id=$2::uuid AND ce.product='demand' LIMIT 2",
+        [DEMAND_PILOT_RECEIPT_ID, tenantId]);
+      if (linked.rows.length > 1) reject();
+      const linkedCase = linked.rows[0] ?? null;
+      if (linkedCase !== null && (!object(linkedCase) || !uuid.test(linkedCase.caseId) ||
+          linkedCase.evidenceId !== DEMAND_PILOT_RECEIPT_ID || linkedCase.tenantId !== tenantId ||
+          linkedCase.product !== "demand" || linkedCase.status !== "REVIEW")) reject();
       await membership();
-      if (row === undefined) return null;
       if (!object(row)) return reject();
-      const normalized = { ...row, collectedAt: timestamp(row.collectedAt),
+      const normalized = { ...row, linkedCase, collectedAt: timestamp(row.collectedAt),
         periodStart: timestamp(row.periodStart), periodEnd: timestamp(row.periodEnd) } as Receipt;
       reviewPersistedDemandMetaReceipt(normalized);
       return Object.freeze(normalized);
