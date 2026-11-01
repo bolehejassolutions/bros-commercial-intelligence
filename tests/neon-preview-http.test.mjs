@@ -373,7 +373,7 @@ test("lineage direct LOGIN probe is signed, membership-scoped and read-only",asy
     calls.push(scope);
     return {directLineageLoginVerified:true,leastPrivilegeAndForcedRlsVerified:true,
       activeMembershipVerified:true,negativeTenantPrincipalProductVerified:true,
-      lineageAppended:false};
+      revokedFixturePrincipalDenied:true,lineageAppended:false};
   };
   const h=harness({grants:[grantDemand],probeLineage,
     env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
@@ -392,7 +392,7 @@ test("lineage probe rejects disabled flag, foreign product, revoked membership a
   let invoked=0;
   const probeLineage=async()=>{invoked++;return {directLineageLoginVerified:true,
     leastPrivilegeAndForcedRlsVerified:true,activeMembershipVerified:true,
-    negativeTenantPrincipalProductVerified:true,lineageAppended:false};};
+    negativeTenantPrincipalProductVerified:true,revokedFixturePrincipalDenied:true,lineageAppended:false};};
   const off=harness({grants:[grantDemand],probeLineage});
   await denied(await off.handler(off.request("product=demand&probe=lineage")),404);
   const h=harness({grants:[grantDemand],probeLineage,

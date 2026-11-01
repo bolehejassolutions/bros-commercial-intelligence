@@ -221,7 +221,7 @@ export default function NeonPreviewSignIn() {
           !("lineageLoginProbe" in payload) || payload.lineageLoginProbe !== "pass" ||
           !("lineageAppended" in payload) || payload.lineageAppended !== false ||
           !("providerReceiptRecorded" in payload) || payload.providerReceiptRecorded !== false) throw new Error();
-      setLineageCheckResult("Lineage writer physical LOGIN, least privilege, active membership and foreign scope negatives: read-only smoke PASS. No lineage appended; revoked membership and durable E2E remain OPEN.");
+      setLineageCheckResult("Lineage writer physical LOGIN, least privilege, active membership, foreign scope and revoked-fixture principal negatives: read-only smoke PASS. Actual live membership revocation and durable append/replay remain OPEN.");
       setMessage("Lineage direct LOGIN check completed.");
     } catch {
       setLineageCheckResult("Lineage writer authenticated direct LOGIN check failed. No acceptance gate certified.");

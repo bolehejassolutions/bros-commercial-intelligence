@@ -18,6 +18,7 @@ export type BciLineageLoginProbeResult = Readonly<{
   leastPrivilegeAndForcedRlsVerified: true;
   activeMembershipVerified: true;
   negativeTenantPrincipalProductVerified: true;
+  revokedFixturePrincipalDenied: true;
   lineageAppended: false;
 }>;
 export function createRestrictedLineageReadOnlyProbe(transaction: ScopedTransaction) {
@@ -86,12 +87,12 @@ export function createRestrictedLineageReadOnlyProbe(transaction: ScopedTransact
           await query("SELECT set_config('bci.principal_id',$1,true),set_config('bci.tenant_id',$2,true),set_config('bci.product',$3,true)",
             [user, tenant, product]);
         };
-        const membershipCount = async (): Promise<number> => {
+        const membershipCount = async (subjectPrincipal = principalId): Promise<number> => {
           const result = await query(`SELECT COUNT(*)::integer AS "count"
             FROM bci_dev.tenant_memberships
             WHERE principal_id=$1::uuid AND tenant_id=$2::uuid
               AND product='demand' AND active IS TRUE AND revoked_at IS NULL`,
-            [principalId, tenantId]);
+            [subjectPrincipal, tenantId]);
           const row = result.rows[0];
           if (result.rows.length !== 1 || !obj(row) || typeof row.count !== "number") deny();
           return (row as { count: number }).count;
@@ -102,12 +103,17 @@ export function createRestrictedLineageReadOnlyProbe(transaction: ScopedTransact
         if (await membershipCount() !== 0) deny();
         await setScope(otherPrincipal, tenantId, "demand");
         if (await membershipCount() !== 0) deny();
+        // Neon DEV contains an independently read-back revoked principal.
+        // Query that principal itself, not just the operator under foreign GUC.
+        if (otherPrincipal === FOREIGN_PRINCIPAL &&
+            await membershipCount(otherPrincipal) !== 0) deny();
         await setScope(principalId, tenantId, "content");
         if (await membershipCount() !== 0) deny();
         await setScope(principalId, tenantId, "demand");
         if (await membershipCount() !== 1) deny();
         return Object.freeze({ directLineageLoginVerified: true, leastPrivilegeAndForcedRlsVerified: true,
           activeMembershipVerified: true, negativeTenantPrincipalProductVerified: true,
+          revokedFixturePrincipalDenied: otherPrincipal === FOREIGN_PRINCIPAL,
           lineageAppended: false });
       });
     } catch { return deny(); }

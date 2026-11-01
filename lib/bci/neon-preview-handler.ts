@@ -88,6 +88,7 @@ export function createNeonPreviewHandler(deps: Dependencies) {
                 !("leastPrivilegeAndForcedRlsVerified" in outcome) || outcome.leastPrivilegeAndForcedRlsVerified !== true ||
                 !("activeMembershipVerified" in outcome) || outcome.activeMembershipVerified !== true ||
                 !("negativeTenantPrincipalProductVerified" in outcome) || outcome.negativeTenantPrincipalProductVerified !== true ||
+                !("revokedFixturePrincipalDenied" in outcome) || outcome.revokedFixturePrincipalDenied !== true ||
                 !("lineageAppended" in outcome) || outcome.lineageAppended !== false) return denied(403);
             return json({ scope: "internal-development", lineageLoginProbe: "pass",
               lineageAppended: false, providerReceiptRecorded: false }, 200);

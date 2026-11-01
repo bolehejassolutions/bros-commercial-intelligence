@@ -12,7 +12,7 @@ const posture={databaseName:"bros_intelligence_dev",forcedTables:3,readNodes:tru
   noFullMembershipRead:true,membershipColumns:true,noMembershipMutation:true,
   noEvidenceAccess:true,noApprovalAccess:true,noSchemaCreate:true,noDbCreate:true,
   policyCount:5,policyFingerprints:EXPECTED_LINEAGE_POLICY_FINGERPRINTS};
-function harness({role=identity,acl=posture,leak=false,dbError=false}={}) {
+function harness({role=identity,acl=posture,leak=false,leakRevoked=false,dbError=false}={}) {
   const calls=[];let principal,tenant,product;
   const transaction=async fn=>fn(async(sql,params)=>{
     calls.push({sql,params});
@@ -20,8 +20,13 @@ function harness({role=identity,acl=posture,leak=false,dbError=false}={}) {
     if(sql.includes('AS "roleName"'))return {rows:[role]};
     if(sql.includes('AS "forcedTables"'))return {rows:[acl]};
     if(sql.includes("set_config('bci.principal_id'")){[principal,tenant,product]=params;return {rows:[]};}
-    if(sql.includes("FROM bci_dev.tenant_memberships"))return {rows:[{count:leak||(
-      principal===P&&tenant===T&&product==="demand")?1:0}]};
+    if(sql.includes("FROM bci_dev.tenant_memberships")){
+      const [subjectPrincipal,subjectTenant]=params;
+      const revokedPrincipal="00000000-0000-4000-8000-000000000001";
+      const exposedRevoked=leakRevoked&&principal===revokedPrincipal&&subjectPrincipal===revokedPrincipal&&subjectTenant===T;
+      return {rows:[{count:leak||exposedRevoked||(
+        principal===P&&subjectPrincipal===P&&tenant===T&&subjectTenant===T&&product==="demand")?1:0}]};
+    }
     throw Error("unexpected SQL");
   });
   return {probe:createRestrictedLineageReadOnlyProbe(transaction),calls};
@@ -29,8 +34,9 @@ function harness({role=identity,acl=posture,leak=false,dbError=false}={}) {
 test("direct restricted lineage login + nonempty membership and negative scope are read-only",async()=>{
   const h=harness(),r=await h.probe(scope);
   assert.deepEqual(r,{directLineageLoginVerified:true,leastPrivilegeAndForcedRlsVerified:true,
-    activeMembershipVerified:true,negativeTenantPrincipalProductVerified:true,lineageAppended:false});
-  assert.equal(h.calls.filter(x=>x.sql.includes("FROM bci_dev.tenant_memberships")).length,5);
+    activeMembershipVerified:true,negativeTenantPrincipalProductVerified:true,
+    revokedFixturePrincipalDenied:true,lineageAppended:false});
+  assert.equal(h.calls.filter(x=>x.sql.includes("FROM bci_dev.tenant_memberships")).length,6);
   assert.ok(h.calls.every(x=>x.sql.trimStart().startsWith("SELECT")));
   assert.ok(!JSON.stringify(r).includes(P));
 });
@@ -45,7 +51,7 @@ test("administrator impersonation, privilege drift and policy fingerprint drift 
   }
 });
 test("foreign membership leakage and provider error fail closed without secrets",async()=>{
-  for(const options of [{leak:true},{dbError:true}]) {
+  for(const options of [{leak:true},{leakRevoked:true},{dbError:true}]) {
     const h=harness(options);
     await assert.rejects(h.probe(scope),e=>{
       assert.ok(e instanceof BciLineageLoginProbeDenied);
