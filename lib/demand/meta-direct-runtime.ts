@@ -4,6 +4,8 @@ import { createNeonAuthPrincipalVerifier, type NeonAuthVerifyStage } from "../bc
 import { createNeonDevMembershipLookup } from "../bci/neon-dev-membership-rows.ts";
 import { createPgReadOnlyTransaction, parseNeonDevConnection } from "../bci/neon-readonly-transaction.ts";
 import { createDemandMetaHttpHandler } from "./meta-direct-http.ts";
+import { createDemandMetaBciEvidenceHandler } from "./meta-bci-evidence-http.ts";
+import { createPgDemandEvidenceAppendTransaction } from "../bci/neon-demand-evidence-append.ts";
 
 /**
  * Existing BCI app, DEVELOPMENT Preview branch ONLY. Default OFF.
@@ -147,3 +149,36 @@ const handler = createDemandMetaHttpHandler({
 });
 
 export const handleDemandMetaPrivatePreview = (request: Request) => handler(request);
+
+// Separate, default-OFF evidence action. Existing GET and its flags are unchanged.
+let evidenceWriterPool: Pool | undefined;
+const evidenceHandler = createDemandMetaBciEvidenceHandler({
+  enabled: () => enabled() &&
+    process.env.BROS_DEMAND_BCI_EVIDENCE_APPEND === "enabled" &&
+    Boolean(process.env.BCI_NEON_DEV_EVIDENCE_WRITER_DATABASE_URL),
+  accountId: process.env.BROS_DEMAND_META_ACCOUNT_ID ?? "act_0",
+  tenantId: process.env.BROS_DEMAND_META_TENANT_ID ?? "",
+  apiVersion: process.env.BROS_DEMAND_META_API_VERSION ?? "v26.0",
+  verifyJwt: token => verifier(token),
+  membershipsFor: (userId, product) => getMemberships(() => {})(userId, product),
+  serverTokenFor: async (tenantId, accountId) => {
+    if (!enabled() || tenantId !== process.env.BROS_DEMAND_META_TENANT_ID?.toLowerCase() ||
+        accountId !== process.env.BROS_DEMAND_META_ACCOUNT_ID) return null;
+    return process.env.BROS_DEMAND_META_ADS_READ_TOKEN ?? null;
+  },
+  now: () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+  transaction: async fn => {
+    if (!enabled() || process.env.BROS_DEMAND_BCI_EVIDENCE_APPEND !== "enabled") throw Error();
+    if (!evidenceWriterPool) {
+      const config = parseNeonDevConnection(process.env.BCI_NEON_DEV_EVIDENCE_WRITER_DATABASE_URL,
+        "bci_dev_evidence_writer_restricted");
+      evidenceWriterPool = new Pool({ ...config, max: 1, connectionTimeoutMillis: 5000,
+        idleTimeoutMillis: 10000, allowExitOnIdle: true, query_timeout: 7000,
+        application_name: "demand-bci-evidence-dev" });
+      evidenceWriterPool.on("error", () => { /* Never log credential-bearing driver errors. */ });
+    }
+    return createPgDemandEvidenceAppendTransaction(evidenceWriterPool)(fn);
+  },
+});
+export const handleDemandMetaEvidenceAppend = (request: Request) => evidenceHandler(request);
+

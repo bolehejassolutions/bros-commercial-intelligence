@@ -43,6 +43,7 @@ export default function DemandMetaTestClient() {
   const [busy, setBusy] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [notice, setNotice] = useState("Checking Neon Auth session…");
+  const [evidenceNotice, setEvidenceNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -205,6 +206,45 @@ export default function DemandMetaTestClient() {
     } finally { setBusy(false); }
   }
 
+  async function saveHistoricalEvidence() {
+    if (busy) return;
+    setBusy(true);
+    setEvidenceNotice(null);
+    setNotice("Saving one historical Meta observation in Neon DEV and checking replay…");
+    try {
+      if (!(await verifiedSession())) throw new Error();
+      const jwt = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/demand-meta-evidence", {
+        method: "POST", headers: { Authorization: "Bearer " + jwt },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status === 404) {
+        setNotice("DEV evidence action is disabled or not configured. No success is claimed.");
+        return;
+      }
+      if (response.status !== 200 || !probeHeaders(response)) throw new Error();
+      const raw = await response.text();
+      if (raw.length > 2048) throw new Error();
+      const body: unknown = JSON.parse(raw);
+      if (!body || typeof body !== "object" || Array.isArray(body) ||
+          Object.keys(body).length !== 8 || !("status" in body) ||
+          (body.status !== "inserted" && body.status !== "replayed") ||
+          !("recordId" in body) || typeof body.recordId !== "string" ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.recordId) ||
+          !("source" in body) || body.source !== "DIRECT_META_GRAPH_API" ||
+          !("durableBciEvidenceRecorded" in body) || body.durableBciEvidenceRecorded !== true ||
+          !("postCommitReplayVerified" in body) || body.postCommitReplayVerified !== true ||
+          !("independentlyAttestedProvider" in body) || body.independentlyAttestedProvider !== false ||
+          !("verifiedPaidOrders" in body) || body.verifiedPaidOrders !== null ||
+          !("campaignExecutionAllowed" in body) || body.campaignExecutionAllowed !== false) throw new Error();
+      setEvidenceNotice("DEV evidence " + body.status + ". Receipt: " + body.recordId +
+        ". Post-commit readback and same-snapshot replay PASS. Independent provider readback remains required; no HitPay attribution, verified CPA or advertising authority.");
+      setNotice("Historical Meta evidence action completed; see the separate receipt below.");
+    } catch {
+      setNotice("DEV evidence action could not complete. A first append may already have committed; reconcile the database before assuming nothing was saved. Replays use the same immutable key.");
+    } finally { setBusy(false); }
+  }
+
   async function signOut() {
     if (busy) return;
     setBusy(true);
@@ -213,6 +253,7 @@ export default function DemandMetaTestClient() {
       if (error) throw new Error();
       setStage("start");
       setCode("");
+      setEvidenceNotice(null);
       setNotice("Neon Auth session signed out.");
     } catch {
       setNotice("Sign-out not confirmed.");
@@ -223,10 +264,11 @@ export default function DemandMetaTestClient() {
     <main className="auth-shell neon-preview-shell">
       <section className="auth-card" aria-labelledby="demand-test-heading">
         <p className="eyebrow">BROS DEMAND · INTERNAL PREVIEW ONLY</p>
-        <h1 id="demand-test-heading">Direct Meta read-only verification</h1>
-        <p className="sub">This page tests rejection controls and Neon Auth admission. It cannot create or change ads. The server's direct-read feature flag is OFF by default.</p>
+        <h1 id="demand-test-heading">Direct Meta verification</h1>
+        <p className="sub">Read Meta reports and explicitly save one bounded observation in Neon DEV. Reporting and evidence actions have separate server controls. This page cannot create or change ads.</p>
         <p className="sub">Vercel Authentication protects the Preview URL. Sign in to Vercel first if prompted. This is separate from Neon Auth email OTP. You can run no-token HTTP rejection checks without a Neon Auth session.</p>
         <p role="status" aria-live="polite">{notice}</p>
+        {stage === "ready" && evidenceNotice !== null ? <p role="status" aria-label="DEV evidence receipt">{evidenceNotice}</p> : null}
         <div className="auth-form">
           <button type="button" disabled={busy || stage === "loading"} onClick={checkDenials}>Run no-token HTTP rejection checks</button>
           {stage === "start" ? (
@@ -248,6 +290,7 @@ export default function DemandMetaTestClient() {
             <>
               <button type="button" disabled={busy} onClick={() => checkReadOnly("pinned")}>Check signed JWT + pinned ACQ-V2 read-only API</button>
               <button type="button" disabled={busy} onClick={() => checkReadOnly("historical")}>Check historical PAUSED BROS SELL (8–27 Oct) read-only</button>
+              <button type="button" disabled={busy} onClick={saveHistoricalEvidence}>Save historical Meta evidence + verify replay (DEV)</button>
               <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
             </>
           ) : null}
@@ -257,3 +300,4 @@ export default function DemandMetaTestClient() {
     </main>
   );
 }
+
