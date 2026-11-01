@@ -37,7 +37,13 @@ function writer(){
 const handle=createDemandCaseLinkHttpHandler({env:()=>process.env,
  execute:async token=>createAuthenticatedDemandReceiptCaseLink({
   authenticate:()=>verify(token),
-  membershipsFor:(id,product)=>lookup()(id,product),
+  membershipsFor:async(id,product)=>{
+   const rows=await lookup()(id,product);
+   return rows.map(m=>{
+     if(m.product!=="demand")throw new NeonPreviewDatabaseDenied();
+     return {...m,product:"demand" as const};
+   });
+  },
   transaction:fn=>writer()(fn),
  })(receipt)});
 export const handleDemandCaseLink=(request:Request)=>handle(request);
