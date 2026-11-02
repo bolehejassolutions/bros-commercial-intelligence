@@ -8,7 +8,7 @@ test("proposal POST reaches its own Neon boundary instead of the Supabase login 
 
 test("existing Neon evidence, case, lineage and sign-in routes retain their own boundary",()=>{
   for(const pathname of ["/api/internal/neon-evidence","/api/internal/neon-demand-case",
-    "/api/internal/neon-lineage-receipt","/internal/neon-preview"])
+    "/api/internal/neon-lineage-receipt","/api/internal/neon-content-reservation","/internal/neon-preview"])
     assert.equal(usesNeonPreviewAuthentication(pathname),true,pathname);
 });
 
@@ -20,3 +20,4 @@ test("other and lookalike routes retain Supabase authentication",()=>{
     "/internal/neon-preview/other","/api/internal/neon-evidence-other"])
     assert.equal(usesNeonPreviewAuthentication(pathname),false,pathname);
 });
+

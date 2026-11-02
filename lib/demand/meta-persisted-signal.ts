@@ -7,6 +7,9 @@ import { reviewPersistedDemandMetaReceipt } from "./meta-persisted-diagnosis.ts"
 import type { BciLineageRecord } from "../bci/internal-lineage.ts";
 
 export const DEMAND_META_SIGNAL_VERSION = "DEMAND_META_OBSERVATION_V1";
+// Stable definition time of this interpretation version, separate from the
+// historical observation window and PostgreSQL's actual insert created_at.
+export const DEMAND_META_SIGNAL_DEFINED_AT = "2026-11-02T18:23:19.000Z";
 export const DEMAND_META_SIGNAL_SOURCE_SHA256 = "bcffc79b2bbedcef0cbe5f505715493aad91fca17b039cb5be11e078fdee15a2";
 type Source = Parameters<typeof reviewPersistedDemandMetaReceipt>[0];
 const receiptId = "4b1d0b40-371f-4c82-aaa9-d77580f88fac";
@@ -50,7 +53,8 @@ export function interpretPersistedDemandMetaSignal(source: Source) {
     metrics.map(k => source.metrics[k]), unknowns]);
   const sourceSha256 = digest("DEMAND_META_OBSERVATION_SOURCE_V1\n" + canonical);
   if (sourceSha256 !== DEMAND_META_SIGNAL_SOURCE_SHA256) deny();
-  const interpretationSha256 = digest(DEMAND_META_SIGNAL_VERSION + "\n" + sourceSha256);
+  const interpretationSha256 = digest(DEMAND_META_SIGNAL_VERSION + "\n" + sourceSha256 + "\n" +
+    DEMAND_META_SIGNAL_DEFINED_AT);
   const chars = interpretationSha256.slice(0, 32).split("");
   chars[12] = "8"; chars[16] = ((parseInt(chars[16], 16) & 3) | 8).toString(16);
   const id = chars.join("").replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
@@ -61,7 +65,7 @@ export function interpretPersistedDemandMetaSignal(source: Source) {
   const signal: BciLineageRecord = Object.freeze({ id, tenantId: source.tenantId,
     product: "demand", stage: "signal", sourceSystem: "demand.meta-observation.v1",
     sourceRecordKey: "demand:meta-observation:v1:sha256:" + interpretationSha256,
-    recordedAt: review.collectedAt, parentIds: Object.freeze([receiptId]), verification: "unverified" });
+    recordedAt: DEMAND_META_SIGNAL_DEFINED_AT, parentIds: Object.freeze([receiptId]), verification: "unverified" });
   return Object.freeze({ version: DEMAND_META_SIGNAL_VERSION, sourceSha256,
     interpretationSha256, evidence, signal,
     periodStart: review.periodStart, periodEnd: review.periodEnd,

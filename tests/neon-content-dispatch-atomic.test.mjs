@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createPgContentDispatchAtomicReservation,createPgContentReservationTransaction}
+import {createPgContentDispatchAtomicReservation,createPgContentReservationTransaction,
+  createPgContentReservationReadTransaction}
   from "../lib/bci/neon-content-dispatch-atomic.ts";
 const tenantId="22222222-2222-4222-8222-222222222222";
 const principalId="11111111-1111-4111-8111-111111111111";
@@ -17,6 +18,37 @@ const posture={databaseName:"bros_intelligence_dev",forcedRls:true,noSchemaCreat
   noRevocationWrites:true,noMutation:true,noOtherBci:true,
   noDefinerExec:true,noOtherSchemaCreate:true,noSequenceAccess:true,noExternalTables:true};
 const denied=/BCI private content reservation denied/;
+
+test("committed reservation readback uses SELECT only and cannot create a missing reservation",async()=>{
+  for(const exists of [true,false]){
+    const calls=[];
+    const read=createPgContentDispatchAtomicReservation(async fn=>fn(async(sql,params)=>{
+      calls.push({sql,params});
+      if(sql.includes('AS "roleName"'))return {rows:[role]};
+      if(sql.includes('AS "forcedRls"'))return {rows:[posture]};
+      if(sql.includes('AS "existingCount"'))return {rows:[{existingCount:exists?1:0,reservationId:exists?reservationId:null}]};
+      return {rows:[]};
+    }),"committed_readback");
+    if(exists)assert.deepEqual(await read(args),{status:"committed_reservation_readback",
+      reservationId,providerSent:false,executionAllowed:false});
+    else await assert.rejects(read(args),denied);
+    assert.equal(calls.some(c=>/\bINSERT\s+INTO\b/.test(c.sql)),false);
+    const q=calls.find(c=>c.sql.includes('AS "existingCount"'));
+    assert.deepEqual(q.params,[tenantId,args.dispatchIntentId,principalId,args.approvalId,args.bindingSha256]);
+    assert.match(q.sql,/r.principal_id=\$3::uuid/);
+    assert.match(q.sql,/a.expires_at > clock_timestamp\(\)/);
+  }
+});
+test("content readback transaction pins a physical READ ONLY session and destroys failed sessions",async()=>{
+  const statements=[],releases=[];
+  const tx=createPgContentReservationReadTransaction({connect:async()=>({
+    query:async sql=>{statements.push(sql);return {rows:[]};},release:bad=>releases.push(bad)})});
+  await tx(async query=>{await query("SELECT 1",[]);});
+  assert.equal(statements[0],"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  assert.equal(statements.at(-1),"COMMIT");
+  await assert.rejects(tx(async()=>{throw Error("unconfirmed");}),denied);
+  assert.equal(statements.at(-1),"ROLLBACK");assert.deepEqual(releases,[false,true]);
+});
 function harness({r=role,p=posture,rows=[{reservationId}],existing=0,failAt=0,
   mode="reserve"}={}) {
   const calls=[];let i=0;
@@ -166,3 +198,4 @@ test("reservation rejects accessor-based caller fields before SQL",async()=>{
   const h=harness();await assert.rejects(h.reserve(accessor),denied);
   assert.equal(h.calls.length,0);
 });
+

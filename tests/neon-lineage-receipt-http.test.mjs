@@ -92,7 +92,7 @@ test("lineage endpoint bypasses unrelated Supabase proxy and requires operator U
 });
 
 const signalPath=path+"?operation=demand-meta-observation-v1";
-const signalResult={receiptId,signalId:"d766817e-a361-8418-bd0d-3013725bbe8d",
+const signalResult={receiptId,signalId:"543146e5-31b8-81a9-b721-df542720c116",
   signalVersion:"DEMAND_META_OBSERVATION_V1",status:"inserted",stage:"signal",
   verification:"unverified",sourceSha256:"bcffc79b2bbedcef0cbe5f505715493aad91fca17b039cb5be11e078fdee15a2",
   postCommitReadback:true,providerAttested:false,actionAuthorized:false};

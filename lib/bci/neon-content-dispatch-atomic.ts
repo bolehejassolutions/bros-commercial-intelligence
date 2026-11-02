@@ -1,7 +1,8 @@
 /**
- * BCI DEV private CONTENT reservation adapter. No HTTP endpoint or provider dispatch.
- * NOT operational until a dedicated directly authenticated least-privilege LOGIN,
- * scoped RLS grants and authenticated provider negatives are verified.
+ * BCI DEV private CONTENT reservation adapter. The protected HTTP boundary
+ * delegates to the shared runtime; this SQL adapter never dispatches a provider.
+ * A dedicated directly authenticated least-privilege LOGIN, scoped RLS grants
+ * and actual authenticated acceptance are required.
  * Never use BROS/admin credentials or SET ROLE. A reservation is NOT SENT.
  */
 type Value = string | null;
@@ -16,6 +17,8 @@ type Reservation = Readonly<{ status: "acquired" | "already_reserved"; reservati
 /** Recheck is NOT an idempotency lease, provider dispatch authority, or SENT. */
 type PreDispatch = Readonly<{ status: "pre_dispatch_rechecked"; reservationId: null;
   providerSent: false; providerAttested: false }>;
+type CommittedReadback = Readonly<{ status: "committed_reservation_readback"; reservationId: string;
+  providerSent: false; executionAllowed: false }>;
 type Client = Readonly<{ query: (sql: string, params?: Value[]) => Promise<Result>;
   release: (destroy?: boolean) => void }>;
 type Pool = Readonly<{ connect: () => Promise<Client> }>;
@@ -31,12 +34,19 @@ const deny = (): never => { throw new BciContentAtomicReservationDenied(); };
 
 /** One physical direct LOGIN; SERIALIZABLE rollback and no secret-bearing errors. */
 export function createPgContentReservationTransaction(pool: Pool): ContentReservationTransaction {
+  return createPgContentTransaction(pool, false);
+}
+export function createPgContentReservationReadTransaction(pool: Pool): ContentReservationTransaction {
+  return createPgContentTransaction(pool, true);
+}
+function createPgContentTransaction(pool: Pool, readOnly: boolean): ContentReservationTransaction {
   if (!pool || typeof pool.connect !== "function") deny();
   return async <T>(fn: (query: Query) => Promise<T>): Promise<T> => {
     let client: Client | undefined; let active = false; let destroy = false;
     try {
       client = await pool.connect();
-      await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE READ WRITE");
+      await client.query(readOnly ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" :
+        "BEGIN ISOLATION LEVEL SERIALIZABLE READ WRITE");
       await client.query("SET LOCAL search_path = pg_catalog, pg_temp");
       await client.query("SET LOCAL statement_timeout = '5000ms'");
       await client.query("SET LOCAL lock_timeout = '1000ms'");
@@ -66,9 +76,11 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
 export function createPgContentDispatchAtomicReservation(transaction: ContentReservationTransaction,
   mode: "predispatch_recheck"): (args: ContentReservationArgs) => Promise<PreDispatch>;
 export function createPgContentDispatchAtomicReservation(transaction: ContentReservationTransaction,
-  mode: "reserve" | "predispatch_recheck" = "reserve") {
+  mode: "committed_readback"): (args: ContentReservationArgs) => Promise<CommittedReadback>;
+export function createPgContentDispatchAtomicReservation(transaction: ContentReservationTransaction,
+  mode: "reserve" | "predispatch_recheck" | "committed_readback" = "reserve") {
   if (typeof transaction !== "function") deny();
-  return async (args: ContentReservationArgs): Promise<Reservation | PreDispatch> => {
+  return async (args: ContentReservationArgs): Promise<Reservation | PreDispatch | CommittedReadback> => {
     try {
       const keys = ["tenantId","product","principalId","dispatchIntentId","approvalId","bindingSha256"];
       if (!obj(args) ||
@@ -196,6 +208,7 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
         // Transaction-local GUCs are filters, never proof of identity.
         await query("SELECT set_config('bci.principal_id',$1::text,true), set_config('bci.tenant_id',$2::text,true), set_config('bci.product','content',true)",
           [pinned.principalId,pinned.tenantId]);
+        if (mode !== "committed_readback") {
         const inserted = await query(
           `WITH active_memberships AS MATERIALIZED (
              SELECT principal_id,tenant_id FROM bci_dev.tenant_memberships
@@ -231,11 +244,12 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
           if (mode === "predispatch_recheck") deny();
           return Object.freeze({status:"acquired" as const,reservationId:inserted.rows[0].reservationId});
         }
+        }
         // A conflicting intent is only disclosed to the SAME still-authorized
         // principal with the SAME live, unrevoked approval and exact binding.
         // Never reveal a prior reservation to a foreign/expired/revoked caller.
         const existing = await query(
-          `SELECT count(*)::integer AS "existingCount"
+          `SELECT count(*)::integer AS "existingCount", min(r.reservation_id::text) AS "reservationId"
            FROM bci_dev.content_dispatch_reservations r
            JOIN bci_dev.content_dispatch_approvals a
              ON a.approval_id=r.approval_id AND a.tenant_id=r.tenant_id
@@ -259,6 +273,15 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
           [pinned.tenantId,pinned.dispatchIntentId,pinned.principalId,pinned.approvalId,pinned.bindingSha256]);
         if (existing.rows.length === 1 && obj(existing.rows[0]) &&
             existing.rows[0].existingCount === 1) {
+          if (mode === "committed_readback") {
+            const id = existing.rows[0].reservationId;
+            if (typeof id !== "string" || !UUID.test(id)) return deny();
+            // Confirms storage + requester/approval binding only. Current
+            // reviewer authority still requires the separate pre-dispatch
+            // trigger check; this SELECT is never a publishing permit.
+            return Object.freeze({status:"committed_reservation_readback" as const,
+              reservationId:id,providerSent:false as const,executionAllowed:false as const});
+          }
           // The 0014 BEFORE INSERT trigger rechecks reviewer/requester and
           // approval at the exact conflict attempt, even for DO NOTHING.
           // This does NOT prevent revocation after COMMIT or duplicate provider
@@ -275,3 +298,4 @@ export function createPgContentDispatchAtomicReservation(transaction: ContentRes
     } catch { return deny(); }
   };
 }
+

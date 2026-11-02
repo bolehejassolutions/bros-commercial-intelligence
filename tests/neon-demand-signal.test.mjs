@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { interpretPersistedDemandMetaSignal, DEMAND_META_SIGNAL_SOURCE_SHA256 }
+import { interpretPersistedDemandMetaSignal, DEMAND_META_SIGNAL_SOURCE_SHA256, DEMAND_META_SIGNAL_DEFINED_AT }
   from "../lib/demand/meta-persisted-signal.ts";
 import { createAuthenticatedDemandMetaSignal } from "../lib/bci/neon-demand-signal.ts";
 import { createAuthenticatedBciLineageReadback, createPgLineageReadTransaction,
@@ -82,6 +82,8 @@ test("recorded source projects stable versioned non-causal signal and immutable 
   assert.equal(r.sourceSha256,DEMAND_META_SIGNAL_SOURCE_SHA256);
   assert.equal(r.signal.id,interpretation.signal.id);
   assert.equal(r.signal.stage,"signal");assert.deepEqual(r.signal.parentIds,[source.id]);
+  assert.equal(r.signal.recordedAt,DEMAND_META_SIGNAL_DEFINED_AT);
+  assert.ok(r.signal.recordedAt>r.evidence.recordedAt);
   assert.equal(r.observed.spendMinor,12493);assert.equal(r.observed.inlineLinkClicks,63);
   assert.equal(r.observed.landingPageViews,33);assert.equal(r.observed.metaAttributedPurchases,1);
   assert.equal(r.verification,"unverified");assert.equal(r.providerAttested,false);
