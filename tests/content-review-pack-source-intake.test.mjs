@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {deflateSync} from 'node:zlib';
 import {verifyPngSourceBytes} from '../lib/content/png-source-qa.mjs';
-import {inspectUnboundContentReviewPackSource as inspect} from '../lib/content/review-pack-source-intake.mjs';
+import {inspectUnboundContentReviewPackSource as inspect, inspectUnboundContentReviewPackAllSources as inspectAll} from '../lib/content/review-pack-source-intake.mjs';
 const table=Array.from({length:256},(_,n)=>{let c=n;for(let i=0;i<8;i++)c=c&1?0xedb88320^(c>>>1):c>>>1;return c>>>0;});
 function chunk(name,data){
  const body=Buffer.concat([Buffer.from(name),data]),h=Buffer.alloc(4),t=Buffer.alloc(4);
@@ -118,4 +118,37 @@ test('different PNG source bytes with identical rendered pixels across channels 
  const p=pack();
  p.channelReviews[1].media[1]=media(variant,2,'drive-file-003');
  assert.throws(()=>run(p),/CONTENT_UNBOUND_REVIEW_PACK_INTAKE_DENIED/);
+});
+
+
+test('whole-pack original bytes are verified for every channel, not metadata only',()=>{
+ const inputs=[
+  {candidateId:'review-facebook',instanceConfig:config(),brief:brief('facebook'),
+   sourceBuffers:[sources[0]],options:dims},
+  {candidateId:'review-instagram',instanceConfig:config(),brief:brief('instagram'),
+   sourceBuffers:sources.slice(1),options:dims}
+ ];
+ const all=inspectAll(pack(),inputs);
+ assert.deepEqual(all,inspectAll(pack(),inputs));
+ assert.equal(all.status,'ALL_ORIGINAL_BYTES_MATCHED_REVIEW_REQUIRED');
+ assert.equal(all.channelCount,2);
+ assert.equal(all.imageCount,3);
+ assert.equal(all.allChannelOriginalBytesVerified,true);
+ assert.equal(all.allRenderedPixelsDistinct,true);
+ for(const key of ['sourceReferencesAuthenticated','instanceBindingAuthenticated',
+  'signedHumanReviewVerified','durableApprovalRecorded','atomicReservationVerified',
+  'providerSentVerified','measurementVerified','learningVerified',
+  'executionAllowed','customerSaasReady'])assert.equal(all[key],false,key);
+ assert.equal(all.channels[0].sourceDriveFileIds[0],'drive-file-001');
+ assert.throws(()=>inspectAll(pack(),inputs.slice(0,1)),
+   /CONTENT_UNBOUND_REVIEW_PACK_INTAKE_DENIED/);
+ const swapped=[inputs[0],{...inputs[1],sourceBuffers:[sources[2],sources[1]]}];
+ assert.throws(()=>inspectAll(pack(),swapped),
+   /CONTENT_UNBOUND_REVIEW_PACK_INTAKE_DENIED/);
+ const different=config();different.tenantId='tenant-another';
+ assert.throws(()=>inspectAll(pack(),[inputs[0],{...inputs[1],instanceConfig:different}]),
+   /CONTENT_UNBOUND_REVIEW_PACK_INTAKE_DENIED/);
+ const duplicates=[inputs[0],{...inputs[0]}];
+ assert.throws(()=>inspectAll(pack(),duplicates),
+   /CONTENT_UNBOUND_REVIEW_PACK_INTAKE_DENIED/);
 });
