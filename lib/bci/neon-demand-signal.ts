@@ -31,14 +31,14 @@ export function createAuthenticatedDemandMetaSignal(deps: Dependencies) {
   return async (): Promise<DemandSignalResult> => {
     try {
       const principal = await deps.authenticate();
-      if (!principal || principal.authenticated !== true || !uuid.test(principal.userId)) deny();
+      if (!principal || principal.authenticated !== true || !uuid.test(principal.userId)) return deny();
       const userId = principal.userId;
       const grants = await deps.membershipsFor(userId, "demand");
       if (!Array.isArray(grants) || grants.length !== 1 || grants[0].principalId !== userId ||
           grants[0].product !== "demand" || grants[0].active !== true || !uuid.test(grants[0].tenantId)) deny();
       const tenantId = grants[0].tenantId;
       const source = await deps.readReceipt(tenantId, userId);
-      if (!source || source.tenantId !== tenantId) deny();
+      if (!source || source.tenantId !== tenantId) return deny();
       const interpretation = interpretPersistedDemandMetaSignal(source);
       const shared = { authenticate: deps.authenticate, membershipsFor: deps.membershipsFor };
       const readback = createAuthenticatedBciLineageReadback({ ...shared,
