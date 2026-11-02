@@ -36,6 +36,7 @@ export default function NeonPreviewSignIn() {
   const [caseLinkResult, setCaseLinkResult] = useState<string | null>(null);
   const [lineageReceiptResult, setLineageReceiptResult] = useState<string | null>(null);
   const [proposalResult, setProposalResult] = useState<string | null>(null);
+  const [signalResult, setSignalResult] = useState<string | null>(null);
   const [product, setProduct] = useState<"content" | "demand">("content");
 
   useEffect(() => {
@@ -292,6 +293,50 @@ export default function NeonPreviewSignIn() {
     } finally { setBusy(false); }
   }
 
+  async function saveDemandMetaSignal() {
+    if (busy || product !== "demand" || step !== "ready") return;
+    setBusy(true); setSignalResult(null);
+    setMessage("Saving the bounded historical Meta observation and checking its committed source and lineage…");
+    let requested = false;
+    try {
+      if (!await hasVerifiedOperatorSession()) {
+        setStep("start");
+        setSignalResult("Not submitted: a fresh verified development sign-in is required.");
+        setMessage("Your development session has expired. Sign in before saving the observation.");
+        return;
+      }
+      const token = await requestNeonPreviewToken(auth());
+      requested = true;
+      const response = await fetch("/api/internal/neon-lineage-receipt?operation=demand-meta-observation-v1", {
+        method: "POST", headers: { Authorization: "Bearer " + token },
+        credentials: "same-origin", cache: "no-store", redirect: "error",
+        signal: AbortSignal.timeout(30000),
+      });
+      if (response.status !== 200 ||
+          !/no-store/i.test(response.headers.get("cache-control") || "")) throw new Error();
+      const raw = await response.text();
+      if (raw.length > 2048) throw new Error();
+      const p: unknown = JSON.parse(raw);
+      if (!p || typeof p !== "object" || Array.isArray(p) || Object.keys(p).length !== 10 ||
+          !("receiptId" in p) || p.receiptId !== "4b1d0b40-371f-4c82-aaa9-d77580f88fac" ||
+          !("signalId" in p) || typeof p.signalId !== "string" ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(p.signalId) ||
+          !("signalVersion" in p) || p.signalVersion !== "DEMAND_META_OBSERVATION_V1" ||
+          !("status" in p) || (p.status !== "inserted" && p.status !== "replayed") ||
+          !("stage" in p) || p.stage !== "signal" || !("verification" in p) || p.verification !== "unverified" ||
+          !("sourceSha256" in p) || typeof p.sourceSha256 !== "string" || !/^[0-9a-f]{64}$/.test(p.sourceSha256) ||
+          !("postCommitReadback" in p) || p.postCommitReadback !== true ||
+          !("providerAttested" in p) || p.providerAttested !== false ||
+          !("actionAuthorized" in p) || p.actionAuthorized !== false) throw new Error();
+      setSignalResult(`DEV historical observation ${p.status}: ${p.signalId}. Version V1, UNVERIFIED; separate server read-only post-COMMIT source, node and edge checks passed. No verified sale, ad authority, outcome or learning. Independent Neon audit readback remains required.`);
+      setMessage("Historical observation request completed; see the bounded result below.");
+    } catch {
+      setSignalResult(requested ? "The observation result is unconfirmed. An append may already have committed. Reconcile Neon before retrying; this operation reuses the same immutable key." :
+        "Observation not submitted: development sign-in or token could not be verified.");
+      setMessage("The DEV observation could not be confirmed. No automatic retry will run.");
+    } finally { setBusy(false); }
+  }
+
   async function submitDemandProposal() {
     if (busy || product !== "demand" || step !== "ready") return;
     setBusy(true);
@@ -366,6 +411,7 @@ export default function NeonPreviewSignIn() {
       setLineageReceiptResult(null);
       setCaseLinkResult(null);
       setProposalResult(null);
+      setSignalResult(null);
       setMessage("You have signed out of this development session.");
     } catch { setMessage("Sign-out could not be confirmed. Please try again."); }
     finally { setBusy(false); }
@@ -389,6 +435,7 @@ export default function NeonPreviewSignIn() {
         {step === "ready" && caseLinkResult !== null ? <p role="status" aria-label="Restricted case/link result">{caseLinkResult}</p> : null}
         {step === "ready" && lineageReceiptResult !== null ? <p role="status" aria-label="Restricted lineage receipt result">{lineageReceiptResult}</p> : null}
         {proposalResult !== null ? <p role="status" aria-label="Restricted DEMAND proposal result">{proposalResult}</p> : null}
+        {signalResult !== null ? <p role="status" aria-label="Restricted DEMAND observation result">{signalResult}</p> : null}
         {step === "start" ? <div className="auth-form">
           <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>
             {cooldown > 0 ? `Wait ${cooldown}s` : "Send sign-in code (verified email)"}
@@ -427,6 +474,7 @@ export default function NeonPreviewSignIn() {
             <button type="button" disabled={busy} onClick={checkLineageLogin}>Check lineage writer LOGIN + tenant/product negatives (DEV read-only)</button>
             <button type="button" disabled={busy || product !== "demand"} onClick={createDemandReviewCase}>Save existing Meta receipt as REVIEW case (DEV only)</button>
             <button type="button" disabled={busy || product !== "demand"} onClick={saveDemandEvidenceLineage}>Append existing Meta receipt to unverified lineage (DEV only)</button>
+            <button type="button" disabled={busy || product !== "demand"} onClick={saveDemandMetaSignal}>Save historical Meta observation + verify readback (DEV)</button>
             {product === "demand" ? <section className="auth-form" aria-label="Review BROS DEMAND DEV proposal">
               <h2>Review proposed diagnosis (DEV only)</h2>
               <p><strong>Hypothesis:</strong> {demandReviewProposal.hypothesis}</p>
@@ -444,3 +492,4 @@ export default function NeonPreviewSignIn() {
     </main>
   );
 }
+

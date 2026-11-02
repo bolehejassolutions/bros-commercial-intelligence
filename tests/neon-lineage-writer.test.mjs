@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createAuthenticatedBciLineageWriter,
+  createAuthenticatedBciLineageReadback,
   createPgLineageWriteTransaction,
+  createPgLineageReadTransaction,
 } from "../lib/bci/neon-lineage-writer.ts";
 
 const tenant = "11111111-1111-4111-8111-111111111111";
@@ -171,6 +173,7 @@ test("idempotent replay accepts equivalent UTC timestamps with different precisi
     if (sql.includes('AS "roleName"')) return { rows: [role] };
     if (sql.includes('AS "forcedRls"')) return { rows: [posture] };
     if (sql.includes("FROM bci_dev.tenant_memberships")) return { rows: [{activeCount:1}] };
+    if (sql.includes("AND id = ANY($3::uuid[])")) return { rows: [stored] };
     if (sql.includes("FROM bci_dev.lineage_nodes WHERE")) return { rows: [stored] };
     return { rows: [] };
   }) });
@@ -275,3 +278,4 @@ test("writer denies SQL membership revocation before writing and before commit",
     assert.equal(h.calls.some(x=>x.sql.includes("INSERT INTO")),when===2);
   }
 });
+

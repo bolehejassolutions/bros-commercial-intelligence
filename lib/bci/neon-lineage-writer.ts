@@ -55,6 +55,14 @@ export class BciLineageWriteDenied extends Error {
 
 /** One physical, directly authenticated restricted LOGIN connection per transaction. */
 export function createPgLineageWriteTransaction(pool: Pool): LineageTransaction {
+  return createPgLineageTransaction(pool, false);
+}
+
+export function createPgLineageReadTransaction(pool: Pool): LineageTransaction {
+  return createPgLineageTransaction(pool, true);
+}
+
+function createPgLineageTransaction(pool: Pool, readOnly: boolean): LineageTransaction {
   if (!pool || typeof pool.connect !== "function") deny();
   return async <T>(fn: (query: Query) => Promise<T>): Promise<T> => {
     let client: Client | undefined;
@@ -62,7 +70,8 @@ export function createPgLineageWriteTransaction(pool: Pool): LineageTransaction 
     let destroy = false;
     try {
       client = await pool.connect();
-      await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE READ WRITE");
+      await client.query(readOnly ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" :
+        "BEGIN ISOLATION LEVEL SERIALIZABLE READ WRITE");
       await client.query("SET LOCAL search_path = pg_catalog, pg_temp");
       await client.query("SET LOCAL statement_timeout = '5000ms'");
       await client.query("SET LOCAL lock_timeout = '1000ms'");
@@ -95,6 +104,18 @@ export function createPgLineageWriteTransaction(pool: Pool): LineageTransaction 
  * A final membership recheck narrows, but does not eliminate, revocation races.
  */
 export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
+  return createAuthenticatedBciLineageOperation(deps, false);
+}
+
+/** Uses the SAME authentication, membership, policy and graph checks, but
+ * refuses missing rows before any INSERT. Compose with a separate READ ONLY
+ * transaction AFTER the append promise resolves (and its COMMIT completes).
+ */
+export function createAuthenticatedBciLineageReadback(deps: Dependencies) {
+  return createAuthenticatedBciLineageOperation(deps, true);
+}
+
+function createAuthenticatedBciLineageOperation(deps: Dependencies, readbackOnly: boolean) {
   if (!deps || typeof deps.authenticate !== "function" ||
       typeof deps.membershipsFor !== "function" || typeof deps.transaction !== "function") deny();
   return async (request: Request): Promise<Readonly<{ insertedIds: readonly string[]; replayedIds: readonly string[] }>> => {
@@ -258,6 +279,7 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
         });
         const persisted = found.rows as readonly BciLineageRecord[];
         const plan = planUntrustedBciAuditAppend(scope, persisted, canonical);
+        if (readbackOnly && plan.toInsert.length !== 0) deny();
         for (const node of plan.toInsert) {
           const inserted = await query(
             `INSERT INTO bci_dev.lineage_nodes
@@ -281,10 +303,12 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
           }
         }
         await query("SET CONSTRAINTS ALL IMMEDIATE", []);
-        // Transactional read-after-write checks actual persisted graph before COMMIT.
-        // This is not independent authenticated provider or post-commit evidence.
-        if (plan.toInsert.length) {
-          const ids = plan.toInsert.map(node => node.id);
+        // Replays must prove their physical nodes AND edges too. In readback
+        // mode this is a separate SELECT-only transaction, never a repair.
+        // The outer caller determines whether an earlier COMMIT completed.
+        const expectedNodes = [...new Map(canonical.map(node => [node.id, node])).values()];
+        if (expectedNodes.length) {
+          const ids = expectedNodes.map(node => node.id);
           const rows = await query(
             `SELECT id::text AS "id", tenant_id::text AS "tenantId", product, stage,
                     source_system AS "sourceSystem", source_record_key AS "sourceRecordKey",
@@ -301,17 +325,19 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
               throw new BciLineageWriteDenied();
             byId.set(row.id, row);
           }
-          for (const expected of plan.toInsert) {
+          for (const expected of expectedNodes) {
             const actual = byId.get(expected.id);
             if (!actual || lineageFields.some(field =>
-              JSON.stringify(actual[field]) !== JSON.stringify(expected[field]))) deny();
+              JSON.stringify(field === "parentIds" && Array.isArray(actual[field]) ?
+                [...actual[field]].sort() : actual[field]) !==
+              JSON.stringify(field === "parentIds" ? [...expected.parentIds].sort() : expected[field]))) deny();
           }
           const edges = await query(
             `SELECT parent_id::text AS "parentId", child_id::text AS "childId"
              FROM bci_dev.lineage_edges
              WHERE tenant_id=$1::uuid AND product=$2::text AND child_id = ANY($3::uuid[])`,
             [tenantId, product, ids]);
-          const expectedEdges = plan.toInsert.flatMap(node =>
+          const expectedEdges = expectedNodes.flatMap(node =>
             node.parentIds.map(parent => parent + ":" + node.id)).sort();
           const actualEdges = edges.rows.map(row => {
             if (!obj(row)) throw new BciLineageWriteDenied();
@@ -335,3 +361,4 @@ export function createAuthenticatedBciLineageWriter(deps: Dependencies) {
     } catch { return deny(); }
   };
 }
+
