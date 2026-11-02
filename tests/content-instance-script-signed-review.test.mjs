@@ -124,3 +124,99 @@ test('expired review, future clock, failed checks, forged getter and editorial h
   assert.throws(()=>prepareReview(held,reviewer,checks(),'a'.repeat(32),
     reviewedAt,expiresAt,now),/CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
 });
+
+
+// The ordinary non-trend script now consumes an independently signed image
+// editorial review and BCI auth preflight. TEST signatures/membership only;
+// neither this proof nor an image-only BCI issuer authorizes carousel dispatch.
+import {inspectPlannedContentPngBytes} from '../lib/content/plan-source-byte-gate.mjs';
+import {prepareLocalContentEditorialHandoff} from '../lib/content/local-render-editorial-handoff.mjs';
+import {contentSignedReviewSigningBytes} from '../lib/content/signed-editorial-decision.mjs';
+import {prepareContentInstanceScriptImageAuthPreflight as combined} from
+  '../lib/content/instance-script-signed-review.mjs';
+
+function pairedReview(){
+  const cfg={...config(),tenantId:'22222222-2222-4222-8222-222222222222'};
+  const args=[cfg,brief(),script(),resource(),bytes(),copy(),opts];
+  const qa=inspectPlannedContentPngBytes(cfg,args[1],args[4],opts);
+  const manifest={schemaVersion:1,renderer:'content-local-card-pillow-v1',
+    planId:qa.planId,planIdAuthenticated:false,
+    status:'LOCAL_TEMPLATE_RENDERED_EDITORIAL_PENDING',
+    localMediaBytesDecoded:true,externalAiProviderGenerationVerified:false,
+    providerReceiptAuthenticated:false,editorialApprovalVerified:false,
+    bufferSentVerified:false,sharedBciAuditVerified:false,
+    executionAllowed:false,customerSaasReady:false,
+    images:qa.images.map(x=>({slot:x.slot,
+      filename:'content_card_'+String(x.slot).padStart(2,'0')+'.png',
+      byteLength:x.byteLength,sourceSha256:x.sha256,
+      decodedRgbSha256:x.decodedRgbSha256}))};
+  const handoff=prepareLocalContentEditorialHandoff(cfg,args[1],manifest,
+    args[4],args[5],opts);
+  const {privateKey,publicKey}=generateKeyPairSync('ed25519');
+  const keys=new Map([['test-key',publicKey]]);
+  const imagePayload={schemaVersion:1,product:'content',
+    tenantId:handoff.tenantId,instanceId:handoff.instanceId,
+    planId:handoff.planId,mediaSetId:handoff.mediaSetId,
+    approvalRequestId:handoff.approvalRequestId,
+    reviewPacketId:handoff.reviewPacketId,handoffId:handoff.handoffId,
+    reviewerSubject:reviewer,reviewerProvider:'neon-auth',
+    reviewedAt:'2026-11-02T23:58:00.000Z',
+    expiresAt:'2026-11-03T01:00:00.000Z',
+    nonce:'b'.repeat(32),decision:'APPROVE',
+    checkResults:handoff.requiredHumanChecks.map(check=>({check,passed:true}))};
+  const signImage=p=>({schemaVersion:1,keyId:'test-key',payload:p,
+    signature:sign(null,contentSignedReviewSigningBytes(p),privateKey)
+      .toString('base64url')});
+  const signScript=p=>({schemaVersion:1,keyId:'test-key',payload:p,
+    signature:sign(null,signingBytes(p),privateKey).toString('base64url')});
+  const scriptPayload=prepareReview(args,reviewer,checks(),'a'.repeat(32),
+    reviewedAt,expiresAt,now);
+  const deps={authenticateReviewer:async()=>({userId:reviewer,authenticated:true}),
+    membershipsFor:async()=>[{principalId:reviewer,tenantId:cfg.tenantId,
+      product:'content',active:true}]};
+  return {args,manifest,imagePayload,scriptPayload,
+    imageReceipt:signImage(imagePayload),scriptReceipt:signScript(scriptPayload),
+    signImage,signScript,keys,deps};
+}
+const combinedCall=(x,override={})=>combined(override.args||x.args,
+  override.manifest||x.manifest,override.imageReceipt||x.imageReceipt,
+  override.scriptReceipt||x.scriptReceipt,override.keys||x.keys,
+  override.deps||x.deps,now);
+
+test('ordinary two-image script + distinct signed image review bind original bytes and authenticated dependency, never dispatch',async()=>{
+  const x=pairedReview(),out=await combinedCall(x);
+  assert.equal(out.status,'INSTANCE_SCRIPT_IMAGE_AUTH_PREFLIGHT_ONLY');
+  assert.equal(out.imageAndScriptSignaturesVerified,true);
+  assert.equal(out.originalOrderedMediaRecomputed,true);
+  assert.equal(out.serverPrincipalAndMembershipMatched,true);
+  assert.match(out.signedScriptMediaEvidenceId,/^content-instance-script-signed-/);
+  assert.equal(out.bciReservationRequestCandidate,null);
+  for(const key of ['reviewerRoleVerified','durableApprovalRecorded',
+    'atomicReservationVerified','providerSentVerified','measurementVerified',
+    'learningVerified','executionAllowed','customerSaasReady'])
+    assert.equal(out[key],false,key);
+  assert.equal(Object.isFrozen(out),true);
+});
+test('ordinary script cannot borrow an image-only review across reviewer, time, nonce, tenant or original media',async()=>{
+  const x=pairedReview();
+  const differentReviewer='33333333-3333-4333-8333-333333333333';
+  const alteredScript=prepareReview(x.args,differentReviewer,checks(),
+    'a'.repeat(32),reviewedAt,expiresAt,now);
+  await assert.rejects(combinedCall(x,{scriptReceipt:x.signScript(alteredScript)}),
+    /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+  await assert.rejects(combinedCall(x,{imageReceipt:x.signImage({
+    ...x.imagePayload,nonce:'a'.repeat(32)})}),
+    /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+  await assert.rejects(combinedCall(x,{imageReceipt:x.signImage({
+    ...x.imagePayload,reviewedAt:'2026-11-03T00:00:00.000Z'})}),
+    /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+  const changed=[...x.args];changed[4]=[Buffer.from(x.args[4][0]),Buffer.from(x.args[4][1])];
+  changed[4][0][29]^=1;
+  await assert.rejects(combinedCall(x,{args:changed}),
+    /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+  const wrongTenant={...x.deps,membershipsFor:async()=>[{
+    principalId:reviewer,tenantId:'33333333-3333-4333-8333-333333333333',
+    product:'content',active:true}]};
+  await assert.rejects(combinedCall(x,{deps:wrongTenant}),
+    /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+});
