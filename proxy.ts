@@ -1,13 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
+import { usesNeonPreviewAuthentication } from "@/lib/bci/neon-preview-route-policy";
 
 export async function proxy(request: NextRequest) {
-  // This exact internal endpoint has its own Preview-only Neon JWT + membership
-  // boundary. Do not make it depend on the separate Supabase operator session.
-  if (request.nextUrl.pathname === "/api/internal/neon-evidence" ||
-      request.nextUrl.pathname === "/api/internal/neon-demand-case" ||
-      request.nextUrl.pathname === "/api/internal/neon-lineage-receipt" ||
-      request.nextUrl.pathname === "/internal/neon-preview") {
+  // These exact paths enforce their own Preview-only Neon JWT + membership
+  // boundary. Do not redirect a Neon bearer request to the separate Supabase login.
+  if (usesNeonPreviewAuthentication(request.nextUrl.pathname)) {
     return NextResponse.next({ request });
   }
   return updateSession(request);
