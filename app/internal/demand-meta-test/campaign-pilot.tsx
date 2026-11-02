@@ -1,0 +1,97 @@
+"use client";
+import { useState } from "react";
+
+type Readiness = { source: "BROS_DEMAND_META_PILOT"; campaignId: string; providerVerified: boolean;
+  campaignStatus: string | null; adsets: number | null; stagedSteps: number; totalStageSteps: number;
+  blockers: string[]; canStage: boolean; canActivate: boolean; canPause: boolean };
+const endpoint = "/api/internal/demand-meta-pilot";
+const blockerText: Record<string, string> = {
+  META_MANAGEMENT_TOKEN_MISSING: "Add the business-owned Meta management credential in the protected server settings.",
+  META_APP_CONFIGURATION_MISSING: "Complete the Meta app ID and app-secret configuration in the protected server settings.",
+  PILOT_LEDGER_PERMISSION_REVIEW_REQUIRED: "The execution ledger needs its scoped database permission review.",
+  PAUSED_STAGING_GATE_LOCKED: "Preparing paused ads is locked until the connection and ledger are verified.",
+  MALAYSIA_VERIFIED_IDENTITIES_REQUIRED: "Confirm the verified Malaysia beneficiary and payer identities in Meta.",
+  REAL_PURCHASE_QA_RECEIPT_REQUIRED: "Verify a real RM100 checkout, Purchase event, deduplication and campaign tracking; record the evidence.",
+  LIVE_LAUNCH_GATE_LOCKED: "Live launch has a separate server approval control.",
+  PROVIDER_RECONCILIATION_REQUIRED: "A previous action may have committed. Reconcile Meta and the ledger before retrying.",
+  PILOT_LEDGER_UNAVAILABLE: "The execution ledger could not be independently read.",
+  FRESH_CAMPAIGN_READBACK_NOT_VERIFIED: "The current Meta campaign settings could not be verified.",
+  META_READ_TOKEN_MISSING: "The server Meta reporting credential is unavailable.",
+  META_MANAGEMENT_CONNECTION_NOT_VERIFIED: "Meta has not verified the management credential, app and account access.",
+  META_LAUNCH_READBACK_NOT_VERIFIED: "The staged ads, Meta review status or flight settings need verification before launch.",
+};
+export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
+  { getToken: () => Promise<string>; signedIn: boolean; onSessionExpired: () => void }) {
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [notice, setNotice] = useState("Check the existing campaign before preparing or launching ads.");
+  const [busy, setBusy] = useState(false);
+  const [a, setA] = useState<File | null>(null), [b, setB] = useState<File | null>(null);
+  async function request(form?: FormData) {
+    const token = await getToken();
+    const response = await fetch(endpoint, { method: form ? "POST" : "GET", body: form,
+      headers: { Authorization: "Bearer " + token }, credentials: "same-origin", cache: "no-store",
+      redirect: "error", signal: AbortSignal.timeout(55000) });
+    if ([401, 403].includes(response.status)) { onSessionExpired(); throw Error("Sign in again, then refresh readiness."); }
+    if (response.status === 404) throw Error("Campaign controls are unavailable in this deployment.");
+    if (!response.headers.get("cache-control")?.includes("no-store")) throw Error("Campaign response could not be verified.");
+    const body = await response.json();
+    if (!response.ok) throw Error(body?.reconcileRequired === true ?
+      "An action may have committed. Stop and reconcile Meta and the ledger before retrying." :
+      "Action blocked. Refresh readiness to see the outstanding requirements.");
+    return body;
+  }
+  async function refresh() {
+    if (busy) return; setBusy(true);
+    setNotice("Reading current Meta settings and execution controls…");
+    try {
+      const r = await request();
+      if (r?.source !== "BROS_DEMAND_META_PILOT" || r.campaignId !== "120251158023300697" ||
+          !Array.isArray(r.blockers) || !r.blockers.every((x: unknown) => typeof x === "string")) throw Error("Readiness response could not be verified.");
+      setReadiness(r);
+      setNotice(r.providerVerified ? "Current campaign readback verified. Review the remaining requirements below." :
+        "Current campaign readback is unverified. Execution remains blocked.");
+    } catch (e) { setReadiness(null); setNotice(e instanceof Error ? e.message : "Readiness unavailable."); }
+    finally { setBusy(false); }
+  }
+  async function act(action: "stage" | "activate" | "pause") {
+    if (busy) return; setBusy(true);
+    setNotice(action === "stage" ? "Preparing approved ads in PAUSED state…" : action === "pause" ?
+      "Pausing the existing campaign and checking Meta…" : "Checking launch controls and enabling the approved campaign…");
+    try {
+      const limit = action === "stage" ? 7 : action === "activate" ? 5 : 1;
+      for (let step = 0; step < limit; step++) {
+        const form = new FormData(); form.set("action", action);
+        if (action === "stage") { if (!a || !b) throw Error("Select both approved V5 image files."); form.set("a", a); form.set("b", b); }
+        const r = await request(form);
+        if (r.campaignId !== "120251158023300697") throw Error("Campaign response could not be verified.");
+        if (r.status === "staged") { setNotice("Approved ads staged in PAUSED state. Live launch remains a separate action."); break; }
+        if (r.status === "activation_accepted") { setNotice("Meta accepted activation. Delivery and paid-order attribution still require independent verification."); break; }
+        if (r.status === "paused" && r.providerReadbackVerified === true) { setNotice(r.futureCommandsRevoked ?
+          "Meta confirms PAUSED. Further launch commands are revoked until review." :
+          "Meta confirms PAUSED now. The database stop record is unverified; reconcile any in-flight command."); break; }
+        if (!["staging", "activating"].includes(r.status)) throw Error("Action result unverified; reconcile before retrying.");
+        if (step === limit - 1) throw Error("Action did not complete; reconcile before retrying.");
+      }
+      setReadiness(null);
+    } catch (e) { setReadiness(null); setNotice(e instanceof Error ? e.message : "Action may have committed. Reconcile before retrying."); }
+    finally { setBusy(false); }
+  }
+  return <section aria-labelledby="campaign-pilot-heading" className="auth-form" style={{ marginTop: "2rem", borderTop: "1px solid #333", paddingTop: "1.5rem" }}>
+    <h2 id="campaign-pilot-heading">Run the approved Meta pilot</h2>
+    <p className="sub">Existing BROS SELL campaign · RM140 total · 7 days · Malaysia, ages 21–45 · two approved V5 ads.</p>
+    <p role="status" aria-label="Campaign execution status">{notice}</p>
+    <button type="button" disabled={busy || !signedIn} onClick={refresh}>Check campaign readiness</button>
+    {!signedIn ? <p className="sub">Sign in above to check access. Unavailable controls will explain what is missing.</p> : null}
+    {readiness ? <>
+      <p>Meta readback: {readiness.providerVerified ? "VERIFIED" : "UNVERIFIED"}. Campaign: {readiness.campaignStatus ?? "unknown"}. Paused staging: {readiness.stagedSteps}/{readiness.totalStageSteps} steps.</p>
+      {readiness.blockers.length ? <ul>{readiness.blockers.map(reason => <li key={reason}>{blockerText[reason] ?? "An execution requirement remains unverified."}</li>)}</ul> : null}
+      {readiness.canStage ? <>
+        <label htmlFor="pilot-asset-a">Approved V5 image A</label><input id="pilot-asset-a" type="file" accept="image/jpeg" disabled={busy} onChange={e => setA(e.target.files?.[0] ?? null)} />
+        <label htmlFor="pilot-asset-b">Approved V5 image B</label><input id="pilot-asset-b" type="file" accept="image/jpeg" disabled={busy} onChange={e => setB(e.target.files?.[0] ?? null)} />
+      </> : null}
+      <button type="button" disabled={busy || !readiness.canStage || !a || !b} onClick={() => act("stage")}>Prepare approved ads — PAUSED</button>
+      <button type="button" disabled={busy || !readiness.canActivate} onClick={() => act("activate")}>Launch approved RM140 campaign</button>
+      <button type="button" disabled={busy || !readiness.canPause} onClick={() => act("pause")}>Pause existing campaign</button>
+    </> : null}
+  </section>;
+}

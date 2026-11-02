@@ -7,6 +7,7 @@ import { createDemandMetaHttpHandler } from "./meta-direct-http.ts";
 import { createDemandMetaBciEvidenceHandler } from "./meta-bci-evidence-http.ts";
 import { createPgDemandEvidenceAppendTransaction } from "../bci/neon-demand-evidence-append.ts";
 import { createDemandMetaPersistedDiagnosisHandler, createDemandMetaReceiptReader } from "./meta-persisted-diagnosis.ts";
+import type { PilotTransaction } from "./meta-pilot-ledger.ts";
 
 /**
  * Existing BCI app, DEVELOPMENT Preview branch ONLY. Default OFF.
@@ -207,3 +208,42 @@ const diagnosisHandler = createDemandMetaPersistedDiagnosisHandler({
     createDemandMetaReceiptReader(createPgReadOnlyTransaction(getEvidenceWriterPool()))(tenantId, principalId),
 });
 export const handleDemandMetaPersistedDiagnosis = (request: Request) => diagnosisHandler(request);
+
+/** Shared admission for the existing DEMAND app; no second auth service or DB credential. */
+const pilotTransaction: PilotTransaction = async fn => {
+  if (!enabled() || process.env.BROS_DEMAND_META_PILOT_LEDGER !== "reviewed-v1") throw Error();
+  const client = await getEvidenceWriterPool().connect();
+  let destroy = false;
+  try {
+    // The campaign advisory lock provides serialization. READ COMMITTED makes a
+    // stop/revocation committed while a provider request is in flight visible.
+    await client.query("BEGIN ISOLATION LEVEL READ COMMITTED READ WRITE");
+    await client.query("SET LOCAL search_path = pg_catalog, pg_temp");
+    await client.query("SET LOCAL statement_timeout = '5000ms'");
+    await client.query("SET LOCAL lock_timeout = '4000ms'");
+    await client.query("SET LOCAL idle_in_transaction_session_timeout = '45000ms'");
+    const output = await fn((sql, params) => client.query(sql, [...params]));
+    await client.query("COMMIT");
+    return output;
+  } catch {
+    destroy = true;
+    try { await client.query("ROLLBACK"); } catch { /* destroy */ }
+    throw Error("PILOT_TRANSACTION_UNAVAILABLE");
+  } finally { client.release(destroy); }
+};
+export const demandMetaPilotRuntime = {
+  enabled,
+  readToken: () => enabled() && process.env.BROS_DEMAND_META_ACCOUNT_ID === "act_1997776120879476"
+    ? process.env.BROS_DEMAND_META_ADS_READ_TOKEN ?? null : null,
+  async authorize(jwt: string) {
+    if (!enabled()) throw Error();
+    const principal = await verifier(jwt);
+    if (!principal || principal.authenticated !== true) throw Error();
+    const grants = await getMemberships(() => {})(principal.userId, "demand");
+    if (grants.length !== 1 || grants[0].active !== true || grants[0].product !== "demand" ||
+        grants[0].principalId !== principal.userId ||
+        grants[0].tenantId.toLowerCase() !== process.env.BROS_DEMAND_META_TENANT_ID?.toLowerCase()) throw Error();
+    return { tenantId: grants[0].tenantId.toLowerCase(), principalId: principal.userId };
+  },
+  transaction: pilotTransaction,
+};

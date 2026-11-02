@@ -3,7 +3,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
-import { requestNeonPreviewToken, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
+import { requestNeonPreviewToken, requestNeonPreviewSession, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
+import CampaignPilot from "./campaign-pilot";
 import { demandMetaBrowserDiagnostic, type DemandMetaBrowserPhase } from "@/lib/demand/meta-browser-diagnostic";
 
 const operatorEmail = "rasymokh@gmail.com";
@@ -20,9 +21,7 @@ function auth(): VanillaBetterAuthClient {
 }
 
 async function verifiedSession(): Promise<boolean> {
-  const { data, error } = await auth().getSession();
-  return !error && Boolean(data?.session && data.user?.email === operatorEmail &&
-    data.user.emailVerified === true);
+  return requestNeonPreviewSession(auth(), operatorEmail);
 }
 
 const probeHeaders = (response: Response): boolean =>
@@ -340,7 +339,7 @@ export default function DemandMetaTestClient() {
       <section className="auth-card" aria-labelledby="demand-test-heading">
         <p className="eyebrow">BROS DEMAND · INTERNAL PREVIEW ONLY</p>
         <h1 id="demand-test-heading">Direct Meta verification</h1>
-        <p className="sub">Read Meta reports and explicitly save one bounded observation in Neon DEV. Reporting and evidence actions have separate server controls. This page cannot create or change ads.</p>
+        <p className="sub">Read Meta reports and save a bounded observation. The approved campaign pilot below has separate controls for preparing paused ads, launching and stopping the existing RM140 campaign.</p>
         <p className="sub">Vercel Authentication protects the Preview URL. Sign in to Vercel first if prompted. This is separate from Neon Auth email OTP. You can run no-token HTTP rejection checks without a Neon Auth session.</p>
         <p role="status" aria-live="polite">{notice}</p>
         {stage === "ready" && evidenceNotice !== null ? <p role="status" aria-label="DEV evidence receipt">{evidenceNotice}</p> : null}
@@ -371,6 +370,10 @@ export default function DemandMetaTestClient() {
             </>
           ) : null}
         </div>
+        <CampaignPilot signedIn={stage === "ready"} getToken={async () => {
+          if (!(await verifiedSession())) { setStage("start"); throw new Error("Sign in again to check campaign access."); }
+          return requestNeonPreviewToken(auth());
+        }} onSessionExpired={() => { setStage("start"); setNotice("Your session needs a fresh sign-in. No campaign action is certified."); }} />
         <p className="sub">No JWT, code, access token, tenant ID or database password is shown or written to storage. All provider reads require a manual click and are confined to the pinned ACQ-V2 window or one server-locked historical PAUSED BROS SELL control window. No arbitrary campaign selection.</p>
       </section>
     </main>

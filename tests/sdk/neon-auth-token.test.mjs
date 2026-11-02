@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createAuthClient } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter } from "@neondatabase/auth/vanilla/adapters";
-import { requestNeonPreviewToken } from "../../lib/bci/neon-preview-client-token.ts";
+import { requestNeonPreviewToken, requestNeonPreviewSession } from "../../lib/bci/neon-preview-client-token.ts";
 
 // Actual installed SDK, synthetic transport only. No provider request, user
 // session, OTP, credential or real JWT is used or displayed by this regression.
@@ -19,11 +19,12 @@ test("installed Neon SDK obtains a fresh token after getSession populated its ca
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   };
   let tokenResponse = () => Response.json({ token: syntheticToken });
+  let sessionResponse = session;
   globalThis.fetch = async (url, init) => {
     const pathname = new URL(url).pathname;
     calls.push({ pathname, credentials: init?.credentials,
       forceHeaderSent: new Headers(init?.headers).has("X-Force-Fetch") });
-    if (pathname.endsWith("/get-session")) return Response.json(session);
+    if (pathname.endsWith("/get-session")) return Response.json(sessionResponse);
     if (pathname.endsWith("/token")) return tokenResponse();
     throw new Error("Unexpected offline test request");
   };
@@ -40,6 +41,22 @@ test("installed Neon SDK obtains a fresh token after getSession populated its ca
   assert.deepEqual(calls.at(-1), {
     pathname: "/database/auth/token", credentials: "include", forceHeaderSent: false,
   }, "SDK-local force-fetch header must be removed before the provider request");
+
+  await t.test("fresh session check bypasses a valid cached session after provider sign-out", async () => {
+    sessionResponse = null;
+    const beforeCachedRead = calls.length;
+    assert.ok((await client.getSession()).data?.session,
+      "the former bare getSession check still accepts cached sign-in after the provider lost the session");
+    assert.equal(calls.length, beforeCachedRead, "reproduces the old cached session check without a provider request");
+    assert.equal(await requestNeonPreviewSession(client, "fixture@example.test"), false);
+    assert.equal(calls.length, beforeCachedRead + 1);
+    assert.deepEqual(calls.at(-1), {
+      pathname: "/database/auth/get-session", credentials: "include", forceHeaderSent: false,
+    }, "fresh session read reaches provider, with the SDK control header removed");
+    sessionResponse = session;
+    assert.equal(await requestNeonPreviewSession(client, "fixture@example.test"), true);
+    assert.equal(await requestNeonPreviewSession(client, "wrong@example.test"), false);
+  });
 
   await t.test("missing, empty and non-string token responses fail closed without session fallback", async () => {
     for (const data of [{}, { token: null }, { token: "" }, { token: 7 },
@@ -66,3 +83,4 @@ test("installed Neon SDK obtains a fresh token after getSession populated its ca
     }
   });
 });
+

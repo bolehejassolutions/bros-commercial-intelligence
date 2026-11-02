@@ -7,7 +7,8 @@ export async function proxy(request: NextRequest) {
   if (request.nextUrl.pathname === "/internal/demand-meta-test" ||
       request.nextUrl.pathname === "/api/internal/demand-meta" ||
       request.nextUrl.pathname === "/api/internal/demand-meta-evidence" ||
-      request.nextUrl.pathname === "/api/internal/demand-meta-diagnosis") {
+      request.nextUrl.pathname === "/api/internal/demand-meta-diagnosis" ||
+      request.nextUrl.pathname === "/api/internal/demand-meta-pilot") {
     return NextResponse.next({ request });
   }
   // BCI's separate Neon JWT + membership gate remains unchanged.
