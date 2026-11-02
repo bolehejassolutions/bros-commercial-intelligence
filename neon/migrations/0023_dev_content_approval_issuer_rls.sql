@@ -59,7 +59,7 @@ CREATE POLICY dev_content_issuer_approval_insert ON bci_dev.content_dispatch_app
   AND EXISTS(SELECT 1 FROM bci_dev.content_reviewer_authorizations a
     WHERE a.principal_id=approved_by AND a.tenant_id=nullif(current_setting('bci.tenant_id',true),'')::uuid
       AND a.product='content' AND a.revoked_at IS NULL
-      AND a.authorized_at<=clock_timestamp())
+      AND a.authorized_at<=approved_at)
  );
 DO $post$
 BEGIN

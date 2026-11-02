@@ -19,6 +19,7 @@ async function harness(opts={}){
  const calls=[],digestA=await hash(p.signedReviewReceipt),digestB=await hash(p.signedAdmissionReceipt);
  const row={approvalId:p.approvalId,tenantId:tenant,product:"content",
  dispatchIntentId:p.dispatchIntentId,approvedBy:uuid,bindingSha256:p.bindingSha256,
+ approvedAt:new Date(p.approvedAt),expiresAt:new Date(p.expiresAt),
  signedProofVersion:2,signedReviewEvidenceId:p.signedReviewEvidenceId,
  originalMediaSha256:p.originalMediaSha256,originalMediaCount:1,
  signedDispatchIntentSha256:p.signedDispatchIntentSha256,
@@ -38,6 +39,7 @@ test("migration is DEV-only, NOLOGIN and never auto-authorizes a human reviewer"
  assert.match(sql,/relrowsecurity AND relforcerowsecurity/);
  assert.match(sql,/CREATE POLICY dev_content_issuer_approval_insert/);
  assert.match(sql,/content_reviewer_authorizations a/);
+ assert.match(sql,/a\.authorized_at<=approved_at/);
  assert.doesNotMatch(sql,/\.tenant_id=tenant_id/);
  assert.match(sql,/signed_proof_version=2 AND original_media_count=1/);
  assert.match(sql,/signed_review_receipt.*SELECT/);
@@ -51,6 +53,7 @@ test("restricted append and separate readback bind role, current reviewer and ex
  assert.equal(h.calls.filter(x=>x.q.startsWith("INSERT")).length,1);
  assert.match(h.calls.find(x=>x.q.startsWith("INSERT")).q,/ON CONFLICT \(tenant_id,product,dispatch_intent_id\) DO NOTHING/);
  assert.match(h.calls.find(x=>x.q.includes('AS "members"')).q,/revoked_at IS NULL/);
+ assert.match(h.calls.find(x=>x.q.includes('AS "members"')).q,/authorized_at<=\$3::timestamptz/);
  assert.equal(h.calls.some(x=>x.q.includes("set_config('bci.principal_id'")),true);
 });
 test("admin/SET ROLE, revoked reviewer, foreign binding and mismatched readback deny",async()=>{
