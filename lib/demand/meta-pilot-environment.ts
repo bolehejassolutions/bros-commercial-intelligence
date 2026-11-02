@@ -26,6 +26,9 @@ export function pilotMetaConfiguration(input: NodeJS.ProcessEnv) {
       appSecretConfigured: Boolean(rawAppSecret),
       appSecretBoundaryWhitespaceRemoved: rawAppSecret !== undefined && rawAppSecret !== appSecret,
       appSecretFormatAccepted: acceptedFormat(appSecret),
+      appSecretTooShort: appSecret !== undefined && appSecret.length < 16,
+      appSecretHasInternalWhitespace: Boolean(appSecret && /\s/.test(appSecret)),
+      appSecretHasOnlyMaskCharacters: Boolean(appSecret && /^[*\u2022\u25cf\u00b7\u2026]+$/u.test(appSecret)),
     },
   };
 }

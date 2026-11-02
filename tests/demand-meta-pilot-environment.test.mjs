@@ -70,11 +70,22 @@ test("boundary whitespace is normalized before app authentication and HMAC witho
   assert.ok(!JSON.stringify(resolved.configurationChecks).includes(secret));
   assert.ok(!JSON.stringify(result).includes(secret));
 });
-test("embedded whitespace and short secret placeholders still block before any provider request", async () => {
-  for (const secret of ["synthetic-app secret-123456", "***", "", " \r\n\t "]) {
+test("embedded whitespace and short secret placeholders give private actionable diagnostics and block before Meta", async () => {
+  for (const [secret, expected] of [
+    ["synthetic-app secret-123456", [false, true, false]],
+    ["***", [true, false, true]],
+    ["\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022", [true, false, true]],
+    ["", [true, false, false]],
+    [" \r\n\t ", [true, false, false]],
+  ]) {
     const resolved = pilotMetaConfiguration({ BROS_DEMAND_META_ADS_MANAGEMENT_TOKEN: token,
       META_APP_ID: "1315572270590189", META_APP_SECRET: secret });
     assert.equal(resolved.configurationChecks.appSecretFormatAccepted, false);
+    assert.deepEqual([
+      resolved.configurationChecks.appSecretTooShort,
+      resolved.configurationChecks.appSecretHasInternalWhitespace,
+      resolved.configurationChecks.appSecretHasOnlyMaskCharacters,
+    ], expected);
     let calls = 0;
     const result = await inspectMetaConnection("write", resolved.environment, async () => { calls++; throw Error(); });
     assert.equal(calls, 0); assert.equal(result.status, "BLOCKED");
