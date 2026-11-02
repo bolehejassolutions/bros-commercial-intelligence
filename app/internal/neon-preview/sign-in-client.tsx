@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
-import { requestNeonPreviewToken, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
+import { requestNeonPreviewToken, NeonPreviewTokenUnavailable, requestNeonPreviewSession } from "@/lib/bci/neon-preview-client-token";
 import { runNeonPreviewNegativeChecks, runNeonPreviewEmptyTenantIsolationSmoke } from "@/lib/bci/neon-preview-negative-checks";
 import { demandReviewProposal, parseDemandProposalResponse } from "@/lib/bci/neon-demand-proposal-client";
 
@@ -18,8 +18,7 @@ function auth(): VanillaBetterAuthClient {
 }
 
 async function hasVerifiedOperatorSession(): Promise<boolean> {
-  const { data, error } = await auth().getSession();
-  return !error && Boolean(data?.session && data.user?.email === operatorEmail && data.user.emailVerified === true);
+  return requestNeonPreviewSession(auth(), operatorEmail);
 }
 
 export default function NeonPreviewSignIn() {
@@ -299,15 +298,24 @@ export default function NeonPreviewSignIn() {
     setProposalResult(null);
     setMessage("Submitting the reviewed DEV-only PROPOSED record…");
     // Display only a bounded failure category, never a JWT, response body or identity.
-    let failureCategory = "session-or-token";
+    let failureCategory = "session-check";
     try {
-      if (!await hasVerifiedOperatorSession()) throw new Error();
+      if (!await hasVerifiedOperatorSession()) {
+        setStep("start");
+        setProposalResult("Not submitted: a fresh verified sign-in is required.");
+        setMessage("Your development session has expired or is no longer verified. Request a new sign-in code, then review the proposal again.");
+        return;
+      }
+      failureCategory = "token";
       const token = await requestNeonPreviewToken(auth());
+      // A rejected fetch can occur after the server received the write.
+      failureCategory = "request-unconfirmed";
       const response = await fetch("/api/internal/neon-demand-proposal", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify(demandReviewProposal),
         credentials: "same-origin", cache: "no-store", redirect: "error",
+        signal: AbortSignal.timeout(20000),
       });
       failureCategory = `HTTP ${response.status}`;
       if (response.status !== 200 ||
@@ -319,10 +327,28 @@ export default function NeonPreviewSignIn() {
       const result = parseDemandProposalResponse(JSON.parse(raw));
       setProposalResult(`DEV proposal ${result.status}: ${result.proposalId}. PROPOSED for review only; NOT approved, executed, provider-attested or an outcome. Independent Neon post-COMMIT readback remains required.`);
       setMessage("DEV proposal request completed; see the bounded result below.");
-    } catch {
-      setProposalResult(`DEV proposal was not accepted or verified (${failureCategory}). No durable proposal is certified.`);
-      setMessage("DEV proposal submission denied or unavailable.");
+    } catch (error) {
+      if (failureCategory === "token" && error instanceof NeonPreviewTokenUnavailable)
+        failureCategory = `token-${error.category}`;
+      if (failureCategory === "request-unconfirmed" || failureCategory === "response-validation") {
+        setProposalResult(`DEV proposal result is unconfirmed (${failureCategory}). The server may already have saved it. Reconcile the existing case before retrying; do not assume nothing was saved.`);
+      } else {
+        setProposalResult(`DEV proposal was not accepted or verified (${failureCategory}). No durable proposal is certified.`);
+      }
+      if (failureCategory === "HTTP 401") {
+        setStep("start");
+        setMessage("Your development sign-in has expired. Request a new sign-in code, then review the proposal again.");
+      } else {
+        setMessage("DEV proposal could not be verified. You can refresh sign-in below; no automatic submission will be retried.");
+      }
     } finally { setBusy(false); }
+  }
+
+  function refreshSignIn() {
+    if (busy) return;
+    setCode("");
+    setStep("start");
+    setMessage("Request a fresh sign-in code. After signing in, review the proposal and submit it explicitly; no write will be retried automatically.");
   }
 
   async function signOut() {
@@ -362,7 +388,7 @@ export default function NeonPreviewSignIn() {
         {step === "ready" && lineageCheckResult !== null ? <p role="status" aria-label="Lineage writer login result">{lineageCheckResult}</p> : null}
         {step === "ready" && caseLinkResult !== null ? <p role="status" aria-label="Restricted case/link result">{caseLinkResult}</p> : null}
         {step === "ready" && lineageReceiptResult !== null ? <p role="status" aria-label="Restricted lineage receipt result">{lineageReceiptResult}</p> : null}
-        {step === "ready" && proposalResult !== null ? <p role="status" aria-label="Restricted DEMAND proposal result">{proposalResult}</p> : null}
+        {proposalResult !== null ? <p role="status" aria-label="Restricted DEMAND proposal result">{proposalResult}</p> : null}
         {step === "start" ? <div className="auth-form">
           <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>
             {cooldown > 0 ? `Wait ${cooldown}s` : "Send sign-in code (verified email)"}
@@ -410,6 +436,7 @@ export default function NeonPreviewSignIn() {
               <p><strong>PROPOSED ≠ approved or executed.</strong> No live Meta changes, order attribution or outcome is claimed.</p>
               <button type="button" disabled={busy} onClick={submitDemandProposal}>Submit reviewed PROPOSED record (DEV only)</button>
             </section> : null}
+            <button type="button" disabled={busy} onClick={refreshSignIn}>Refresh sign-in</button>
             <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
           </div>
         ) : null}

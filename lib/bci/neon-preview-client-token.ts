@@ -31,3 +31,39 @@ export async function requestNeonPreviewToken(client: TokenClient): Promise<stri
     throw new NeonPreviewTokenUnavailable("exception");
   }
 }
+
+type SessionClient = Readonly<{
+  getSession: (options: { fetchOptions: {
+    headers: Record<string, string>; credentials: "include"; cache: "no-store"; signal: AbortSignal;
+  } }) => Promise<Readonly<{ data: unknown; error: unknown }>>;
+}>;
+
+export class NeonPreviewSessionUnavailable extends Error {
+  constructor() { super("Neon Preview session could not be checked."); }
+}
+
+/** Revalidate with the provider; a cached UI session is not current authority. */
+export async function requestNeonPreviewSession(client: SessionClient, approvedEmail: string): Promise<boolean> {
+  try {
+    const { data, error } = await client.getSession({ fetchOptions: {
+      headers: { "X-Force-Fetch": "true" }, credentials: "include", cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    } });
+    if (error) throw new NeonPreviewSessionUnavailable();
+    if (data === null) return false;
+    if (typeof data !== "object" || Array.isArray(data) || !("session" in data) || !("user" in data))
+      throw new NeonPreviewSessionUnavailable();
+    if (data.session === null || data.user === null) return false;
+    if (typeof data.session !== "object" || typeof data.user !== "object" ||
+        !("expiresAt" in data.session) || !("email" in data.user) || !("emailVerified" in data.user))
+      throw new NeonPreviewSessionUnavailable();
+    const expiry = data.session.expiresAt;
+    const expiresAt = expiry instanceof Date ? expiry.getTime()
+      : typeof expiry === "string" ? Date.parse(expiry) : NaN;
+    if (!Number.isFinite(expiresAt)) throw new NeonPreviewSessionUnavailable();
+    return expiresAt > Date.now() && data.user.email === approvedEmail && data.user.emailVerified === true;
+  } catch {
+    // Never surface provider bodies, cookie values, identifiers or SDK exceptions.
+    throw new NeonPreviewSessionUnavailable();
+  }
+}
