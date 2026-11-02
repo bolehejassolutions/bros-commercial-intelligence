@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {deflateSync} from "node:zlib";
+import {createHash} from "node:crypto";
 import {inspectPlannedContentPngBytes as inspect} from "../lib/content/plan-source-byte-gate.mjs";
 
 const config = () => ({
@@ -120,4 +121,16 @@ test("unreviewed dimension options and client attestation injection are rejected
   const forged=brief();forged.approvalVerified=true;
   assert.throws(()=>inspect(config(),forged,[png(20),png(30)],dimensions),
     /INVALID_CONTENT_BRIEF_FIELDS/);
+});
+
+// Real-media handoff may supply a raw decoded RGBA digest (no dimensions).
+// This must not be compared directly to the existing header-bound lineage hash.
+test("raw decoded RGBA digest is additive and distinct from header-bound lineage hash",()=>{
+  const result=inspect(config(),brief(),[png(20),png(30)],dimensions);
+  const rgba=Buffer.from(Array.from({length:4},()=>[20,20,20,255]).flat());
+  const expected=createHash('sha256').update(rgba).digest('hex');
+  assert.equal(result.images[0].decodedRgbaSha256,expected);
+  assert.notEqual(result.images[0].decodedRgbaSha256,result.images[0].renderedRgbaSha256);
+  assert.equal(result.status,'SOURCE_BYTE_QA_ONLY');
+  assert.equal(result.executionAllowed,false);
 });
