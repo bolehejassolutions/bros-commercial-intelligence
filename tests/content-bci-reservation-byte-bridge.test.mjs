@@ -6,6 +6,11 @@ import {tmpdir} from 'node:os';
 import {join,dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {generateKeyPairSync,sign} from 'node:crypto';
+import {createContentBciIssuerSourceCallbacks} from '../lib/content/bci-issuer-source-context.mjs';
+import {prepareContentSingleImageAdmissionMedia} from '../lib/content/single-image-admission-media.mjs';
+import {prepareContentBufferDispatchIntent} from '../lib/content/buffer-dispatch-intent.mjs';
+import {prepareContentAdmissionV2Payload,contentAdmissionV2SigningBytes,
+  verifyContentAdmissionV2} from '../lib/content/signed-admission-v2.mjs';
 import {planContentJobCandidate} from '../lib/content/instance-plan.mjs';
 import {prepareLocalContentEditorialHandoff} from '../lib/content/local-render-editorial-handoff.mjs';
 import {contentSignedReviewSigningBytes} from '../lib/content/signed-editorial-decision.mjs';
@@ -72,5 +77,58 @@ test('real single PNG and signed scope reach BCI transport; changed copy/bytes a
     const carousel=[...args];carousel[3]=[buffers[0],buffers[0]];
     await assert.rejects(reserveContentReviewedImageDispatch(carousel,'test-durable-approval',transport,now));
     assert.equal(requests.length,1);
+
+    // The BCI trusted issuer requires CONTENT-owned callbacks that recompute
+    // original media and signed destination/copy context, not caller digests.
+    // This remains an OFFLINE test with TEST keys and simulated provider auth.
+    const keys=new Map([['test-only',publicKey]]);
+    const original=prepareContentSingleImageAdmissionMedia(config,brief,manifest,buffers,copy);
+    const dispatch=prepareContentBufferDispatchIntent(config,brief,buffers,copy,
+      {providerOrganizationId:'a'.repeat(24)});
+    const media={originalMedia:original.originalMedia,mediaBytes:original.mediaBytes};
+    const v2Payload=prepareContentAdmissionV2Payload(handoff,receipt,media,dispatch,
+      keys,'c'.repeat(32),now);
+    const v2Receipt={schemaVersion:2,keyId:'test-only',payload:v2Payload,
+      signature:sign(null,contentAdmissionV2SigningBytes(v2Payload),privateKey)
+        .toString('base64url')};
+    const v2=verifyContentAdmissionV2(handoff,receipt,media,dispatch,v2Receipt,keys,now);
+    const sourceContext={reviewScope:'IMAGE_ONLY_NO_SCRIPT',instanceConfig:config,
+      brief,rendererManifest:manifest,proposedCopy:copy,
+      dispatchOptions:{providerOrganizationId:'a'.repeat(24)},
+      trustedPublicKeys:keys,now:()=>now};
+    const callbacks=createContentBciIssuerSourceCallbacks(sourceContext);
+    const pinned={dispatchIntentId:dispatch.dispatchIntentId,binding:v2.binding,
+      receipt:{editorial:receipt,admission:v2Receipt}};
+    const admitted={tenantId,dispatchIntentId:dispatch.dispatchIntentId,
+      reviewerId:reviewer,signedReviewEvidenceId:v2.verified.signedReviewEvidenceId,
+      originalMediaSha256:original.originalMedia.originalMediaSha256,mediaCount:1,
+      bindingSha256:v2.bindingSha256,
+      dispatchIntentSha256:v2.verified.signedDispatchIntentSha256};
+    assert.deepEqual(await callbacks.recomputeOriginalMedia(buffers[0]),
+      original.originalMedia);
+    assert.equal(await callbacks.verifyContentSourceContext(pinned,buffers[0],admitted),true);
+    await assert.rejects(callbacks.verifyContentSourceContext(
+      {...pinned,dispatchIntentId:'other-intent'},buffers[0],admitted),
+      /CONTENT_BCI_ISSUER_SOURCE_CONTEXT_DENIED/);
+    await assert.rejects(callbacks.verifyContentSourceContext(pinned,buffers[0],
+      {...admitted,bindingSha256:'0'.repeat(64)}),
+      /CONTENT_BCI_ISSUER_SOURCE_CONTEXT_DENIED/);
+    await assert.rejects(callbacks.verifyContentSourceContext(pinned,bad,admitted),
+      /CONTENT_BCI_ISSUER_SOURCE_CONTEXT_DENIED/);
+    await assert.rejects(callbacks.verifyContentSourceContext({...pinned,
+      receipt:{...pinned.receipt,admission:{...v2Receipt,signature:'A'.repeat(86)}}},
+      buffers[0],admitted),/CONTENT_BCI_ISSUER_SOURCE_CONTEXT_DENIED/);
+    const changedCopyContext=createContentBciIssuerSourceCallbacks({
+      ...sourceContext,proposedCopy:{...copy,caption:copy.caption+' Revised.'}});
+    await assert.rejects(changedCopyContext.verifyContentSourceContext(
+      pinned,buffers[0],admitted),/CONTENT_BCI_ISSUER_SOURCE_CONTEXT_DENIED/);
+    const changedDestination=createContentBciIssuerSourceCallbacks({
+      ...sourceContext,dispatchOptions:{providerOrganizationId:'b'.repeat(24)}});
+    await assert.rejects(changedDestination.verifyContentSourceContext(
+      pinned,buffers[0],admitted),/CONTENT_BCI_ISSUER_SOURCE_CONTEXT_DENIED/);
+    assert.throws(()=>createContentBciIssuerSourceCallbacks({
+      ...sourceContext,reviewScope:'SCRIPT_OR_CAROUSEL'}),
+      /CONTENT_BCI_ISSUER_SOURCE_CONTEXT_DENIED/);
+    assert.equal(requests.length,1); // No additional BCI/Buffer request.
   }finally{rmSync(dir,{recursive:true,force:true});}
 });
