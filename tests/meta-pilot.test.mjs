@@ -59,6 +59,7 @@ function fixture() {
       expires_at: Math.floor(now / 1000) + 86400, data_access_expires_at: 0, scopes: ["ads_management"] } };
     else if (u.pathname.endsWith("/" + config.META_APP_ID)) data = { id: config.META_APP_ID,
       name: "BROS Commercial Intelligence", business: { id: "2091328444802994" } };
+    else if (u.pathname.endsWith("/2091328444802994/owned_apps")) data = { data: [{ id: config.META_APP_ID }] };
     else if (u.pathname.endsWith("/" + PILOT.account)) data = account;
     else if (u.pathname.endsWith("/" + PILOT.campaign)) data = campaign;
     else if (u.pathname.endsWith("/" + PILOT.campaign + "/adsets")) data = { data: [set] };

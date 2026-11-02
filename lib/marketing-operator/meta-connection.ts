@@ -9,14 +9,14 @@ export type MetaCredentialMode = "read" | "write";
 type Reason = "VERIFIED" | "MISSING_SERVER_CONFIGURATION" | "INVALID_SERVER_CONFIGURATION" |
   "PROVIDER_REQUEST_FAILED" | "MALFORMED_PROVIDER_DATA" | "TOKEN_INVALID" |
   "TOKEN_APP_MISMATCH" | "TOKEN_EXPIRED" | "TOKEN_SCOPE_MISSING" | "TOKEN_TARGET_MISMATCH" |
-  "APP_IDENTITY_MISMATCH" | "APP_BUSINESS_MISMATCH" | "ACCOUNT_IDENTITY_MISMATCH" |
+  "APP_IDENTITY_MISMATCH" | "APP_BUSINESS_MISMATCH" | "APP_OWNERSHIP_READBACK_INCOMPLETE" | "ACCOUNT_IDENTITY_MISMATCH" |
   "ACCOUNT_BUSINESS_MISMATCH" | "ACCOUNT_SETTINGS_MISMATCH" | "ACCOUNT_WRITE_TASK_MISSING";
 export type MetaConnectionStatus = {
   status: "READY" | "BLOCKED"; reason: Reason; mode: MetaCredentialMode;
   appId: string | null; accountId: string; businessPortfolioId: string;
   checks: { token: boolean; app: boolean; account: boolean };
   expiresAt: number | null; dataAccessExpiresAt: number | null;
-  providerFailure?: { phase: "token" | "app" | "account";
+  providerFailure?: { phase: "token" | "app" | "app_ownership" | "account";
     status: number | null; code: number | null; subcode: number | null } | null;
 };
 class PreflightError extends Error {
@@ -126,7 +126,7 @@ export async function inspectMetaConnection(
     if (rawAppId !== FIXED_META_APP) fail("APP_IDENTITY_MISMATCH");
     const appId = rawAppId;
     const appCredential = appId + "|" + secret;
-    const get = (url: URL, credential: string, phase: "token" | "app" | "account") =>
+    const get = (url: URL, credential: string, phase: "token" | "app" | "app_ownership" | "account") =>
       providerGet(url, credential, transport, secret, failure => { result.providerFailure = { phase, ...failure }; });
     const debug = new URL(GRAPH + "/debug_token");
     debug.searchParams.set("input_token", token);
@@ -135,12 +135,31 @@ export async function inspectMetaConnection(
     result.dataAccessExpiresAt = metadata.dataAccessExpiresAt;
     result.checks.token = true;
     const appUrl = new URL(GRAPH + "/" + appId);
-    appUrl.searchParams.set("fields", "id,name,business,owner_business");
+    appUrl.searchParams.set("fields", "id,name");
     // Read business ownership with the app-bound business caller verified above.
     // Keep the app access credential confined to token introspection.
     const app = await get(appUrl, token, "app");
     if (app.id !== appId || app.name !== APP_NAME) fail("APP_IDENTITY_MISMATCH");
-    verifyBusiness(app, "APP_BUSINESS_MISMATCH");
+    // Do not request optional Application ownership fields that can reject the
+    // entire core read. Prove ownership through the fixed Business owned_apps
+    // edge instead; token app-binding or a matching display name is insufficient.
+    if (app.business !== undefined || app.owner_business !== undefined)
+      verifyBusiness(app, "APP_BUSINESS_MISMATCH");
+    const ownedUrl = new URL(GRAPH + "/" + FIXED_META_BUSINESS + "/owned_apps");
+    ownedUrl.searchParams.set("fields", "id"); ownedUrl.searchParams.set("limit", "100");
+    const owned = await get(ownedUrl, token, "app_ownership");
+    if (!Array.isArray(owned.data) || owned.data.length > 100) fail("MALFORMED_PROVIDER_DATA");
+    const ownedIds = owned.data.map(row => {
+      const id = record(row).id;
+      if (typeof id !== "string" || !/^\d{6,40}$/.test(id)) fail("MALFORMED_PROVIDER_DATA");
+      return id;
+    });
+    if (new Set(ownedIds).size !== ownedIds.length) fail("MALFORMED_PROVIDER_DATA");
+    if (!ownedIds.includes(appId)) {
+      if (owned.paging && typeof owned.paging === "object" &&
+          (owned.paging as Record<string, unknown>).next) fail("APP_OWNERSHIP_READBACK_INCOMPLETE");
+      fail("APP_BUSINESS_MISMATCH");
+    }
     result.checks.app = true;
     const accountUrl = new URL(GRAPH + "/" + FIXED_META_ACCOUNT);
     accountUrl.searchParams.set("fields", "id,account_id,account_status,currency,timezone_name,business,owner_business,user_tasks");

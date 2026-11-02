@@ -18,7 +18,8 @@ function fakeProvider(overrides={}){
  const transport=async(url,init)=>{
   calls.push({url,init});const path=new URL(url).pathname;
   const body=path.endsWith("/debug_token")?(overrides.debug??debug()):
-    path.endsWith("/"+appId)?(overrides.app??app()):(overrides.account??account());
+    path.endsWith("/"+appId)?(overrides.app??app()):
+    path.endsWith("/owned_apps")?(overrides.ownedApps??{data:[{id:appId}]}):(overrides.account??account());
   return new Response(JSON.stringify(body),{status:200});
  };
  return {calls,transport};
@@ -36,11 +37,11 @@ test("missing or malformed private configuration never reaches Meta",async()=>{
  assert.equal(wrongApp.reason,"APP_IDENTITY_MISMATCH");assert.equal(wrongApp.appId,null);
  assert.equal(calls.length,0);
 });
-test("preflight uses three bounded GET requests and only sanitized identity/expiry output",async()=>{
+test("preflight uses four bounded GETs with explicit fixed-business app ownership proof",async()=>{
  const {transport,calls}=fakeProvider();
  const result=await inspectMetaConnection("read",env,transport,now);
  assert.equal(result.status,"READY");assert.deepEqual(result.checks,{token:true,app:true,account:true});
- assert.equal(calls.length,3);
+ assert.equal(calls.length,4);
  for(const call of calls){
   const url=new URL(call.url);
   assert.equal(url.origin,"https://graph.facebook.com");assert.equal(call.init.method,"GET");
@@ -55,11 +56,32 @@ test("preflight uses three bounded GET requests and only sanitized identity/expi
  assert.equal(calls[1].init.headers.Authorization,"Bearer "+env.META_ADS_READ_TOKEN);
  assert.equal(new URL(calls[1].url).searchParams.get("appsecret_proof"),
   createHmac("sha256",env.META_APP_SECRET).update(env.META_ADS_READ_TOKEN).digest("hex"));
+ assert.equal(new URL(calls[1].url).searchParams.get("fields"),"id,name");
+ assert.equal(new URL(calls[2].url).pathname,"/v24.0/"+FIXED_META_BUSINESS+"/owned_apps");
+ assert.equal(new URL(calls[2].url).searchParams.get("fields"),"id");
  assert.equal(calls[2].init.headers.Authorization,"Bearer "+env.META_ADS_READ_TOKEN);
+ assert.equal(calls[3].init.headers.Authorization,"Bearer "+env.META_ADS_READ_TOKEN);
  assert.ok(!calls[1].url.includes(env.META_ADS_READ_TOKEN));assert.ok(!calls[2].url.includes(env.META_ADS_READ_TOKEN));
  const serialized=JSON.stringify(result);
  for(const secret of [env.META_APP_SECRET,env.META_ADS_READ_TOKEN,env.META_ADS_MANAGEMENT_TOKEN])assert.ok(!serialized.includes(secret));
  assert.ok(!serialized.includes("graph.facebook.com"));
+});
+test("token binding and matching app name cannot substitute for actual fixed-business ownership",async()=>{
+ for(const [ownedApps,reason] of [
+  [{data:[]},"APP_BUSINESS_MISMATCH"],
+  [{data:[{id:"99999999999999"}]},"APP_BUSINESS_MISMATCH"],
+  [{data:[],paging:{next:"https://untrusted.invalid/private-cursor"}},"APP_OWNERSHIP_READBACK_INCOMPLETE"],
+  [{data:[{id:appId},{id:appId}]},"MALFORMED_PROVIDER_DATA"],
+ ]){
+  const f=fakeProvider({ownedApps});
+  const r=await inspectMetaConnection("write",env,f.transport,now);
+  assert.equal(r.status,"BLOCKED");assert.equal(r.reason,reason);
+  assert.equal(r.checks.token,true);assert.equal(r.checks.app,false);assert.equal(r.checks.account,false);
+  assert.equal(f.calls.length,3);assert.ok(f.calls.every(c=>c.init.method==="GET"));
+  assert.ok(!JSON.stringify(r).includes("private-cursor"));
+ }
+ const positive=fakeProvider({app:{id:appId,name:"BROS Commercial Intelligence"}});
+ assert.equal((await inspectMetaConnection("write",env,positive.transport,now)).status,"READY");
 });
 test("failed app lookup exposes only bounded numeric diagnostics and never retries or authorizes writes",async()=>{
  const f=fakeProvider();
