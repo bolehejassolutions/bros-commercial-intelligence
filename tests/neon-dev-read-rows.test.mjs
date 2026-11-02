@@ -13,6 +13,11 @@ function mock({
   bypass = false,
   superuser = false,
   canLogin = true,
+  canCreateDatabase = false,
+  canManageRoles = false,
+  canReplicate = false,
+  inheritsRoles = false,
+  parentRoleCount = 0,
   rows = [],
   rejectAt = -1,
   safety = {},
@@ -23,12 +28,22 @@ function mock({
     const query = async (sql, params) => {
       calls.push({ sql, params });
       if (calls.length - 1 === rejectAt) throw new Error("database unavailable");
-      if (sql.includes("current_user AS role_name")) return { rows: [{ role_name: role, session_role_name: sessionRole, bypass_rls: bypass, is_superuser: superuser, can_login: canLogin }] };
+      if (sql.includes("current_user AS role_name")) return { rows: [{ role_name: role, session_role_name: sessionRole, bypass_rls: bypass, is_superuser: superuser, can_login: canLogin, can_create_database: canCreateDatabase,
+        can_manage_roles: canManageRoles, can_replicate: canReplicate,
+        inherits_roles: inheritsRoles, parent_role_count: parentRoleCount }] };
       if (sql.includes("current_database() AS database_name")) return { rows: [{
         database_name: "bros_intelligence_dev",
         rls_enabled: true, rls_forced: true, can_read_evidence: true,
-        can_insert_evidence: false, can_read_memberships: false,
-        can_create_schema_objects: false, can_create_database_objects: false,
+        can_insert_evidence: false, can_update_evidence: false,
+        can_delete_evidence: false, can_truncate_evidence: false,
+        can_reference_evidence: false, can_trigger_evidence: false,
+        can_maintain_evidence: false,
+        can_read_memberships: false, can_insert_memberships: false, can_update_memberships: false,
+        can_delete_memberships: false, can_truncate_memberships: false,
+        can_reference_memberships: false, can_trigger_memberships: false,
+        can_maintain_memberships: false,
+        lineage_tables_readonly: true,
+        can_create_schema_objects: false, can_create_database_objects: false, no_definer_exec: true, no_external_definer_exec: true, no_external_schema_create: true, no_external_table_access: true,
         ...safety,
       }] };
       if (sql.includes("set_config")) return { rows: [{ scope: params[0] }] };
@@ -89,6 +104,18 @@ test("admin SET ROLE impersonation, superuser and NOLOGIN session fail before sc
   }
 });
 
+test("restricted evidence LOGIN rejects elevated attributes and inherited parent roles", async () => {
+  for (const elevated of [
+    { canCreateDatabase: true }, { canManageRoles: true }, { canReplicate: true },
+    { inheritsRoles: true }, { parentRoleCount: 1 }, { parentRoleCount: null },
+  ]) {
+    const { calls, read } = mock(elevated);
+    await assert.rejects(read(scope), /access denied/i);
+    assert.equal(calls.some(x => x.sql.includes("set_config")), false);
+    assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+  }
+});
+
 test("bad tenant UUID, product and limit are rejected without SQL", async () => {
   for (const change of [
     { tenantId: "b'; DROP TABLE bci_dev.evidence; --" }, { tenantId: B + "x" },
@@ -98,6 +125,18 @@ test("bad tenant UUID, product and limit are rejected without SQL", async () => 
     await assert.rejects(read({ ...scope, ...change }), /access denied/i);
     assert.equal(calls.length, 0);
   }
+});
+
+test("restricted evidence rejects coercible non-string tenant IDs before any SQL", async () => {
+  // RegExp.test coerces [uuid], boxed strings and custom objects into valid UUID text.
+  // SQL scope must remain a primitive, authoritative tenant ID.
+  for (const tenantId of [[A], new String(A), { toString: () => A }, null, 42]) {
+    const { calls, read } = mock();
+    await assert.rejects(read({ ...scope, tenantId }), /access denied/i);
+    assert.equal(calls.length, 0, "no role query, GUC or evidence read may occur");
+  }
+  const { read } = mock();
+  assert.deepEqual(await read(scope), []);
 });
 
 test("returned cross-tenant/cross-product evidence rejected, not filtered silently", async () => {
@@ -140,13 +179,119 @@ test("wrong database, missing RLS and privilege drift fail before scoped SQL", a
     { rls_forced: false },
     { can_read_evidence: false },
     { can_insert_evidence: true },
-    { can_read_memberships: true },
+    { can_update_evidence: true }, { can_delete_evidence: true }, { can_truncate_evidence: true },
+    { can_reference_evidence: true }, { can_trigger_evidence: true },
+    { can_maintain_evidence: true }, { can_maintain_evidence: null },
+    { can_read_memberships: true }, { can_insert_memberships: true },
+    { can_update_memberships: true }, { can_delete_memberships: true }, { can_truncate_memberships: true },
+    { can_reference_memberships: true }, { can_trigger_memberships: true },
+    { can_maintain_memberships: true }, { can_maintain_memberships: null },
+    { lineage_tables_readonly: false }, { lineage_tables_readonly: null },
     { can_create_schema_objects: true },
     { can_create_database_objects: true },
+    { no_definer_exec: false }, { no_definer_exec: null },
+    { no_external_schema_create: false }, { no_external_schema_create: null },
+    { no_external_table_access: false }, { no_external_table_access: null },
   ]) {
     const { calls, read } = mock({ safety });
     await assert.rejects(read(scope), /access denied/i);
     assert.equal(calls.some(x => x.sql.includes("set_config")), false);
     assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
   }
+});
+
+
+test("malformed provider metric keys and unbounded JSONB maps fail closed", async () => {
+  const base = { id: ROW, tenantId: A, product: "demand",
+    provider: "manual", providerRecordKey: "x" };
+  for (const metrics of [
+    JSON.parse('{"__proto__": null}'),
+    { "bad key": 1 },
+    { "Uppercase": 1 },
+    Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`metric_${i}`, i])),
+  ]) {
+    const { read, calls } = mock({ rows: [{ ...base, metrics }] });
+    await assert.rejects(read(scope), /access denied/i);
+    assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+  }
+});
+
+
+test("evidence reader permits three core read tables but denies both lineage graph tables", async () => {
+  const { calls, read } = mock({ safety: { lineage_tables_readonly: false } });
+  await assert.rejects(read(scope), /access denied/i);
+  const posture = calls.find(x => x.sql.includes("lineage_tables_readonly"));
+  assert.ok(posture, "the real posture SQL must verify lineage tables");
+  assert.match(posture.sql, /COUNT\(\*\) = 5/);
+  assert.match(posture.sql, /'lineage_nodes', 'lineage_edges'/);
+  assert.match(posture.sql, /CASE WHEN extra\.relname IN/);
+  assert.match(posture.sql, /extra\.relforcerowsecurity/);
+  assert.match(posture.sql, /'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN'/);
+  assert.equal(calls.some(x => x.sql.includes("set_config")), false);
+  assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+});
+
+
+test("evidence reader fails closed on executable BCI SECURITY DEFINER privilege drift", async () => {
+  const { calls, read } = mock({ safety: { no_definer_exec: false } });
+  await assert.rejects(read(scope), /access denied/i);
+  const posture = calls.find(c => c.sql?.includes("current_database() AS database_name"));
+  assert.match(posture.sql, /pg_proc/);
+  assert.match(posture.sql, /prosecdef/);
+  assert.match(posture.sql, /has_function_privilege\(current_user, proc\.oid, 'EXECUTE'\)/);
+  assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
+  assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+});
+
+
+test("restricted LOGIN rejects accidental non-BCI table grants before setting scope", async () => {
+  const { calls, read } = mock({ safety: { no_external_table_access: false } });
+  await assert.rejects(read(scope), /access denied/i);
+  const posture = calls.find(c => c.sql?.includes("no_external_table_access"));
+  assert.ok(posture);
+  assert.match(posture.sql, /outside_ns\.nspname <> 'bci_dev'/);
+  assert.match(posture.sql, /has_table_privilege\(current_user, outside_table\.oid/);
+  assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
+});
+
+
+test("evidence restricted LOGIN rejects external SECURITY DEFINER execute drift before tenant scope", async () => {
+  for (const flag of [false, null]) {
+    const { calls, read } = mock({ safety: { no_external_definer_exec: flag } });
+    await assert.rejects(read(scope), /access denied/i);
+    const posture = calls.find(c => c.sql?.includes("no_external_definer_exec"));
+    assert.ok(posture);
+    assert.match(posture.sql, /external_ns\.nspname <> 'bci_dev'/);
+    assert.match(posture.sql, /external_proc\.prosecdef/);
+    assert.match(posture.sql, /has_function_privilege\(current_user, external_proc\.oid, 'EXECUTE'\)/);
+    assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
+    assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+  }
+});
+
+
+test("evidence restricted LOGIN rejects external schema CREATE privilege drift before tenant scope", async () => {
+  for (const flag of [false, null]) {
+    const { calls, read } = mock({ safety: { no_external_schema_create: flag } });
+    await assert.rejects(read(scope), /access denied/i);
+    const posture = calls.find(c => c.sql?.includes("no_external_schema_create"));
+    assert.ok(posture);
+    assert.match(posture.sql, /external_schema\.nspname <> 'bci_dev'/);
+    assert.match(posture.sql, /has_schema_privilege\(current_user, external_schema\.oid, 'CREATE'\)/);
+    assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
+    assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
+  }
+});
+
+test("evidence LOGIN enforces PostgreSQL MAINTAIN privilege separation before tenant scope", async () => {
+  const { calls, read } = mock({ safety: { can_maintain_evidence: true } });
+  await assert.rejects(read(scope), /access denied/i);
+  const sql = calls.find(c => c.sql?.includes("current_database() AS database_name"))?.sql;
+  assert.ok(sql);
+  for (const [table, alias] of [["tenant_memberships", "memberships"], ["evidence", "evidence"]]) {
+    assert.ok(sql.includes(`has_table_privilege(current_user, 'bci_dev.${table}', 'MAINTAIN') AS can_maintain_${alias}`));
+  }
+  assert.match(sql, /INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN/);
+  assert.equal(calls.some(c => c.sql?.includes("set_config")), false);
+  assert.equal(calls.at(-1).sql, "TRANSACTION_ROLLBACK");
 });

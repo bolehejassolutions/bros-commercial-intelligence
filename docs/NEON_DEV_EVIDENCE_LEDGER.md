@@ -1,5 +1,16 @@
 # Neon BCI development ledger — internal-only prototype
 
+## BCI_NEON_RESTRICTED_DML_DRIFT_GUARD_20261026 — restricted reader DML privilege drift gate (26 Oct 2026)
+
+**VERIFIED code + regression tests + exact-commit GitHub CI SUCCESS + read-only Neon catalog; NOT a new authenticated hosted negative matrix or direct restricted LOGIN test.** Both Preview server-only readers now reject privilege drift if either restricted role acquires UPDATE, DELETE or TRUNCATE on either `bci_dev.evidence` or `bci_dev.tenant_memberships`. Existing direct-login identity, RLS FORCE, read-only transaction and cross-table SELECT checks remain. The checks run before tenant/product/principal transaction scope is set and fail closed. No grants, credentials, database migration or production deploy.
+
+Provider catalog read-only on `empty-tooth-43040036` / `br-broad-math-b3f4d2r4` / `bros_intelligence_dev`: both restricted LOGIN roles currently have all six mutation privileges FALSE; neither sensitive table has PUBLIC SELECT/INSERT; both tables have RLS enabled and forced. The separate `bci_dev_runtime` role is NOLOGIN and is not a Preview reader. Catalog checks do not constitute restricted direct-login or authenticated API evidence.
+
+Code/tests: `lib/bci/neon-dev-read-rows.ts`, `lib/bci/neon-dev-membership-rows.ts`, corresponding unit tests and HTTP fixture updated, readback verified. Final code/test commit `5de36a5fddfd8589d03ee0dbb8abcec136ba9773`. Initial CI failures reflected stale HTTP fixture; corrected final GitHub Actions [40316793543](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40316793543) **SUCCESS** (182 Node tests, TypeScript and Next.js build). This is drift prevention, not a new proof of least-privilege direct login or cross-tenant isolation.
+
+OPEN: owner-session latest 2/2 authenticated controls + 7/7 negative probes; independent cross-tenant/product/revocation and admin-impersonation end-to-end; shared BCI provider audit reuse and remaining CONTENT/DEMAND/HitPay gates. Issue #11 OPEN, PR #10 DRAFT. No Production, Neon plan/paid costs, permissions, secrets, Meta spend, Buffer publishing, BROS SELL tasks or BROS LABS changes.
+
+
 ## BCI_HITPAY_TIMESTAMP_CALENDAR_GUARD_20261026
 
 **26 Oct 2026 — VERIFIED DRAFT PR SOURCE + REGRESSION + CI SUCCESS; NOT LIVE HITPAY SETTLEMENT OR INTERNAL V1.** The read-only HitPay list-row paid-pair reconciler previously accepted calendar-invalid `closed_at` values because `Date.parse` can normalize impossible dates. It now validates leap years, month/day bounds, 24-hour clock, seconds/minutes and realistic signed timezone offsets before accepting the provider timestamp. The provider's actual observed timestamp format remains accepted. Rejected input cannot be promoted into even the provisional provider-reported paid pair.
@@ -459,3 +470,46 @@ Fresh read-only Neon DEV SQL: 1 Auth user, 1 email-verified user, 1 active CONTE
 Source commit `f0cb9795938933c45576f2cc015002782936b071`; regression tests `e3ad913f6a6c1ef4d07ea2b72f378d0843da10fc`; UI commit `510846163fb5659d610cccceff0bb051a25a50ff`. GitHub Actions [40302202013](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40302202013) **SUCCESS** on exact UI/head commit. Local isolated Node 22 control/denial tests 5/5 PASS. New owner-session 2/2 + 7/7 and authenticated cross-tenant/product denial tests remain UNVERIFIED; historical owner 7/7 display was under the previous implementation and must not be reused as proof of this change.
 
 Read-only Neon DEV admin-catalog inspection: `bros_intelligence_dev`, 2 active memberships, 3 manual development evidence rows. `bci_dev_membership_reader` has SELECT memberships but not evidence; `bci_dev_private_reader` has SELECT evidence but not memberships; both LOGIN, NOBYPASSRLS, non-superuser, no role/database creation or evidence INSERT. Admin inspection is not a new restricted direct-login test. Shared BCI audit reuse, CONTENT media QA→SENT→measurement, DEMAND real experiment and HitPay live/test settlement/entitlement gates remain OPEN. PR stays Draft, Issue #11 OPEN. No Production, Meta spend/write, publishing, new credentials/access, price, schedule, paid Neon or BROS LABS changes.
+
+## BCI_PREVIEW_DENIAL_ENVELOPE_GUARD_20261026 — strict authenticated Preview denial evidence (26 Oct 2026)
+
+**VERIFIED Draft PR code + regression tests + GitHub CI SUCCESS; NOT new owner-authenticated hosted negative results or cross-tenant DB proof.** Existing seven rejection probes could previously mark expected HTTP status plus privacy headers as PASS even when an error body included unrecognized fields or leaked data. The browser-side runner now requires a bounded exact generic denial JSON envelope (including the distinct 405 message); 2/2 positive controls also reject cross-product evidence rows instead of trusting only HTTP 200 and a bounded array. This strengthens the meaning of a future 2/2+7/7 result without changing server access policy, tenant membership or the publisher.
+
+Source commit `0710a0c6578d807e17f96f2441b953df3ee3dff2`; regression test commit `654b70ffe9d706a74d4ce8007af90ea044578958`; GitHub Actions [40309152913](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40309152913) SUCCESS. Source/test blob readback matched. No claim of a newly run owner-session probe.
+
+Fresh Neon DEV admin catalog: both restricted LOGIN roles are non-superuser, NOBYPASSRLS, NOCREATEROLE, NOCREATEDB, NOREPLICATION, NOINHERIT. Membership role SELECTs memberships only; evidence role SELECTs evidence only. Both lack UPDATE/DELETE/TRUNCATE on either table. **Direct role_name login via current Neon connector was rejected** because connector is pinned to BROS; this catalog inspection does not replace historical direct-login evidence or current hosted negative tests. Neon Auth integration remains Better Auth on the DEV branch.
+
+Still OPEN: owner-session new 2/2+7/7, independent cross-tenant/product/revocation/admin impersonation tests, BCI provider audit reuse, CONTENT and DEMAND gates, and HitPay entitlement/settlement. Issue #11 OPEN; PR #10 DRAFT. No Production, new credentials/permissions, paid plan, spend, publishing, pricing, schedule or BROS LABS change.
+
+
+## BCI_NEON_EMPTY_TENANT_ISOLATION_SMOKE_20261026 — authenticated empty-tenant negative smoke prepared (26 Oct 2026)
+
+**Status: VERIFIED DEV PROVIDER COUNTS + DRAFT PR CODE/CI + EXACT-COMMIT PROTECTED PREVIEW READY; NOT OWNER-EXECUTED AUTHENTICATED NEGATIVE RESULT.** A read-only Neon DEV aggregate confirmed that the active operator membership tenant has **0 CONTENT and 0 DEMAND evidence rows**, while separate synthetic tenants have **1 CONTENT and 2 DEMAND rows**. No tenant IDs, principal IDs, tokens or provider secrets were copied into this checkpoint.
+
+Draft PR #10 now exposes an opt-in **Check empty-tenant isolation (DEV)** control. Using the owner's existing signed provider token, it makes two read-only private API requests (`product=content` and `product=demand`, `limit=50`); each must return HTTP 200, no-store/Vary Authorization, and exactly the internal-development envelope with an **empty evidence array**. Any returned row, extra field, wrong scope, HTTP failure or network error fails the smoke. The runner returns only pass counts, not response bodies, tenant IDs or credentials. This test is meaningful only while the operator's internal tenant is known empty; it cannot replace populated same-tenant evidence validation, revoked membership, admin impersonation, direct restricted LOGIN, or independent hosted negative E2E proof.
+
+Code/test/UI commits: `2460c7ecf3fc2a2d1bd55751a817c7f04ed4a52b`, `2d2f17ed059f345e481924a619ff8428dbaae4a1`, `438403647f413daf05419606aad266c326417b52`. Three new offline regression tests cover authenticated product scope, foreign-row/extra-field denial, and invalid bearer; [GitHub Actions 40324288662](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40324288662) **SUCCESS** (Node safety tests, TypeScript, Next.js build). Exact protected Vercel Preview deployment `dpl_7MYPAyfboztN2k49HHaxHRLKmD6K` **READY** on UI commit, stable alias retained. Source/tests/UI and deployment SHA were read back. **No actual owner-session click or authenticated negative result is claimed.**
+
+Issue #11 remains OPEN, PR #10 DRAFT. Full authenticated negative tenant/product/revocation/admin-impersonation matrix, BCI live provider audit reuse, CONTENT/DEMAND outcomes and HitPay entitlement/settlement gates remain OPEN. No Production, database migration, permissions, credentials, paid Neon, Meta spend/write, Buffer publishing, price, schedule or BROS LABS change.
+
+
+## BCI_NEON_POSITIVE_ENVELOPE_STRICT_20261026 — authenticated positive response fail-closed QA (26 Oct 2026)
+
+**Evidence class: Draft PR #10 source + regression + GitHub CI SUCCESS; NOT a newly executed owner-authenticated Preview test.** The browser-side 2/2 authenticated positive controls previously accepted HTTP 200/no-store with unexpected top-level fields, unreviewed evidence-row fields, malformed UUIDs or nonnumeric metrics. The same exact-envelope validation now guards both 2/2 positive controls and the 2/2 empty-tenant smoke. Valid nonempty product-scoped rows remain supported; no principal, JWT, provider body, tenant UUID or credentials are logged.
+
+Source commit `aa4b0a5a671341553db3f1526de8b44a49b16de1`; regression commit `2d4e8c03a0c7e87143f8a4095950e0c1afa2c5b1`. Source/test blob readback verified. GitHub Actions [40325410765](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40325410765) **SUCCESS** (dry-run tests, TypeScript and Next.js build). No protected Preview deployment or owner-session negative run is claimed from this CI.
+
+Fresh Neon DEV read-only: 2 active memberships, 3 synthetic/manual evidence rows, 0 evidence rows in active operator tenant. Both restricted LOGIN roles are non-superuser/NOBYPASSRLS and have disjoint SELECT-only table grants; no write privileges observed. This is admin-catalog observation, NOT a direct restricted login or authenticated cross-tenant HTTP result.
+
+Still OPEN: owner-session 2/2+7/7 and 2/2 empty-tenant smoke on exact new Preview, independent negative tenant/product/revocation/admin impersonation matrix, BCI live provider audit reuse, CONTENT/DEMAND actual outcome gates and HitPay settlement/entitlement. Issue #11 OPEN, PR #10 DRAFT; no Production, credentials/permissions, paid Neon, Meta spend/write, Buffer publishing, pricing, task schedule or BROS LABS changes.
+
+
+## BCI_NEON_RESTRICTED_PARENT_ROLE_GUARD_20261026 — fail-closed restricted role parent/attribute drift (26 Oct 2026)
+
+**VERIFIED Draft PR #10 source/tests and CI; NOT new owner-authenticated Preview or direct restricted-login E2E evidence.** Both server-only Neon DEV readers now refuse a SQL session before setting any tenant/product/principal scope if the exact restricted LOGIN has CREATEDB, CREATEROLE, REPLICATION, INHERIT or any inherited parent-role membership. Existing session_user=current_user, non-superuser/NOBYPASSRLS, disjoint table privileges, forced RLS and transaction-local GUC checks remain in force. This blocks accidental privilege expansion without granting/revoking any role.
+
+Read-only actual Neon DEV catalog (project empty-tooth-43040036, branch br-broad-math-b3f4d2r4): bci_dev_private_reader and bci_dev_membership_reader both show rolcreatedb=false, rolcreaterole=false, rolreplication=false, rolinherit=false and parent_role_count=0. The Neon connector is pinned to admin BROS and **cannot impersonate either restricted role**; catalog observations are NOT direct-login or authenticated negative cross-tenant proof. The SQL identity query syntax was separately executed read-only; BROS's elevated attributes were observed, not used for application access.
+
+Source/test final commit `8942c40ff41e52b4e135bb72980b3480f1b4097e`; exact-commit [GitHub Actions #40334385821](https://github.com/bolehejassolutions/bros-commercial-intelligence/actions/runs/40334385821) SUCCESS: 189/189 Node safety tests, 3/3 installed-SDK tests, TypeScript and Next.js build PASS. Added two regression suites for inherited/elevated role drift and aligned authenticated HTTP fixtures. Source/test readback confirmed. No Production deploy/merge, Neon migration/permissions/credentials, spend, publishing, pricing, schedule or BROS LABS change.
+
+OPEN: actual authenticated Preview negative matrix (2/2 positive controls, 7/7 denials, empty-tenant smoke), restricted direct-login revocation/admin impersonation/cross-tenant/product E2E, provider-linked BCI reuse/audit, CONTENT/DEMAND/HitPay gates. Issue #11 OPEN; PR #10 DRAFT.

@@ -139,3 +139,68 @@ test("duplicate database evidence IDs and provider record keys fail closed", asy
   const { read } = harness({ rows: [base, { ...sameProviderKey, providerRecordKey: "provider-event-2" }] });
   assert.equal((await read({ product: "demand" })).length, 2);
 });
+
+
+test("unreviewed DB columns and noncanonical metric payloads are denied before serialization", async () => {
+  const base = { id: ROW, tenantId: A, product: "demand",
+    provider: "manual", providerRecordKey: "synthetic-a", metrics: { clicks: 0 } };
+  for (const extra of [
+    { customerEmail: "private@example.test" },
+    { principalId: USER },
+    { admin: true },
+  ]) {
+    const { read } = harness({ rows: [{ ...base, ...extra }] });
+    await assert.rejects(read({ product: "demand" }), denied);
+  }
+  for (const metrics of [
+    JSON.parse('{"__proto__": 1}'),
+    { "unreviewed metric": 1 },
+    { "Atypical": 2 },
+    { clicks: undefined },
+    Object.fromEntries(Array.from({ length: 101 }, (_, i) => [`m_${i}`, i])),
+  ]) {
+    const { read } = harness({ rows: [{ ...base, metrics }] });
+    await assert.rejects(read({ product: "demand" }), denied);
+  }
+  const { read } = harness({ rows: [base] });
+  const [row] = await read({ product: "demand" });
+  assert.deepEqual(Object.keys(row).sort(), [
+    "id", "tenantId", "product", "provider", "providerRecordKey", "metrics",
+  ].sort());
+  assert.deepEqual(row.metrics, { clicks: 0 });
+});
+
+
+test("rejects hidden, symbol and accessor payload metadata before private evidence serialization", async () => {
+  const secret = Symbol("private-credential");
+  const base = { id: ROW, tenantId: A, product: "demand",
+    provider: "manual", providerRecordKey: "synthetic-a", metrics: { clicks: 0 } };
+  const hidden = (value, name) => Object.defineProperty({ ...value }, name, {
+    value: "secret-sentinel", enumerable: false,
+  });
+  const accessor = (value, name) => Object.defineProperty({ ...value }, name, {
+    enumerable: true, get() { throw new Error("untrusted getter must not execute"); },
+  });
+  for (const request of [
+    hidden({ product: "demand" }, "tenantId"),
+    { product: "demand", [secret]: "secret-sentinel" },
+    accessor({ product: "demand" }, "limit"),
+  ]) {
+    const { read, calls } = harness();
+    await assert.rejects(read(request), denied);
+    assert.equal(calls.length, 0, "reject unreviewed request metadata before auth");
+  }
+  for (const row of [
+    hidden(base, "customerEmail"),
+    { ...base, [secret]: "secret-sentinel" },
+    accessor(base, "metrics"),
+    { ...base, metrics: hidden(base.metrics, "private_key") },
+    { ...base, metrics: { ...base.metrics, [secret]: "secret-sentinel" } },
+    { ...base, metrics: accessor(base.metrics, "clicks") },
+  ]) {
+    const { read } = harness({ rows: [row] });
+    await assert.rejects(read({ product: "demand" }), denied);
+  }
+  const { read } = harness({ rows: [base] });
+  assert.deepEqual((await read({ product: "demand" }))[0].metrics, { clicks: 0 });
+});

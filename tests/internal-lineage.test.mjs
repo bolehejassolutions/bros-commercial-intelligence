@@ -55,3 +55,68 @@ test('CONTENT and DEMAND each validate independently, but cannot share private r
   assert.equal(validateBciLineage({...scope,product:'content'},content).counts.learning,1);
   assert.throws(() => validateBciLineage(scope,content),denied);
 });
+
+
+test('UUID fields reject array-coerced scope, record IDs and parent references', () => {
+  // RegExp.test([uuid]) coerces the array to a valid-looking UUID string.
+  // Lineage IDs must be primitive strings before map lookup or freezing.
+  assert.throws(() => validateBciLineage(scope, [{ ...chain[0], id: [ids[0]] }]), denied);
+  const wrappedTenant = [A];
+  assert.throws(() => validateBciLineage(
+    { tenantId: wrappedTenant, product: 'demand' },
+    [{ ...chain[0], tenantId: wrappedTenant }],
+  ), denied);
+  const wrappedParentId = [ids[0]];
+  assert.throws(() => validateBciLineage(scope, [
+    { ...chain[0], id: wrappedParentId },
+    { ...chain[1], parentIds: [wrappedParentId] },
+  ]), denied);
+});
+
+test('shared lineage rejects unreviewed scope and record fields rather than reflecting them', () => {
+  // This pure validator returns copies of scope/records. Extra input keys must
+  // not survive the boundary, even on exact replay of an existing record ID.
+  assert.throws(() => validateBciLineage(
+    { ...scope, callerTenantOverride: B }, [chain[0]],
+  ), denied);
+  assert.throws(() => validateBciLineage(scope, [
+    { ...chain[0], providerCredential: 'must-not-leak' },
+  ]), denied);
+  assert.throws(() => validateBciLineage(scope, [
+    chain[0], { ...chain[0], providerCredential: 'must-not-leak' },
+  ]), denied);
+  assert.equal(validateBciLineage(scope, [chain[0]]).records.length, 1);
+});
+
+
+test('shared lineage rejects symbol and non-enumerable own metadata', () => {
+  const hidden = Object.defineProperty({ ...chain[0] }, 'hiddenCredential', {
+    value: 'must-not-leak', enumerable: false,
+  });
+  const symbol = Symbol('providerCredential');
+  const symbolRecord = { ...chain[0], [symbol]: 'must-not-leak' };
+  const symbolScope = { ...scope, [symbol]: 'must-not-leak' };
+  assert.throws(() => validateBciLineage(scope, [hidden]), denied);
+  assert.throws(() => validateBciLineage(scope, [symbolRecord]), denied);
+  assert.throws(() => validateBciLineage(symbolScope, [chain[0]]), denied);
+  assert.equal(validateBciLineage(scope, [chain[0]]).counts.evidence, 1);
+});
+
+
+test('shared lineage rejects accessor and hidden allowed fields without invoking getters', () => {
+  let reads = 0;
+  const accessorRecord = Object.defineProperty({ ...chain[0] }, 'sourceRecordKey', {
+    enumerable: true, get() { reads++; return 'synthetic-evidence'; },
+  });
+  const accessorScope = Object.defineProperty({ ...scope }, 'tenantId', {
+    enumerable: true, get() { reads++; return A; },
+  });
+  const hiddenAllowed = Object.defineProperty({ ...chain[0] }, 'sourceRecordKey', {
+    enumerable: false, value: 'synthetic-evidence',
+  });
+  assert.throws(() => validateBciLineage(scope, [accessorRecord]), denied);
+  assert.throws(() => validateBciLineage(accessorScope, [chain[0]]), denied);
+  assert.throws(() => validateBciLineage(scope, [hiddenAllowed]), denied);
+  assert.equal(reads, 0);
+  assert.equal(validateBciLineage(scope, [chain[0]]).counts.evidence, 1);
+});

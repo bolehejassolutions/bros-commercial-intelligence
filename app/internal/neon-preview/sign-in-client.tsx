@@ -3,8 +3,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
-import { requestNeonPreviewToken, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
-import { runNeonPreviewNegativeChecks } from "@/lib/bci/neon-preview-negative-checks";
+import { requestNeonPreviewToken, NeonPreviewTokenUnavailable, requestNeonPreviewSession } from "@/lib/bci/neon-preview-client-token";
+import { runNeonPreviewNegativeChecks, runNeonPreviewEmptyTenantIsolationSmoke } from "@/lib/bci/neon-preview-negative-checks";
+import { demandReviewProposal, parseDemandProposalResponse } from "@/lib/bci/neon-demand-proposal-client";
 
 const operatorEmail = "rasymokh@gmail.com";
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
@@ -17,8 +18,7 @@ function auth(): VanillaBetterAuthClient {
 }
 
 async function hasVerifiedOperatorSession(): Promise<boolean> {
-  const { data, error } = await auth().getSession();
-  return !error && Boolean(data?.session && data.user?.email === operatorEmail && data.user.emailVerified === true);
+  return requestNeonPreviewSession(auth(), operatorEmail);
 }
 
 export default function NeonPreviewSignIn() {
@@ -27,6 +27,15 @@ export default function NeonPreviewSignIn() {
   const [busy, setBusy] = useState(true);
   const [cooldown, setCooldown] = useState(0);
   const [message, setMessage] = useState("Checking your development session…");
+  // Keep independent, sanitized test summaries visible until sign-out or rerun.
+  // Do not persist tokens, response bodies, identity claims, or check results.
+  const [httpCheckResult, setHttpCheckResult] = useState<string | null>(null);
+  const [tenantCheckResult, setTenantCheckResult] = useState<string | null>(null);
+  const [writerCheckResult, setWriterCheckResult] = useState<string | null>(null);
+  const [lineageCheckResult, setLineageCheckResult] = useState<string | null>(null);
+  const [caseLinkResult, setCaseLinkResult] = useState<string | null>(null);
+  const [lineageReceiptResult, setLineageReceiptResult] = useState<string | null>(null);
+  const [proposalResult, setProposalResult] = useState<string | null>(null);
   const [product, setProduct] = useState<"content" | "demand">("content");
 
   useEffect(() => {
@@ -110,17 +119,9 @@ export default function NeonPreviewSignIn() {
         headers: { Authorization: `Bearer ${token}` }, cache: "no-store", redirect: "error",
       });
       if (!response.ok) {
-        // Only fixed, non-sensitive stage labels are displayed. Never render
-        // raw provider/database errors, tokens, request URLs or user identifiers.
-        let stage = "unclassified";
-        if (response.status === 403) {
-          const body: unknown = await response.json().catch(() => null);
-          if (body !== null && typeof body === "object" && "stage" in body &&
-              (body.stage === "identity" || body.stage === "membership" || body.stage === "evidence")) {
-            stage = body.stage;
-          }
-        }
-        setMessage(`Protected access denied (HTTP ${response.status}; stage: ${stage}). No access has been granted.`);
+        // Do not surface authentication, membership or database failure stages.
+        // A generic status prevents client-side authorization-stage enumeration.
+        setMessage(`Protected access denied (HTTP ${response.status}). No access has been granted.`);
         return;
       }
       phase = "response";
@@ -139,15 +140,215 @@ export default function NeonPreviewSignIn() {
   async function checkNegativeAccess() {
     if (busy) return;
     setBusy(true);
+    setHttpCheckResult(null); // Never retain an earlier PASS when a rerun starts.
     setMessage("Running read-only HTTP rejection probes…");
     try {
       if (!await hasVerifiedOperatorSession()) throw new Error();
       const token = await requestNeonPreviewToken(auth());
       const report = await runNeonPreviewNegativeChecks(token);
-      setMessage(`Authenticated CONTENT/DEMAND controls: ${report.authenticatedControlsPassed}/${report.authenticatedControlsTotal} passed; Preview HTTP rejection probes: ${report.passed}/${report.total} passed. These checks do not prove cross-tenant database isolation, membership revocation, or independent hosted verification.`);
+      setHttpCheckResult(`Authenticated CONTENT/DEMAND controls: ${report.authenticatedControlsPassed}/${report.authenticatedControlsTotal} passed; Preview HTTP rejection probes: ${report.passed}/${report.total} passed. These checks do not prove cross-tenant database isolation, membership revocation, or independent hosted verification.`);
+      setMessage("HTTP rejection checks completed; see the separate result below.");
     } catch {
-      setMessage("Preview HTTP rejection probes could not complete. No security gate has been certified.");
+      setHttpCheckResult("Preview HTTP rejection probes could not complete. No security gate has been certified.");
+      setMessage("HTTP rejection checks failed; see the separate result below.");
     } finally { setBusy(false); }
+  }
+
+  async function checkEmptyTenantIsolation() {
+    if (busy) return;
+    setBusy(true);
+    setTenantCheckResult(null); // Never retain an earlier PASS when a rerun starts.
+    setMessage("Checking the empty internal tenant against populated synthetic tenant data…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const report = await runNeonPreviewEmptyTenantIsolationSmoke(token);
+      setTenantCheckResult(`Empty-tenant isolation smoke: ${report.passed}/${report.total} passed. This check is valid only while the internal operator tenant has zero evidence; it does not certify revocation, admin impersonation, or full cross-tenant security.`);
+      setMessage("Empty-tenant isolation check completed; see the separate result below.");
+    } catch {
+      setTenantCheckResult("Empty-tenant isolation smoke could not complete. No isolation gate has been certified.");
+      setMessage("Empty-tenant isolation check failed; see the separate result below.");
+    } finally { setBusy(false); }
+  }
+
+  async function checkRestrictedWriterLogin() {
+    if (busy) return;
+    setBusy(true);
+    setWriterCheckResult(null);
+    setMessage("Running restricted writer read-only login probe in Neon DEV…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/neon-evidence?product=demand&probe=writer", {
+        method: "GET", headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 || !/no-store/i.test(response.headers.get("cache-control") || "")) throw new Error();
+      const raw = await response.text();
+      if (raw.length > 1024) throw new Error();
+      const payload: unknown = JSON.parse(raw);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          Object.keys(payload).length !== 4 || !("scope" in payload) ||
+          payload.scope !== "internal-development" ||
+          !("writerLoginProbe" in payload) || payload.writerLoginProbe !== "pass" ||
+          !("evidenceAppended" in payload) || payload.evidenceAppended !== false ||
+          !("providerReceiptRecorded" in payload) || payload.providerReceiptRecorded !== false) throw new Error();
+      setWriterCheckResult("Restricted writer direct PostgreSQL LOGIN + role/RLS + current membership: read-only smoke PASS. No evidence was inserted, no provider receipt authenticated, and full cross-tenant security acceptance remains open.");
+      setMessage("Restricted writer DEV probe completed; see the separate result below.");
+    } catch {
+      setWriterCheckResult("Restricted writer direct LOGIN probe could not be verified. No database acceptance gate has been certified.");
+      setMessage("Restricted writer DEV probe failed; see the separate result below.");
+    } finally { setBusy(false); }
+  }
+
+  async function checkLineageLogin() {
+    if (busy) return;
+    setBusy(true);
+    setLineageCheckResult(null);
+    setMessage("Checking restricted lineage writer physical LOGIN in Neon DEV (read-only)…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/neon-evidence?product=demand&probe=lineage", {
+        method: "GET", headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 || !/no-store/i.test(response.headers.get("cache-control") || "") ||
+          !/Authorization/i.test(response.headers.get("vary") || "")) throw new Error();
+      const raw = await response.text();
+      if (raw.length > 1024) throw new Error();
+      const payload: unknown = JSON.parse(raw);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          Object.keys(payload).length !== 4 || !("scope" in payload) ||
+          payload.scope !== "internal-development" ||
+          !("lineageLoginProbe" in payload) || payload.lineageLoginProbe !== "pass" ||
+          !("lineageAppended" in payload) || payload.lineageAppended !== false ||
+          !("providerReceiptRecorded" in payload) || payload.providerReceiptRecorded !== false) throw new Error();
+      setLineageCheckResult("Lineage writer physical LOGIN, least privilege, active membership, foreign scope and revoked-fixture principal negatives: read-only smoke PASS. Actual live membership revocation and durable append/replay remain OPEN.");
+      setMessage("Lineage direct LOGIN check completed.");
+    } catch {
+      setLineageCheckResult("Lineage writer authenticated direct LOGIN check failed. No acceptance gate certified.");
+      setMessage("Lineage direct LOGIN check failed.");
+    } finally { setBusy(false); }
+  }
+
+  async function createDemandReviewCase() {
+    if (busy || product !== "demand") return;
+    setBusy(true); setCaseLinkResult(null);
+    setMessage("Requesting signed DEV-only case/link append for the existing Meta receipt…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/neon-demand-case", {
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store", redirect: "error",
+      });
+      if (!response.ok || !/no-store/i.test(response.headers.get("cache-control") || "")) throw new Error();
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          Object.keys(payload).length !== 5 || !("status" in payload) ||
+          (payload.status !== "inserted" && payload.status !== "replayed") ||
+          !("receiptId" in payload) || payload.receiptId !== "4b1d0b40-371f-4c82-aaa9-d77580f88fac" ||
+          !("caseId" in payload) || typeof payload.caseId !== "string" ||
+          !("reviewOnly" in payload) || payload.reviewOnly !== true ||
+          !("providerAttested" in payload) || payload.providerAttested !== false) throw new Error();
+      setCaseLinkResult(`Restricted case/link ${payload.status}: REVIEW only. Independent Neon readback still required; no diagnosis, ads action, outcome or learning executed.`);
+      setMessage("DEV case/link action completed; see the bounded result below.");
+    } catch {
+      setCaseLinkResult("DEV case/link action not accepted. No write success certified.");
+      setMessage("DEV case/link action denied or unavailable.");
+    } finally { setBusy(false); }
+  }
+
+
+  async function saveDemandEvidenceLineage() {
+    if (busy || product !== "demand") return;
+    setBusy(true);
+    setLineageReceiptResult(null);
+    setMessage("Checking the existing Meta receipt for an unverified DEV lineage root…");
+    try {
+      if (!await hasVerifiedOperatorSession()) throw new Error();
+      const token = await requestNeonPreviewToken(auth());
+      const response = await fetch("/api/internal/neon-lineage-receipt", {
+        method: "POST", headers: { Authorization: "Bearer " + token },
+        cache: "no-store", redirect: "error",
+      });
+      if (response.status !== 200 ||
+          !/no-store/i.test(response.headers.get("cache-control") || "")) throw new Error();
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          Object.keys(payload).length !== 5 ||
+          !("receiptId" in payload) || payload.receiptId !== "4b1d0b40-371f-4c82-aaa9-d77580f88fac" ||
+          !("status" in payload) || (payload.status !== "inserted" && payload.status !== "replayed") ||
+          !("stage" in payload) || payload.stage !== "evidence" ||
+          !("verification" in payload) || payload.verification !== "unverified" ||
+          !("providerAttested" in payload) || payload.providerAttested !== false) throw new Error();
+      setLineageReceiptResult("DEV evidence-stage lineage " + payload.status +
+        " (UNVERIFIED). Independent Neon post-commit readback/replay still required. No diagnosis, action, outcome or learning executed.");
+      setMessage("Bounded DEV lineage action completed; see the result below.");
+    } catch {
+      setLineageReceiptResult("DEV lineage action was not accepted; no durable append certified.");
+      setMessage("DEV lineage action denied or unavailable.");
+    } finally { setBusy(false); }
+  }
+
+  async function submitDemandProposal() {
+    if (busy || product !== "demand" || step !== "ready") return;
+    setBusy(true);
+    setProposalResult(null);
+    setMessage("Submitting the reviewed DEV-only PROPOSED record…");
+    // Display only a bounded failure category, never a JWT, response body or identity.
+    let failureCategory = "session-check";
+    try {
+      if (!await hasVerifiedOperatorSession()) {
+        setStep("start");
+        setProposalResult("Not submitted: a fresh verified sign-in is required.");
+        setMessage("Your development session has expired or is no longer verified. Request a new sign-in code, then review the proposal again.");
+        return;
+      }
+      failureCategory = "token";
+      const token = await requestNeonPreviewToken(auth());
+      // A rejected fetch can occur after the server received the write.
+      failureCategory = "request-unconfirmed";
+      const response = await fetch("/api/internal/neon-demand-proposal", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(demandReviewProposal),
+        credentials: "same-origin", cache: "no-store", redirect: "error",
+        signal: AbortSignal.timeout(20000),
+      });
+      failureCategory = `HTTP ${response.status}`;
+      if (response.status !== 200 ||
+          !/no-store/i.test(response.headers.get("cache-control") || "") ||
+          !/Authorization/i.test(response.headers.get("vary") || "")) throw new Error();
+      failureCategory = "response-validation";
+      const raw = await response.text();
+      if (raw.length > 1024) throw new Error();
+      const result = parseDemandProposalResponse(JSON.parse(raw));
+      setProposalResult(`DEV proposal ${result.status}: ${result.proposalId}. PROPOSED for review only; NOT approved, executed, provider-attested or an outcome. Independent Neon post-COMMIT readback remains required.`);
+      setMessage("DEV proposal request completed; see the bounded result below.");
+    } catch (error) {
+      if (failureCategory === "token" && error instanceof NeonPreviewTokenUnavailable)
+        failureCategory = `token-${error.category}`;
+      if (failureCategory === "request-unconfirmed" || failureCategory === "response-validation") {
+        setProposalResult(`DEV proposal result is unconfirmed (${failureCategory}). The server may already have saved it. Reconcile the existing case before retrying; do not assume nothing was saved.`);
+      } else {
+        setProposalResult(`DEV proposal was not accepted or verified (${failureCategory}). No durable proposal is certified.`);
+      }
+      if (failureCategory === "HTTP 401") {
+        setStep("start");
+        setMessage("Your development sign-in has expired. Request a new sign-in code, then review the proposal again.");
+      } else {
+        setMessage("DEV proposal could not be verified. You can refresh sign-in below; no automatic submission will be retried.");
+      }
+    } finally { setBusy(false); }
+  }
+
+  function refreshSignIn() {
+    if (busy) return;
+    setCode("");
+    setStep("start");
+    setMessage("Request a fresh sign-in code. After signing in, review the proposal and submit it explicitly; no write will be retried automatically.");
   }
 
   async function signOut() {
@@ -158,6 +359,13 @@ export default function NeonPreviewSignIn() {
       if (error) throw new Error();
       setStep("start");
       setCode("");
+      setHttpCheckResult(null);
+      setTenantCheckResult(null);
+      setWriterCheckResult(null);
+      setLineageCheckResult(null);
+      setLineageReceiptResult(null);
+      setCaseLinkResult(null);
+      setProposalResult(null);
       setMessage("You have signed out of this development session.");
     } catch { setMessage("Sign-out could not be confirmed. Please try again."); }
     finally { setBusy(false); }
@@ -174,9 +382,21 @@ export default function NeonPreviewSignIn() {
           <input type="email" value={operatorEmail} readOnly autoComplete="email" />
         </label>
         <p role="status" aria-live="polite">{message}</p>
-        {step === "start" ? <div className="auth-form"><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("verify")}>
-          {cooldown > 0 ? `Wait ${cooldown}s` : "Verify email (first app login)"}
-        </button><button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>Send sign-in code (already verified)</button></div> : null}
+        {step === "ready" && httpCheckResult !== null ? <p role="status" aria-label="HTTP rejection check result">{httpCheckResult}</p> : null}
+        {step === "ready" && tenantCheckResult !== null ? <p role="status" aria-label="Empty-tenant isolation result">{tenantCheckResult}</p> : null}
+        {step === "ready" && writerCheckResult !== null ? <p role="status" aria-label="Restricted writer login result">{writerCheckResult}</p> : null}
+        {step === "ready" && lineageCheckResult !== null ? <p role="status" aria-label="Lineage writer login result">{lineageCheckResult}</p> : null}
+        {step === "ready" && caseLinkResult !== null ? <p role="status" aria-label="Restricted case/link result">{caseLinkResult}</p> : null}
+        {step === "ready" && lineageReceiptResult !== null ? <p role="status" aria-label="Restricted lineage receipt result">{lineageReceiptResult}</p> : null}
+        {proposalResult !== null ? <p role="status" aria-label="Restricted DEMAND proposal result">{proposalResult}</p> : null}
+        {step === "start" ? <div className="auth-form">
+          <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("signin")}>
+            {cooldown > 0 ? `Wait ${cooldown}s` : "Send sign-in code (verified email)"}
+          </button>
+          <button type="button" disabled={busy || cooldown > 0} onClick={() => sendCode("verify")}>
+            Verify email (only if not verified)
+          </button>
+        </div> : null}
         {(step === "verify-code" || step === "signin-code") ? (
           <form className="auth-form" onSubmit={verifyCode}>
             <label>
@@ -202,6 +422,21 @@ export default function NeonPreviewSignIn() {
             </label>
             <button type="button" disabled={busy} onClick={checkAccess}>Check protected access</button>
             <button type="button" disabled={busy} onClick={checkNegativeAccess}>Run HTTP rejection checks</button>
+            <button type="button" disabled={busy} onClick={checkEmptyTenantIsolation}>Check empty-tenant isolation (DEV)</button>
+            <button type="button" disabled={busy} onClick={checkRestrictedWriterLogin}>Check restricted evidence writer LOGIN (DEV read-only)</button>
+            <button type="button" disabled={busy} onClick={checkLineageLogin}>Check lineage writer LOGIN + tenant/product negatives (DEV read-only)</button>
+            <button type="button" disabled={busy || product !== "demand"} onClick={createDemandReviewCase}>Save existing Meta receipt as REVIEW case (DEV only)</button>
+            <button type="button" disabled={busy || product !== "demand"} onClick={saveDemandEvidenceLineage}>Append existing Meta receipt to unverified lineage (DEV only)</button>
+            {product === "demand" ? <section className="auth-form" aria-label="Review BROS DEMAND DEV proposal">
+              <h2>Review proposed diagnosis (DEV only)</h2>
+              <p><strong>Hypothesis:</strong> {demandReviewProposal.hypothesis}</p>
+              <p><strong>Proposed action:</strong> {demandReviewProposal.proposedAction}</p>
+              <p><strong>Success metric:</strong> {demandReviewProposal.proposedSuccessMetric}</p>
+              <p><strong>Confidence:</strong> {demandReviewProposal.confidence}. First-party joins remain unknown.</p>
+              <p><strong>PROPOSED ≠ approved or executed.</strong> No live Meta changes, order attribution or outcome is claimed.</p>
+              <button type="button" disabled={busy} onClick={submitDemandProposal}>Submit reviewed PROPOSED record (DEV only)</button>
+            </section> : null}
+            <button type="button" disabled={busy} onClick={refreshSignIn}>Refresh sign-in</button>
             <button type="button" disabled={busy} onClick={signOut}>Sign out</button>
           </div>
         ) : null}
