@@ -128,3 +128,12 @@ test('missing genuine source/PNG/editorial context holds issuance even with vali
  await assert.rejects(x.issuer.issue(fixture()),/BCI_CONTENT_TRUSTED_ISSUER_DENIED/);
  assert.equal(x.calls.some(s=>s.startsWith('INSERT')),false);
 });
+
+test('even a genuinely signed V2 receipt cannot name a different dispatch intent',async()=>{
+ const f=fixture();
+ f.receipt.admission=receipt(2,{...f.receipt.admission.payload,
+  dispatchIntentId:'different-intent'},V2,'BROS_CONTENT_SIGNED_ADMISSION_V2');
+ const x=setup();
+ await assert.rejects(x.issuer.issue(f),/BCI_CONTENT_TRUSTED_ISSUER_DENIED/);
+ assert.equal(x.calls.some(s=>s.startsWith('INSERT')),false);
+});
