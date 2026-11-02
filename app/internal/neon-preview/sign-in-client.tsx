@@ -298,6 +298,8 @@ export default function NeonPreviewSignIn() {
     setBusy(true);
     setProposalResult(null);
     setMessage("Submitting the reviewed DEV-only PROPOSED record…");
+    // Display only a bounded failure category, never a JWT, response body or identity.
+    let failureCategory = "session-or-token";
     try {
       if (!await hasVerifiedOperatorSession()) throw new Error();
       const token = await requestNeonPreviewToken(auth());
@@ -307,16 +309,18 @@ export default function NeonPreviewSignIn() {
         body: JSON.stringify(demandReviewProposal),
         credentials: "same-origin", cache: "no-store", redirect: "error",
       });
+      failureCategory = `HTTP ${response.status}`;
       if (response.status !== 200 ||
           !/no-store/i.test(response.headers.get("cache-control") || "") ||
           !/Authorization/i.test(response.headers.get("vary") || "")) throw new Error();
+      failureCategory = "response-validation";
       const raw = await response.text();
       if (raw.length > 1024) throw new Error();
       const result = parseDemandProposalResponse(JSON.parse(raw));
       setProposalResult(`DEV proposal ${result.status}: ${result.proposalId}. PROPOSED for review only; NOT approved, executed, provider-attested or an outcome. Independent Neon post-COMMIT readback remains required.`);
       setMessage("DEV proposal request completed; see the bounded result below.");
     } catch {
-      setProposalResult("DEV proposal was not accepted or verified. No durable proposal is certified.");
+      setProposalResult(`DEV proposal was not accepted or verified (${failureCategory}). No durable proposal is certified.`);
       setMessage("DEV proposal submission denied or unavailable.");
     } finally { setBusy(false); }
   }
