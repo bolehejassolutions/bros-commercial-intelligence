@@ -1,4 +1,5 @@
--- REVIEW ONLY. NOT APPLIED. Explicit scoped permission approval is required.
+-- Owner approved and applied to existing Neon DEV on 2 November 2026.
+-- Do not apply to Production or another database/role under this approval.
 -- Existing Neon DEV database and existing restricted evidence LOGIN only.
 -- No worker, backend, LOGIN, token, production table or scheduler is created.
 BEGIN;

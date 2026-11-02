@@ -10,6 +10,7 @@ on:
       - "app/api/internal/demand-meta*/**"
       - "app/internal/demand-meta-test/**"
       - "neon/migrations/**"
+      - "scripts/verify-demand-meta-pilot-ledger.mjs"
       - "app/api/operator/**"
       - "app/api/internal/neon-evidence/**"
       - "app/internal/neon-preview/**"

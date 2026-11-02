@@ -10,11 +10,15 @@ https://docs.google.com/document/d/1XPD2sCnOJeFpXfXtwsu44kgrwhl2L03wfajpxOIck2I/
 
 ## Current acceptance: PARTIAL
 
-The exact Preview branch currently has the reporting token only. No management
-token, app-secret configuration, verified Malaysia identity IDs or current real
-RM100 launch-QA receipt is provisioned. No Meta POST, campaign activation,
-production change, database grant or new worker was performed by this change.
-The execution-ledger SQL is REVIEW ONLY and was not applied. Passing mocks and a
+The exact Preview branch currently has the reporting token only; the existing
+Meta app ID has been configured. No management token, app-secret configuration,
+verified Malaysia identity IDs or current real RM100 launch-QA receipt is
+provisioned. No Meta POST, campaign activation, production change or new worker
+was performed. The approved DEV grant is described below.
+The owner approved the exact execution-ledger table and existing-writer
+SELECT/INSERT grant on2November2026; that migration is now applied in the
+existing Neon DEV database. Physical LOGIN/RLS acceptance is independently
+checked through the Preview's existing restricted credential. Passing mocks and a
 build do not establish end-to-end execution or independent paid-order tracking.
 
 ## Before enabling paused staging
@@ -29,12 +33,19 @@ build do not establish end-to-end execution or independent paid-order tracking.
    `BROS_DEMAND_META_BENEFICIARY_ID` and `BROS_DEMAND_META_PAYER_ID`. Page,
    campaign, pixel and business IDs are rejected as substitutes. Shape checking
    does not certify verification; Meta must accept and return the actual IDs.
-3. Review and explicitly approve the scoped SELECT/INSERT grant in
+3. The owner has approved the scoped SELECT/INSERT grant in
    `neon/migrations/20261102_demand_meta_pilot_events_REVIEW_REQUIRED.sql`.
-   Apply only to the existing `bros_intelligence_dev` database. The existing
+   It was applied only to the existing `bros_intelligence_dev` database. The existing
    restricted LOGIN is reused; no role, credential or backend is created.
    Verify physical LOGIN, forced RLS, append-only grants, wrong-tenant/product
    denial and rollback before setting `BROS_DEMAND_META_PILOT_LEDGER=reviewed-v1`.
+   The install verification is opt-in through the exact-branch encrypted
+   `BROS_DEMAND_META_PILOT_LEDGER_VERIFICATION` configuration (mode
+   `rollback-install-v1` and the known approved principal). It uses the existing
+   physical writer LOGIN and rolls back all probe rows. It does not assert a
+   JWT-authenticated operator session. After the real proof passes, set this
+   temporary verification configuration to `completed-v1`; later builds do not
+   re-run installation probes against a campaign journal containing real actions.
 4. Set `BROS_DEMAND_META_PILOT_STAGE=approved-v5` only after those real checks.
    The browser submits the two original JPEG files; the server pins their sizes
    and SHA256 hashes. New asset hashes are obtained from Meta, never inferred
