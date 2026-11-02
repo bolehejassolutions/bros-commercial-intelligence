@@ -59,12 +59,13 @@ const role={role:'bci_dev_content_approval_issuer',sessionRole:'bci_dev_content_
  canLogin:true,bypass:false,inherits:false,superuser:false,createRole:false,
  createDb:false,parents:0,db:'bros_intelligence_dev'};
 function setup(opts={}){
- const calls=[];let row;
+ const calls=[];const inserts=[];let row;
  const tx=async fn=>fn(async(sql,params)=>{
   calls.push(sql);
   if(sql.includes('AS "sessionRole"'))return {rows:[opts.role??role]};
   if(sql.includes('AS "members"'))return {rows:[{members:opts.members??1,reviewers:opts.reviewers??1}]};
   if(sql.startsWith('INSERT')){
+   inserts.push(params);
    row={approvalId:params[0],tenantId:params[1],product:'content',
     dispatchIntentId:params[2],approvedBy:params[3],bindingSha256:params[4],
     approvedAt:new Date(params[5]),expiresAt:new Date(params[6]),
@@ -83,9 +84,10 @@ function setup(opts={}){
   readReviewerAuthority:async()=>({principalId:reviewer,tenantId,
    product:'content',memberActive:true,reviewerAuthorized:true,revokedAt:null}),
   recomputeOriginalMedia:async()=>media,
-  verifyContentSourceContext:async()=>opts.sourceValid??true,
+  verifyContentSourceContext:async(pinned,mediaBytes)=>
+    typeof opts.sourceValid==='function'?opts.sourceValid(pinned,mediaBytes):opts.sourceValid??true,
   writeTransaction:tx,readTransaction:tx,now:()=>Date.parse(time)});
- return {issuer,calls};
+ return {issuer,calls,inserts};
 }
 test('real Ed25519 V1+V2 signed proof checked before restricted append and readback (offline mocks)',async()=>{
  const x=setup();const result=await x.issuer.issue(fixture());
@@ -136,4 +138,31 @@ test('even a genuinely signed V2 receipt cannot name a different dispatch intent
  const x=setup();
  await assert.rejects(x.issuer.issue(f),/BCI_CONTENT_TRUSTED_ISSUER_DENIED/);
  assert.equal(x.calls.some(s=>s.startsWith('INSERT')),false);
+});
+
+// A CONTENT-owned callback must not be able to rewrite BCI's already-signed
+// immutable ledger payload after Ed25519 admission. Offline isolation test.
+test('async source verifier receives isolated proof and original-media copies',async()=>{
+ const f=fixture();
+ const originalEditorial=JSON.stringify(f.receipt.editorial);
+ const originalAdmission=JSON.stringify(f.receipt.admission);
+ const originalMediaDigest=h(f.mediaBytes);
+ const x=setup({sourceValid:async(pinned,bytes)=>{
+  pinned.receipt.editorial.payload.reviewedAt='2026-11-03T02:58:00.000Z';
+  pinned.receipt.admission.payload.expiresAt='2026-11-03T05:00:00.000Z';
+  pinned.receipt.admission.payload.nonce='c'.repeat(32);
+  pinned.binding.channelId='changed-after-signature';
+  bytes.fill(1);
+  return true;
+ }});
+ const result=await x.issuer.issue(f);
+ assert.equal(result.status,'BCI_CONTENT_APPROVAL_COMMITTED');
+ assert.equal(x.inserts.length,1);
+ const params=x.inserts[0];
+ assert.equal(params[5],approved);
+ assert.equal(params[6],expires);
+ assert.equal(params[10],originalEditorial);
+ assert.equal(params[11],originalAdmission);
+ assert.equal(params[14],'b'.repeat(32));
+ assert.equal(h(f.mediaBytes),originalMediaDigest);
 });
