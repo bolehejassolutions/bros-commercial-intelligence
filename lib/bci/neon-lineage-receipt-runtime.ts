@@ -9,7 +9,10 @@ import { Pool } from "pg";
 import { createNeonAuthPrincipalVerifier } from "./neon-auth-principal.ts";
 import { createNeonDevMembershipLookup } from "./neon-dev-membership-rows.ts";
 import { createNeonDevReadRows } from "./neon-dev-read-rows.ts";
-import { BciLineageWriteDenied, createAuthenticatedBciLineageWriter, createPgLineageWriteTransaction } from "./neon-lineage-writer.ts";
+import { BciLineageWriteDenied, createAuthenticatedBciLineageWriter, createPgLineageWriteTransaction,
+  createPgLineageReadTransaction } from "./neon-lineage-writer.ts";
+import { createAuthenticatedDemandMetaSignal } from "./neon-demand-signal.ts";
+import { createDemandMetaReceiptReader } from "../demand/meta-persisted-diagnosis.ts";
 import { isNeonPreviewEnabled } from "./neon-preview-handler.ts";
 import { createPgReadOnlyTransaction, parseNeonDevConnection } from "./neon-readonly-transaction.ts";
 
@@ -23,7 +26,8 @@ const verify = createNeonAuthPrincipalVerifier({
   approvedOperator: { email: "rasymokh@gmail.com" },
 });
 const denied = (): never => { throw new BciLineageWriteDenied(); };
-type Role = "bci_dev_membership_reader" | "bci_dev_private_reader" | "bci_dev_lineage_writer";
+type Role = "bci_dev_membership_reader" | "bci_dev_private_reader" | "bci_dev_lineage_writer" |
+  "bci_dev_evidence_writer_restricted";
 function poolFor(value: unknown, role: Role) {
   const config = parseNeonDevConnection(value, role);
   const pool = new Pool({ ...config, max: 1, connectionTimeoutMillis: 5000,
@@ -33,14 +37,34 @@ function poolFor(value: unknown, role: Role) {
   return pool;
 }
 function createDeps() {
+  const writerPool = poolFor(process.env.BCI_NEON_DEV_LINEAGE_WRITER_DATABASE_URL, "bci_dev_lineage_writer");
   return {
     membershipsFor: createNeonDevMembershipLookup(createPgReadOnlyTransaction(
       poolFor(process.env.BCI_NEON_DEV_MEMBERSHIP_DATABASE_URL, "bci_dev_membership_reader"))),
     readRows: createNeonDevReadRows(createPgReadOnlyTransaction(
       poolFor(process.env.BCI_NEON_DEV_EVIDENCE_DATABASE_URL, "bci_dev_private_reader"))),
-    transaction: createPgLineageWriteTransaction(
-      poolFor(process.env.BCI_NEON_DEV_LINEAGE_WRITER_DATABASE_URL, "bci_dev_lineage_writer")),
+    transaction: createPgLineageWriteTransaction(writerPool),
+    readbackTransaction: createPgLineageReadTransaction(writerPool),
   };
+}
+
+let signalReader: ReturnType<typeof createDemandMetaReceiptReader> | undefined;
+/** Independently gated exact operation on the existing protected route. */
+export async function appendFixedDemandMetaSignal(token: string) {
+  if (!isNeonPreviewEnabled(process.env) ||
+      process.env.BCI_NEON_DEV_DEMAND_SIGNAL_WRITES !== "enabled") denied();
+  try {
+    // Never parse credentials or create pools before real JWT verification.
+    await verify(token);
+    const d = deps ??= createDeps();
+    signalReader ??= createDemandMetaReceiptReader(createPgReadOnlyTransaction(poolFor(
+      process.env.BCI_NEON_DEV_EVIDENCE_WRITER_DATABASE_URL, "bci_dev_evidence_writer_restricted")));
+    return await createAuthenticatedDemandMetaSignal({
+      authenticate: () => verify(token), membershipsFor: d.membershipsFor,
+      readReceipt: (tenantId, principalId) => signalReader!(tenantId, principalId),
+      transaction: d.transaction, readbackTransaction: d.readbackTransaction,
+    })();
+  } catch { return denied(); }
 }
 let deps: ReturnType<typeof createDeps> | undefined;
 export async function appendFixedDemandMetaReceiptLineage(token: unknown) {
@@ -76,3 +100,4 @@ export async function appendFixedDemandMetaReceiptLineage(token: unknown) {
       providerAttested: false as const });
   } catch { return denied(); }
 }
+

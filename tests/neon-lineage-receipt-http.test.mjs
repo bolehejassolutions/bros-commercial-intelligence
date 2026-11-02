@@ -90,3 +90,44 @@ test("lineage endpoint bypasses unrelated Supabase proxy and requires operator U
   assert.equal(usesNeonPreviewAuthentication("/api/internal/neon-lineage-receipt"), true);
   assert.match(ui, /Append existing Meta receipt to unverified lineage/);
 });
+
+const signalPath=path+"?operation=demand-meta-observation-v1";
+const signalResult={receiptId,signalId:"d766817e-a361-8418-bd0d-3013725bbe8d",
+  signalVersion:"DEMAND_META_OBSERVATION_V1",status:"inserted",stage:"signal",
+  verification:"unverified",sourceSha256:"bcffc79b2bbedcef0cbe5f505715493aad91fca17b039cb5be11e078fdee15a2",
+  postCommitReadback:true,providerAttested:false,actionAuthorized:false};
+test("fixed signal operation has a separate default-off gate and preserves the existing evidence action",async()=>{
+  let writes=0,signals=0;
+  const factory=flags=>createLineageReceiptHttpHandler({env:()=>({...env,...flags}),
+    execute:async()=>{writes++;return {receiptId,status:"replayed",stage:"evidence",verification:"unverified",providerAttested:false};},
+    executeSignal:async()=>{signals++;return signalResult;}});
+  assert.equal((await factory({})(req(signalPath))).status,404);
+  assert.equal(signals,0);
+  const h=factory({BCI_NEON_DEV_DEMAND_SIGNAL_WRITES:"enabled"});
+  const r=await h(req(signalPath));assert.equal(r.status,200);
+  assert.deepEqual(await r.json(),signalResult);assert.equal(signals,1);assert.equal(writes,0);
+  assert.equal((await h(req())).status,200);assert.equal(writes,1);
+});
+test("signal gate cannot bypass scope/body/origin/JWT guards or accept unknown operations",async()=>{
+  let calls=0;const h=createLineageReceiptHttpHandler({
+    env:()=>({...env,BCI_NEON_DEV_DEMAND_SIGNAL_WRITES:"enabled"}),
+    execute:async()=>{calls++;throw Error();},executeSignal:async()=>{calls++;return signalResult;}});
+  for(const request of [req(signalPath+"&tenantId=other"),req(signalPath,{"x-product":"content"}),
+    req(signalPath,{origin:"https://evil.test"}),req(signalPath,{authorization:""}),
+    req(signalPath,{"content-type":"application/json"},"{}"),req(path+"?operation=approve")])
+    assert.notEqual((await h(request)).status,200);
+  assert.equal(calls,0);
+});
+test("signal responses cannot claim acceptance without committed readback or promote authority",async()=>{
+  for(const patch of [{postCommitReadback:false},{providerAttested:true},
+    {actionAuthorized:true},{stage:"decision"},{verification:"verified"},{secret:"forbidden"}]){
+    const h=createLineageReceiptHttpHandler({env:()=>({...env,BCI_NEON_DEV_DEMAND_SIGNAL_WRITES:"enabled"}),
+      execute:async()=>{throw Error();},executeSignal:async()=>({...signalResult,...patch})});
+    const r=await h(req(signalPath));assert.equal(r.status,403);
+    assert.doesNotMatch(JSON.stringify(await r.json()),/forbidden/);
+  }
+  const ui=readFileSync(new URL("../app/internal/neon-preview/sign-in-client.tsx",import.meta.url),"utf8");
+  assert.match(ui,/onClick=\{saveDemandMetaSignal\}/);
+  assert.match(ui,/No automatic retry will run/);
+});
+
