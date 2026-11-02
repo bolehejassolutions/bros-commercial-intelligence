@@ -88,4 +88,9 @@ test('hook mismatch, forged trend, getter, source injection and corrupt/duplicat
   assert.throws(()=>run(script(),resource(),bad),/CONTENT_INSTANCE_SCRIPT_PROOF_DENIED/);
   const dup=bytes();dup[1]=dup[0];
   assert.throws(()=>run(script(),resource(),dup),/CONTENT_INSTANCE_SCRIPT_PROOF_DENIED/);
+  assert.throws(()=>run({...script(),scriptId:undefined}),/CONTENT_INSTANCE_SCRIPT_PROOF_DENIED/);
+  assert.throws(()=>run(script(),{...resource(),resourceId:undefined}),/CONTENT_INSTANCE_SCRIPT_PROOF_DENIED/);
+  const sparse=script();sparse.shots=new Array(2);sparse.shots[1]='Only one real shot.';
+  sparse.shots.extra='Filler';
+  assert.throws(()=>run(sparse),/CONTENT_INSTANCE_SCRIPT_PROOF_DENIED/);
 });
