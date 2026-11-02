@@ -97,3 +97,30 @@ test('multiline Buffer caption preserves identity and rejects unsafe controls',(
   assert.equal(a.authenticatedApprovalVerified,false);
   assert.equal(a.providerSentVerified,false);
 });
+
+test('real HK12 Malay AI-assisted illustration wording is recognized without inventing native provider metadata',()=>{
+  const examples=[
+    ['facebook','Ilustrasi digital dibantu AI; bukan rekod pelanggan sebenar.',
+      'FACEBOOK_AI_METADATA_NOT_EXPOSED_IN_BUFFER_CREATE_POST'],
+    ['instagram','Ilustrasi digital dibantu AI; situasi fiksyen.',null],
+    ['tiktok','Ilustrasi digital dibantu AI. Tiada janji hasil.',
+      'TIKTOK_PHOTO_AI_METADATA_NOT_SUPPORTED_IN_BUFFER_CREATE_POST']
+  ];
+  for(const [channelService,caption,providerHold] of examples){
+    const x=base();x.channelService=channelService;x.caption=caption;
+    const result=inspect(x);
+    assert.equal(result.captionDeclaresAi,true,channelService);
+    assert.deepEqual(result.flags,providerHold?[providerHold]:[],channelService);
+    assert.equal(result.executionAllowed,false);
+    assert.equal(result.providerAccountCapabilityVerified,false);
+    const contradiction=inspect({...x,aiDisclosure:'DECLARED_NON_AI'});
+    assert.deepEqual(contradiction.flags,['AI_PROVENANCE_CAPTION_CONTRADICTION']);
+    assert.equal(contradiction.executionAllowed,false);
+  }
+  const manual=base();manual.channelService='instagram';
+  for(const caption of ['Ilustrasi digital tidak dibantu AI.','Ilustrasi manual untuk pembelajaran.']){
+    assert.equal(inspect({...manual,caption}).captionDeclaresAi,false);
+    assert.deepEqual(inspect({...manual,caption}).flags,['AI_CAPTION_DISCLOSURE_MISSING']);
+  }
+  assert.equal(inspect({...manual,caption:'Imej berbantukan AI untuk latihan.'}).captionDeclaresAi,true);
+});
