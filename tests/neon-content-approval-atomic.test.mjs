@@ -35,7 +35,7 @@ async function harness(opts={}){
 }
 test("migration is DEV-only, NOLOGIN and never auto-authorizes a human reviewer",()=>{
  assert.match(sql,/CREATE ROLE bci_dev_content_approval_issuer NOLOGIN NOINHERIT NOBYPASSRLS/);
- assert.match(sql,/FORCE ROW LEVEL SECURITY/);
+ assert.match(sql,/relrowsecurity AND relforcerowsecurity/);
  assert.match(sql,/CREATE POLICY dev_content_issuer_approval_insert/);
  assert.match(sql,/content_reviewer_authorizations a/);
  assert.doesNotMatch(sql,/\.tenant_id=tenant_id/);
