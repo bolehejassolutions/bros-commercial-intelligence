@@ -10,11 +10,16 @@ https://docs.google.com/document/d/1XPD2sCnOJeFpXfXtwsu44kgrwhl2L03wfajpxOIck2I/
 
 ## Current acceptance: PARTIAL
 
-The exact Preview branch currently has the reporting token only; the existing
-Meta app ID has been configured. No management token, app-secret configuration,
-verified Malaysia identity IDs or current real RM100 launch-QA receipt is
-provisioned. No Meta POST, campaign activation, production change or new worker
-was performed. The approved DEV grant is described below.
+The owner has now saved a separate sensitive management-token entry as
+`BROS_DEMAND_META_ADS_MANAGEMENT_TOKEN` in the exact Preview branch. The DEMAND
+server adapter accepts that explicit name while preserving the shared Meta
+verifier and the legacy `META_ADS_MANAGEMENT_TOKEN` name. Different values under
+both names fail closed; the reporting token is never a writer fallback.
+Presence alone does not establish valid scopes, ownership or account tasks.
+`META_APP_ID` is configured; app-secret configuration, verified Malaysia
+identity IDs and a current real RM100 launch-QA receipt remain separate gates.
+No Meta POST, campaign activation, production change or new worker was performed.
+The approved DEV grant is described below.
 The owner approved the exact execution-ledger table and existing-writer
 SELECT/INSERT grant on2November2026; that migration is now applied in the
 existing Neon DEV database. Physical LOGIN/RLS acceptance is independently
@@ -23,7 +28,8 @@ build do not establish end-to-end execution or independent paid-order tracking.
 
 ## Before enabling paused staging
 
-1. Configure the business-owned `META_ADS_MANAGEMENT_TOKEN` (ads_management),
+1. Configure the business-owned `BROS_DEMAND_META_ADS_MANAGEMENT_TOKEN`
+   (ads_management; legacy `META_ADS_MANAGEMENT_TOKEN` is also accepted),
    `META_APP_ID=1315572270590189`, and `META_APP_SECRET` as protected server
    variables for `feat/demand-direct-meta-readonly-20261031`, Preview only.
    Never enter credentials in chat or reuse connected advertising-tool secrets.
@@ -84,6 +90,14 @@ readbacks. It reports only whitelisted booleans, grant states and numeric errors
 unknown or incomplete metadata stays UNVERIFIED. It never promotes that token
 to a writer, changes any credential, or relaxes stage/live preflight. Mark this
 one-time audit configuration `completed-v1` after recording the real readback.
+
+The separately saved management credential has its own one-time exact-Preview
+`BROS_DEMAND_META_MANAGEMENT_TOKEN_AUDIT=approved-v1` GET-only audit. It reads
+permission/debug/fixed-account capability and runs the unchanged strict
+app/business/account/tasks management preflight. A missing app secret still
+blocks that preflight even when a token advertises ads_management. The logs
+contain only fixed statuses and whitelisted metadata, never secrets or raw
+provider bodies. Mark the one-time flag `completed-v1` after recording the proof.
 
 Each step commits an immutable intent BEFORE the Meta POST. Provider success is
 confirmed in an append-only event. Concurrent requests use a campaign advisory

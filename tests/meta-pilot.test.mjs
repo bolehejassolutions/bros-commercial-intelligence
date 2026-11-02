@@ -103,6 +103,23 @@ test("readiness with read-only credentials performs no writes and explains missi
   assert.equal(r.independentPurchaseTrackingVerifiedByThisCheck, false);
   assert.ok(f.calls.every(c => c.init.method === "GET"));
 });
+test("owner-saved management name works through pilot readiness with authenticated GET proof", async () => {
+  const f = fixture();
+  f.config.BROS_DEMAND_META_ADS_MANAGEMENT_TOKEN = f.config.META_ADS_MANAGEMENT_TOKEN;
+  delete f.config.META_ADS_MANAGEMENT_TOKEN;
+  const r = await service(f).readiness(scope);
+  assert.equal(r.managementVerified, true); assert.equal(r.canPause, true);
+  assert.ok(!r.blockers.includes("META_MANAGEMENT_TOKEN_MISSING"));
+  assert.ok(f.calls.every(c => c.init.method === "GET"));
+  const account = f.calls.find(c => c.init.headers.Authorization === "Bearer " + f.config.BROS_DEMAND_META_ADS_MANAGEMENT_TOKEN);
+  assert.ok(account); assert.ok(account.url.searchParams.get("appsecret_proof"));
+});
+test("conflicting management names block pilot writes before any provider request", async () => {
+  const f = fixture();
+  f.config.BROS_DEMAND_META_ADS_MANAGEMENT_TOKEN = "synthetic-conflicting-owner-token-123456";
+  await assert.rejects(service(f).pause(scope), /META_MANAGEMENT_TOKEN_CONFIGURATION_CONFLICT/);
+  assert.equal(f.calls.length, 0);
+});
 test("provider read rejects campaign budget drift, account drift and incomplete pagination", async () => {
   for (const change of [f => { f.campaign.lifetime_budget = "14001"; }, f => { f.account.currency = "USD"; },
     f => { f.campaign.daily_budget = "100"; }]) {

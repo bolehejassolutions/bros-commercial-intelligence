@@ -1,4 +1,5 @@
 import { inspectMetaConnection } from "../marketing-operator/meta-connection.ts";
+import { pilotMetaConfiguration } from "./meta-pilot-environment.ts";
 import { createPilotProvider } from "./meta-pilot-provider.ts";
 import { PILOT, STAGE_STEPS, policyDigest, verifiedIdentities, launchAttestation, validateAsset,
   type Snapshot, type Step } from "./meta-pilot-policy.ts";
@@ -14,7 +15,7 @@ export type PilotServiceDependencies = {
   transport?: typeof fetch;
 };
 export function createPilotService(deps: PilotServiceDependencies) {
-  const env = deps.environment;
+  const { environment: env, managementCredentialConflict } = pilotMetaConfiguration(deps.environment);
   const configured = () => ({
     managementToken: Boolean(env.META_ADS_MANAGEMENT_TOKEN && env.META_ADS_MANAGEMENT_TOKEN.length >= 24),
     appSecret: Boolean(env.META_APP_SECRET && env.META_APP_SECRET.length >= 16),
@@ -26,6 +27,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
   const provider = (token: string) => createPilotProvider(token, deps.transport,
     token === env.META_ADS_MANAGEMENT_TOKEN ? env.META_APP_SECRET : undefined);
   async function writeCredential() {
+    if (managementCredentialConflict) throw Error("META_MANAGEMENT_TOKEN_CONFIGURATION_CONFLICT");
     const connection = await inspectMetaConnection("write", env, deps.transport, deps.now());
     if (connection.status !== "READY") throw Error("META_MANAGEMENT_CONNECTION_NOT_VERIFIED");
     return env.META_ADS_MANAGEMENT_TOKEN!;
@@ -37,6 +39,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
   return {
     async readiness(scope: PilotScope) {
       const flags = configured(), blockers: string[] = [];
+      if (managementCredentialConflict) blockers.push("META_MANAGEMENT_TOKEN_CONFIGURATION_CONFLICT");
       if (!flags.managementToken) blockers.push("META_MANAGEMENT_TOKEN_MISSING");
       if (!flags.appSecret || !flags.appId) blockers.push("META_APP_CONFIGURATION_MISSING");
       if (!flags.ledger) blockers.push("PILOT_LEDGER_PERMISSION_REVIEW_REQUIRED");

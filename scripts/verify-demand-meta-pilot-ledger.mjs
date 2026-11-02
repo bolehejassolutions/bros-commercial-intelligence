@@ -2,6 +2,8 @@ import { Pool } from "pg";
 import { parseNeonDevConnection } from "../lib/bci/neon-readonly-transaction.ts";
 import { verifyPilotLedger, PilotLedgerVerificationFailed } from "../lib/demand/meta-pilot-ledger-verification.ts";
 import { inspectExistingDemandMetaToken } from "../lib/demand/meta-token-capability.ts";
+import { pilotMetaConfiguration } from "../lib/demand/meta-pilot-environment.ts";
+import { inspectMetaConnection } from "../lib/marketing-operator/meta-connection.ts";
 
 const exactPreview = process.env.VERCEL_ENV === "preview" &&
   process.env.VERCEL_GIT_COMMIT_REF === "feat/demand-direct-meta-readonly-20261031";
@@ -35,4 +37,18 @@ if (!exactPreview || !verification || verification === "completed-v1") {
 if (exactPreview && process.env.BROS_DEMAND_META_TOKEN_AUDIT === "approved-v1") {
   const audit = await inspectExistingDemandMetaToken(process.env.BROS_DEMAND_META_ADS_READ_TOKEN);
   console.log("BROS_DEMAND_EXISTING_META_TOKEN_AUDIT", JSON.stringify(audit));
+}
+
+// Audit the separately owner-saved management credential without decrypting it
+// outside the existing server or unlocking any Meta write/staging/launch path.
+if (exactPreview && process.env.BROS_DEMAND_META_MANAGEMENT_TOKEN_AUDIT === "approved-v1") {
+  const { environment, managementCredentialConflict } = pilotMetaConfiguration(process.env);
+  if (managementCredentialConflict) {
+    console.log("BROS_DEMAND_MANAGEMENT_META_TOKEN_AUDIT", "CONFIGURATION_CONFLICT");
+  } else {
+    const audit = await inspectExistingDemandMetaToken(environment.META_ADS_MANAGEMENT_TOKEN);
+    console.log("BROS_DEMAND_MANAGEMENT_META_TOKEN_AUDIT", JSON.stringify(audit));
+    const preflight = await inspectMetaConnection("write", environment);
+    console.log("BROS_DEMAND_MANAGEMENT_META_PREFLIGHT", JSON.stringify(preflight));
+  }
 }
