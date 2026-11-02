@@ -6,10 +6,11 @@ export function pilotMetaConfiguration(input: NodeJS.ProcessEnv) {
   const scoped = input.BROS_DEMAND_META_ADS_MANAGEMENT_TOKEN;
   const legacy = input.META_ADS_MANAGEMENT_TOKEN;
   const managementCredentialConflict = Boolean(scoped && legacy && scoped !== legacy);
+  const environment: NodeJS.ProcessEnv = { ...input,
+    META_ADS_MANAGEMENT_TOKEN: managementCredentialConflict ? undefined : scoped || legacy,
+  };
   return {
-    environment: { ...input,
-      META_ADS_MANAGEMENT_TOKEN: managementCredentialConflict ? undefined : scoped || legacy,
-    },
+    environment,
     managementCredentialConflict,
   };
 }
