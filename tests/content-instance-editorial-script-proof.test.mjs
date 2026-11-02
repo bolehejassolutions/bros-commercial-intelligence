@@ -45,7 +45,14 @@ const run=(s=script(),r=resource(),b=bytes(),c=copy(),p=brief(),cfg=config())=>
   prepare(cfg,p,s,r,b,c,opts);
 test('ordinary hook binds script, resource mapping, ordered media, copy and destination without authority',()=>{
   const x=run();assert.equal(x.proofEnvelopeId,run().proofEnvelopeId);
+  assert.equal(x.schemaVersion,2);
   assert.equal(x.orderedMediaDigests.length,2);
+  assert.equal(x.shotMediaBindings.length,2);
+  assert.deepEqual(x.shotMediaBindings.map(x=>x.mediaSlot),[1,2]);
+  assert.deepEqual(x.shotMediaBindings.map(x=>x.shot),script().shots);
+  assert.equal(x.requiredHumanChecks.length,6);
+  assert.deepEqual(x.automatedReviewFlags,[]);
+  assert.equal(x.automatedFlagsAdjudicated,false);
   assert.equal(new Set(x.orderedMediaDigests.map(i=>i.sourceSha256)).size,2);
   assert.equal(x.resourceMapping.hookPromise,x.script.openingHook);
   assert.equal(x.destination.channelId,'ig-a');
@@ -59,6 +66,8 @@ test('ordinary hook binds script, resource mapping, ordered media, copy and dest
     assert.equal(x[k],false,k);
   assert.equal(Object.isFrozen(x.script.shots),true);
   assert.equal(Object.isFrozen(x.orderedMediaDigests[0]),true);
+  assert.equal(Object.isFrozen(x.shotMediaBindings[0]),true);
+  assert.equal(Object.isFrozen(x.automatedReviewFlags),true);
 });
 test('script, resource, media order, copy, channel and tenant affect immutable identity',()=>{
   const base=run().proofEnvelopeId;
@@ -93,4 +102,16 @@ test('hook mismatch, forged trend, getter, source injection and corrupt/duplicat
   const sparse=script();sparse.shots=new Array(2);sparse.shots[1]='Only one real shot.';
   sparse.shots.extra='Filler';
   assert.throws(()=>run(sparse),/CONTENT_INSTANCE_SCRIPT_PROOF_DENIED/);
+});
+
+test('script shots must cover every ordered image and inherited editorial holds survive',()=>{
+  const s=script();s.shots=['Only the first card is described.'];
+  assert.throws(()=>run(s),/CONTENT_INSTANCE_SCRIPT_PROOF_DENIED/);
+  const cfg=config();cfg.brand.blockedClaims=['two-step comparison'];
+  const held=run(script(),resource(),bytes(),copy(),brief(),cfg);
+  assert.equal(held.status,'INSTANCE_SCRIPT_AND_ORIGINAL_MEDIA_REVIEW_REQUIRED');
+  assert.ok(held.automatedReviewFlags.includes('BLOCKED_CLAIM_TEXT_MATCH'));
+  assert.equal(held.executionAllowed,false);
+  assert.equal(held.automatedFlagsAdjudicated,false);
+  assert.notEqual(held.proofEnvelopeId,run().proofEnvelopeId);
 });
