@@ -17,6 +17,11 @@ function fakeProvider(overrides={}){
  const calls=[];
  const transport=async(url,init)=>{
   calls.push({url,init});const path=new URL(url).pathname;
+  // Synthetic transport reproduces the real composite lookup's HTTP400/code100.
+  // No live-provider acceptance is claimed by this compatibility regression.
+  if((path.endsWith("/"+appId)||path.endsWith("/"+FIXED_META_ACCOUNT))&&
+     (new URL(url).searchParams.get("fields")??"").split(",").includes("owner_business"))
+    return Response.json({error:{code:100,message:"synthetic unsupported optional ownership field"}},{status:400});
   const body=path.endsWith("/debug_token")?(overrides.debug??debug()):
     path.endsWith("/"+appId)?(overrides.app??app()):
     path.endsWith("/owned_apps")?(overrides.ownedApps??{data:[{id:appId}]}):(overrides.account??account());

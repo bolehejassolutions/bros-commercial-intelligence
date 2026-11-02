@@ -162,7 +162,9 @@ export async function inspectMetaConnection(
     }
     result.checks.app = true;
     const accountUrl = new URL(GRAPH + "/" + FIXED_META_ACCOUNT);
-    accountUrl.searchParams.set("fields", "id,account_id,account_status,currency,timezone_name,business,owner_business,user_tasks");
+    // The required business binding is `business`; optional owner aliases can
+    // reject the entire v24 account read. All returned bindings still must agree.
+    accountUrl.searchParams.set("fields", "id,account_id,account_status,currency,timezone_name,business,user_tasks");
     const account = await get(accountUrl, token, "account");
     if (account.id !== FIXED_META_ACCOUNT || account.account_id !== FIXED_META_ACCOUNT.slice(4))
       fail("ACCOUNT_IDENTITY_MISMATCH");
