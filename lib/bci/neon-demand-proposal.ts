@@ -54,11 +54,13 @@ export function createAuthenticatedDemandProposal(deps:Deps){
   typeof deps.transaction!=="function")deny();
  return async(raw:unknown):Promise<ProposalResult>=>{
   const v=normalize(raw);
+  let stage="identity";
   try{
    const p=await deps.authenticate();
    if(!exact(p,["userId","authenticated"])||p!.authenticated!==true||
      !UUID.test(p!.userId))deny();
    const principal=p!.userId.toLowerCase();
+   stage="membership";
    const grants=await deps.membershipsFor(principal,"demand");
    if(!Array.isArray(grants)||grants.length!==1||!exact(grants[0],
      ["principalId","tenantId","product","active"])||
@@ -66,7 +68,9 @@ export function createAuthenticatedDemandProposal(deps:Deps){
      grants[0].active!==true||!UUID.test(grants[0].tenantId))deny();
    const tenant=grants[0].tenantId.toLowerCase();
    const id=stableId(tenant,v);
+   stage="db-connect";
    return await deps.transaction(async query=>{
+    stage="role";
     const identity=await query("SELECT current_user AS \"roleName\",session_user AS \"sessionRoleName\","+
       "rolcanlogin AS \"canLogin\",rolbypassrls AS \"bypassRls\",rolsuper AS \"superuser\","+
       "rolinherit AS \"inherits\",(SELECT count(*)::integer FROM pg_auth_members"+
@@ -75,6 +79,7 @@ export function createAuthenticatedDemandProposal(deps:Deps){
     if(identity.rows.length!==1||!obj(r)||r.roleName!=="bci_dev_evidence_writer_restricted"||
       r.sessionRoleName!==r.roleName||r.canLogin!==true||r.bypassRls!==false||
       r.superuser!==false||r.inherits!==false||r.parentRoles!==0)deny();
+    stage="posture";
     const posture=await query("SELECT current_database() AS \"databaseName\","+
       "c.relrowsecurity AND c.relforcerowsecurity AS \"forcedRls\","+
       "has_table_privilege(current_user,c.oid,'SELECT') AS \"canSelect\","+
@@ -108,11 +113,14 @@ export function createAuthenticatedDemandProposal(deps:Deps){
       " AND revoked_at IS NULL",[tenant,principal]);
      if(m.rows.length!==1||!obj(m.rows[0])||m.rows[0].activeCount!==1)deny();
     };
+    stage="membership-check";
     await recheck();
+    stage="case";
     const c=await query("SELECT id::text AS \"id\" FROM bci_dev.cases"+
      " WHERE id=$1::uuid AND tenant_id=$2::uuid AND product='demand'"+
      " AND status='REVIEW' LIMIT 2",[CASE_ID,tenant]);
     if(c.rows.length!==1||!obj(c.rows[0])||c.rows[0].id!==CASE_ID)deny();
+    stage="receipt-link";
     const link=await query("SELECT count(*)::integer AS \"linkCount\""+
      " FROM bci_dev.case_evidence l JOIN bci_dev.evidence e"+
      " ON e.id=l.evidence_id AND e.tenant_id=l.tenant_id AND e.product=l.product"+
@@ -121,6 +129,7 @@ export function createAuthenticatedDemandProposal(deps:Deps){
      " AND e.provider='meta_ads' AND e.completeness='unverified'",
      [CASE_ID,RECEIPT_ID,tenant]);
     if(link.rows.length!==1||!obj(link.rows[0])||link.rows[0].linkCount!==1)deny();
+    stage="insert";
     const inserted=await query("INSERT INTO bci_dev.proposals"+
      " (id,case_id,tenant_id,product,hypothesis,proposed_action,"+
      "proposed_success_metric,status,confidence) VALUES"+
@@ -129,6 +138,7 @@ export function createAuthenticatedDemandProposal(deps:Deps){
      [id,CASE_ID,tenant,v.hypothesis,v.proposedAction,v.proposedSuccessMetric,v.confidence]);
     if(inserted.rows.length>1||(inserted.rows.length===1&&
       (!obj(inserted.rows[0])||inserted.rows[0].id!==id)))deny();
+    stage="readback";
     const found=await query("SELECT id::text AS \"id\",hypothesis,"+
      "proposed_action AS \"proposedAction\","+
      "proposed_success_metric AS \"proposedSuccessMetric\",status,confidence"+
@@ -138,13 +148,19 @@ export function createAuthenticatedDemandProposal(deps:Deps){
     if(found.rows.length!==1||!obj(f)||f.id!==id||f.hypothesis!==v.hypothesis||
       f.proposedAction!==v.proposedAction||f.proposedSuccessMetric!==v.proposedSuccessMetric||
       f.confidence!==v.confidence||f.status!=="PROPOSED")deny();
+    stage="membership-recheck";
     await recheck();
+    stage="commit";
     return Object.freeze({caseId:CASE_ID,proposalId:id,
       status:inserted.rows.length===1?"inserted" as const:"replayed" as const,
       reviewOnly:true as const,executionAuthorized:false as const,
       providerAttested:false as const,outcomeRecorded:false as const});
    });
-  }catch{return deny();}
+  }catch{
+   // Fixed stage label only: never log JWTs, identities, SQL, parameters or driver errors.
+   console.warn("bci_dev_proposal_denied",stage);
+   return deny();
+  }
  };
 }
 
