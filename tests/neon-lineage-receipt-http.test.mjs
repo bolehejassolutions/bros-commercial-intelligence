@@ -1,3 +1,4 @@
+import {usesNeonPreviewAuthentication} from "../lib/bci/neon-preview-route-policy.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -85,8 +86,7 @@ test("malformed or privileged result and secret exceptions fail closed", async (
   assert.doesNotMatch(JSON.stringify(await r.json()), /password/);
 });
 test("lineage endpoint bypasses unrelated Supabase proxy and requires operator UI", () => {
-  const proxy = readFileSync(new URL("../proxy.ts", import.meta.url), "utf8");
   const ui = readFileSync(new URL("../app/internal/neon-preview/sign-in-client.tsx", import.meta.url), "utf8");
-  assert.match(proxy, /request\.nextUrl\.pathname === "\/api\/internal\/neon-lineage-receipt"/);
+  assert.equal(usesNeonPreviewAuthentication("/api/internal/neon-lineage-receipt"), true);
   assert.match(ui, /Append existing Meta receipt to unverified lineage/);
 });

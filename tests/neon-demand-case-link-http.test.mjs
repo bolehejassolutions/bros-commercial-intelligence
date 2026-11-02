@@ -39,8 +39,7 @@ test("no secret-bearing error leakage",async()=>{
 });
 
 // Regression: the signed Neon route must not be swallowed by Supabase operator proxy.
-import {readFileSync} from "node:fs";
+import {usesNeonPreviewAuthentication} from "../lib/bci/neon-preview-route-policy.ts";
 test("signed case route is exempt from unrelated Supabase session middleware",()=>{
- const proxy=readFileSync(new URL("../proxy.ts",import.meta.url),"utf8");
- assert.match(proxy,/request\.nextUrl\.pathname === "\/api\/internal\/neon-demand-case"/);
+ assert.equal(usesNeonPreviewAuthentication("/api/internal/neon-demand-case"),true);
 });
