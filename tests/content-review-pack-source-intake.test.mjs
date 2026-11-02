@@ -104,3 +104,18 @@ test('getter, sparse array, changed hook and unknown candidate fail closed',()=>
  assert.throws(()=>run(pack(),'review-facebook',config(),b),/CONTENT_UNBOUND_REVIEW_PACK_INTAKE_DENIED/);
  assert.throws(()=>run(pack(),'unknown-candidate'),/CONTENT_UNBOUND_REVIEW_PACK_INTAKE_DENIED/);
 });
+
+test('different PNG source bytes with identical rendered pixels across channels fail closed',()=>{
+ const original=sources[0];
+ // CRC-valid, display-neutral PNG text metadata changes bytes but not pixels.
+ const variant=Buffer.concat([original.subarray(0,original.length-12),
+   chunk('tEXt',Buffer.from('Note\\0alternate encoding')),
+   original.subarray(original.length-12)]);
+ const a=verifyPngSourceBytes(original,dims);
+ const b=verifyPngSourceBytes(variant,dims);
+ assert.notEqual(a.sha256,b.sha256);
+ assert.equal(a.decodedRgbaSha256,b.decodedRgbaSha256);
+ const p=pack();
+ p.channelReviews[1].media[1]=media(variant,2,'drive-file-003');
+ assert.throws(()=>run(p),/CONTENT_UNBOUND_REVIEW_PACK_INTAKE_DENIED/);
+});
