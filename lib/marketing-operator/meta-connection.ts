@@ -16,6 +16,8 @@ export type MetaConnectionStatus = {
   appId: string | null; accountId: string; businessPortfolioId: string;
   checks: { token: boolean; app: boolean; account: boolean };
   expiresAt: number | null; dataAccessExpiresAt: number | null;
+  providerFailure?: { phase: "token" | "app" | "account";
+    status: number | null; code: number | null; subcode: number | null } | null;
 };
 class PreflightError extends Error {
   readonly reason: Reason;
@@ -74,20 +76,31 @@ export function validateMetaTokenMetadata(
   }
   return { expiresAt, dataAccessExpiresAt };
 }
-async function providerGet(url: URL, credential: string, transport: typeof fetch, appSecret: string) {
+async function providerGet(url: URL, credential: string, transport: typeof fetch, appSecret: string,
+  reportFailure: (failure: { status: number | null; code: number | null; subcode: number | null }) => void) {
   // debug_token's documented input_token query is a narrow server-only exception.
   // Redirects, URL logging, raw errors and response passthrough are prohibited.
+  let status: number | null = null, reported = false;
+  const safeCode = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) &&
+    value >= 0 && value <= 1000000000 ? value : null;
   try {
     url.searchParams.set("appsecret_proof", createHmac("sha256", appSecret).update(credential).digest("hex"));
     const response = await transport(url.toString(), {
       method: "GET", headers: { Authorization: "Bearer " + credential, Accept: "application/json" },
       redirect: "error", cache: "no-store", signal: AbortSignal.timeout(10000),
     });
-    if (!response.ok) fail("PROVIDER_REQUEST_FAILED");
+    status = response.status;
     const data = record(await response.json());
-    if (data.error) fail("PROVIDER_REQUEST_FAILED");
+    if (!response.ok || data.error) {
+      const error = data.error && typeof data.error === "object" && !Array.isArray(data.error)
+        ? data.error as Record<string, unknown> : {};
+      reportFailure({ status, code: safeCode(error.code), subcode: safeCode(error.error_subcode) });
+      reported = true;
+      fail("PROVIDER_REQUEST_FAILED");
+    }
     return data;
   } catch (error) {
+    if (!reported) reportFailure({ status, code: null, subcode: null });
     if (error instanceof PreflightError) throw error;
     fail("PROVIDER_REQUEST_FAILED");
   }
@@ -102,6 +115,7 @@ export async function inspectMetaConnection(
     appId: rawAppId === FIXED_META_APP ? FIXED_META_APP : null,
     accountId: FIXED_META_ACCOUNT, businessPortfolioId: FIXED_META_BUSINESS,
     checks: { token: false, app: false, account: false }, expiresAt: null, dataAccessExpiresAt: null,
+    providerFailure: null,
   };
   try {
     const secret = environment.META_APP_SECRET;
@@ -112,21 +126,25 @@ export async function inspectMetaConnection(
     if (rawAppId !== FIXED_META_APP) fail("APP_IDENTITY_MISMATCH");
     const appId = rawAppId;
     const appCredential = appId + "|" + secret;
+    const get = (url: URL, credential: string, phase: "token" | "app" | "account") =>
+      providerGet(url, credential, transport, secret, failure => { result.providerFailure = { phase, ...failure }; });
     const debug = new URL(GRAPH + "/debug_token");
     debug.searchParams.set("input_token", token);
-    const metadata = validateMetaTokenMetadata(await providerGet(debug, appCredential, transport, secret), appId, mode, now);
+    const metadata = validateMetaTokenMetadata(await get(debug, appCredential, "token"), appId, mode, now);
     result.expiresAt = metadata.expiresAt;
     result.dataAccessExpiresAt = metadata.dataAccessExpiresAt;
     result.checks.token = true;
     const appUrl = new URL(GRAPH + "/" + appId);
     appUrl.searchParams.set("fields", "id,name,business,owner_business");
-    const app = await providerGet(appUrl, appCredential, transport, secret);
+    // Read business ownership with the app-bound business caller verified above.
+    // Keep the app access credential confined to token introspection.
+    const app = await get(appUrl, token, "app");
     if (app.id !== appId || app.name !== APP_NAME) fail("APP_IDENTITY_MISMATCH");
     verifyBusiness(app, "APP_BUSINESS_MISMATCH");
     result.checks.app = true;
     const accountUrl = new URL(GRAPH + "/" + FIXED_META_ACCOUNT);
     accountUrl.searchParams.set("fields", "id,account_id,account_status,currency,timezone_name,business,owner_business,user_tasks");
-    const account = await providerGet(accountUrl, token, transport, secret);
+    const account = await get(accountUrl, token, "account");
     if (account.id !== FIXED_META_ACCOUNT || account.account_id !== FIXED_META_ACCOUNT.slice(4))
       fail("ACCOUNT_IDENTITY_MISMATCH");
     verifyBusiness(account, "ACCOUNT_BUSINESS_MISMATCH");

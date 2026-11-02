@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import {inspectMetaConnection,validateMetaTokenMetadata,FIXED_META_ACCOUNT,FIXED_META_BUSINESS,FIXED_META_APP} from "../lib/marketing-operator/meta-connection.ts";
 
 const now=Date.parse("2026-10-09T00:00:00Z");
@@ -51,11 +52,32 @@ test("preflight uses three bounded GET requests and only sanitized identity/expi
  assert.equal(new URL(calls[0].url).pathname,"/v24.0/debug_token");
  assert.equal(new URL(calls[0].url).searchParams.get("input_token"),env.META_ADS_READ_TOKEN);
  assert.equal(calls[0].init.headers.Authorization,"Bearer "+appId+"|"+env.META_APP_SECRET);
+ assert.equal(calls[1].init.headers.Authorization,"Bearer "+env.META_ADS_READ_TOKEN);
+ assert.equal(new URL(calls[1].url).searchParams.get("appsecret_proof"),
+  createHmac("sha256",env.META_APP_SECRET).update(env.META_ADS_READ_TOKEN).digest("hex"));
  assert.equal(calls[2].init.headers.Authorization,"Bearer "+env.META_ADS_READ_TOKEN);
  assert.ok(!calls[1].url.includes(env.META_ADS_READ_TOKEN));assert.ok(!calls[2].url.includes(env.META_ADS_READ_TOKEN));
  const serialized=JSON.stringify(result);
  for(const secret of [env.META_APP_SECRET,env.META_ADS_READ_TOKEN,env.META_ADS_MANAGEMENT_TOKEN])assert.ok(!serialized.includes(secret));
  assert.ok(!serialized.includes("graph.facebook.com"));
+});
+test("failed app lookup exposes only bounded numeric diagnostics and never retries or authorizes writes",async()=>{
+ const f=fakeProvider();
+ const result=await inspectMetaConnection("write",env,async(url,init)=>{
+  if(new URL(url).pathname.endsWith("/"+appId)){
+   assert.equal(init.headers.Authorization,"Bearer "+env.META_ADS_MANAGEMENT_TOKEN);
+   return Response.json({error:{code:100,error_subcode:33,message:env.META_APP_SECRET,
+    fbtrace_id:"private-provider-trace",error_data:{token:env.META_ADS_MANAGEMENT_TOKEN}}},{status:400});
+  }
+  return f.transport(url,init);
+ },now);
+ assert.equal(result.status,"BLOCKED");assert.equal(result.reason,"PROVIDER_REQUEST_FAILED");
+ assert.deepEqual(result.checks,{token:true,app:false,account:false});
+ assert.deepEqual(result.providerFailure,{phase:"app",status:400,code:100,subcode:33});
+ const serialized=JSON.stringify(result);
+ for(const secret of [env.META_APP_SECRET,env.META_ADS_MANAGEMENT_TOKEN,"private-provider-trace"])
+  assert.ok(!serialized.includes(secret));
+ assert.equal(f.calls.length,1,"only successful debug request is recorded; no account call or retry after failed app read");
 });
 test("invalid, wrong-app, expired, missing-scope and malformed token responses block before app/account",async()=>{
  const variants=[
