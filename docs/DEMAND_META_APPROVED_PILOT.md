@@ -99,6 +99,14 @@ blocks that preflight even when a token advertises ads_management. The logs
 contain only fixed statuses and whitelisted metadata, never secrets or raw
 provider bodies. Mark the one-time flag `completed-v1` after recording the proof.
 
+Owner-saved app-secret configuration is checked in the same exact Preview.
+The DEMAND adapter normalizes only surrounding whitespace (such as a pasted
+terminal newline), without modifying the saved variable. Embedded whitespace,
+missing/short values, token conflicts and all strict Meta identity/scope checks
+still fail closed. Opt-in build diagnostics expose fixed format booleans only,
+never the secret, its exact length, a hash, a prefix or the environment object.
+Saving a variable, or passing its local format check, is not provider acceptance.
+
 Each step commits an immutable intent BEFORE the Meta POST. Provider success is
 confirmed in an append-only event. Concurrent requests use a campaign advisory
 lock on the existing database. An unmatched intent blocks automatic replay,

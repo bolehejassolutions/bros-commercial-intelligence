@@ -42,7 +42,8 @@ if (exactPreview && process.env.BROS_DEMAND_META_TOKEN_AUDIT === "approved-v1") 
 // Audit the separately owner-saved management credential without decrypting it
 // outside the existing server or unlocking any Meta write/staging/launch path.
 if (exactPreview && process.env.BROS_DEMAND_META_MANAGEMENT_TOKEN_AUDIT === "approved-v1") {
-  const { environment, managementCredentialConflict } = pilotMetaConfiguration(process.env);
+  const { environment, managementCredentialConflict, configurationChecks } = pilotMetaConfiguration(process.env);
+  console.log("BROS_DEMAND_MANAGEMENT_META_CONFIGURATION", JSON.stringify(configurationChecks));
   if (managementCredentialConflict) {
     console.log("BROS_DEMAND_MANAGEMENT_META_TOKEN_AUDIT", "CONFIGURATION_CONFLICT");
   } else {
