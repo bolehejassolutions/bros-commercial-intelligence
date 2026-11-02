@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import { parseNeonDevConnection } from "../lib/bci/neon-readonly-transaction.ts";
 import { verifyPilotLedger, PilotLedgerVerificationFailed } from "../lib/demand/meta-pilot-ledger-verification.ts";
+import { inspectExistingDemandMetaToken } from "../lib/demand/meta-token-capability.ts";
 
 const exactPreview = process.env.VERCEL_ENV === "preview" &&
   process.env.VERCEL_GIT_COMMIT_REF === "feat/demand-direct-meta-readonly-20261031";
@@ -28,4 +29,10 @@ if (!exactPreview || !verification || verification === "completed-v1") {
       e instanceof PilotLedgerVerificationFailed ? e.phase : "configuration");
     process.exitCode = 1;
   } finally { if (pool) await pool.end().catch(() => {}); }
+}
+
+// Explicit owner-authorized GET-only scope audit. This does not unlock writes.
+if (exactPreview && process.env.BROS_DEMAND_META_TOKEN_AUDIT === "approved-v1") {
+  const audit = await inspectExistingDemandMetaToken(process.env.BROS_DEMAND_META_ADS_READ_TOKEN);
+  console.log("BROS_DEMAND_EXISTING_META_TOKEN_AUDIT", JSON.stringify(audit));
 }

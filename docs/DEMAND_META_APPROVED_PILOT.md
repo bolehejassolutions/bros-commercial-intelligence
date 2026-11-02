@@ -77,6 +77,14 @@ Meta accepting status ACTIVE does not prove delivery, attribution, CPA or lift.
 
 ## Failure and stop semantics
 
+The reporting variable's name is not proof of its granted Meta permissions.
+An explicit exact-Preview `BROS_DEMAND_META_TOKEN_AUDIT=approved-v1` build checks
+the existing business-owned credential with GET-only permission/debug/account
+readbacks. It reports only whitelisted booleans, grant states and numeric errors;
+unknown or incomplete metadata stays UNVERIFIED. It never promotes that token
+to a writer, changes any credential, or relaxes stage/live preflight. Mark this
+one-time audit configuration `completed-v1` after recording the real readback.
+
 Each step commits an immutable intent BEFORE the Meta POST. Provider success is
 confirmed in an append-only event. Concurrent requests use a campaign advisory
 lock on the existing database. An unmatched intent blocks automatic replay,
