@@ -25,7 +25,11 @@ test("installed Neon SDK obtains a fresh token after getSession populated its ca
     calls.push({ pathname, credentials: init?.credentials,
       forceHeaderSent: new Headers(init?.headers).has("X-Force-Fetch") });
     if (pathname.endsWith("/get-session")) return Response.json(sessionResponse);
-    if (pathname.endsWith("/token")) return tokenResponse();
+    if (pathname.endsWith("/token")) {
+      assert.equal(init.cache, "no-store"); assert.equal(init.credentials, "include");
+      assert.ok(init.signal instanceof AbortSignal, "token network request must be bounded");
+      return tokenResponse();
+    }
     throw new Error("Unexpected offline test request");
   };
   t.after(() => { globalThis.fetch = originalFetch; });

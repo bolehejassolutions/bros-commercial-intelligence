@@ -1,9 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {requestNeonPreviewSession, NeonPreviewSessionUnavailable}
+import {requestNeonPreviewSession, requestNeonPreviewToken, NeonPreviewSessionUnavailable}
   from "../lib/bci/neon-preview-client-token.ts";
 
 const email = "operator@example.test";
+test("fresh token request has a network deadline and never falls back to cached session", async () => {
+  let options;
+  const client = { token: async o => { options = o; return { data: { token: "synthetic.jwt.value" }, error: null }; } };
+  assert.equal(await requestNeonPreviewToken(client), "synthetic.jwt.value");
+  assert.equal(options.fetchOptions.cache, "no-store"); assert.equal(options.fetchOptions.credentials, "include");
+  assert.ok(options.fetchOptions.signal instanceof AbortSignal);
+});
 const valid = () => ({session:{expiresAt:new Date(Date.now()+60000).toISOString()},
   user:{email,emailVerified:true}});
 

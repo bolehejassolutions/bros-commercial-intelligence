@@ -1,5 +1,6 @@
 type TokenClient = Readonly<{
-  token: (options: { fetchOptions: { headers: Record<string, string> } }) =>
+  token: (options: { fetchOptions: { headers: Record<string, string>;
+    credentials: "include"; cache: "no-store"; signal: AbortSignal } }) =>
     Promise<Readonly<{ data: unknown; error: unknown }>>;
 }>;
 
@@ -19,7 +20,10 @@ export class NeonPreviewTokenUnavailable extends Error {
 
 export async function requestNeonPreviewToken(client: TokenClient): Promise<string> {
   try {
-    const { data, error } = await client.token({ fetchOptions: { headers: { "X-Force-Fetch": "true" } } });
+    const { data, error } = await client.token({ fetchOptions: {
+      headers: { "X-Force-Fetch": "true" }, credentials: "include", cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    } });
     if (error) throw new NeonPreviewTokenUnavailable("provider");
     if (data === null || typeof data !== "object" || !("token" in data) ||
         typeof data.token !== "string" || !data.token || data.token.length > 16000) {
