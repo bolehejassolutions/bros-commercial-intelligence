@@ -38,6 +38,7 @@ test("migration is DEV-only, NOLOGIN and never auto-authorizes a human reviewer"
  assert.match(sql,/FORCE ROW LEVEL SECURITY/);
  assert.match(sql,/CREATE POLICY dev_content_issuer_approval_insert/);
  assert.match(sql,/content_reviewer_authorizations a/);
+ assert.doesNotMatch(sql,/\.tenant_id=tenant_id/);
  assert.match(sql,/signed_proof_version=2 AND original_media_count=1/);
  assert.match(sql,/signed_review_receipt.*SELECT/);
  assert.doesNotMatch(sql,/GRANT (?:UPDATE|DELETE|TRUNCATE|CREATE) /);

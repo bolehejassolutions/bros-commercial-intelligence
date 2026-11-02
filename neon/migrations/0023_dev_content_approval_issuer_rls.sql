@@ -54,10 +54,10 @@ CREATE POLICY dev_content_issuer_approval_insert ON bci_dev.content_dispatch_app
   AND approved_at<=clock_timestamp() AND expires_at>clock_timestamp()
   AND expires_at<=clock_timestamp()+interval '24 hours'
   AND EXISTS(SELECT 1 FROM bci_dev.tenant_memberships m
-    WHERE m.principal_id=approved_by AND m.tenant_id=tenant_id
+    WHERE m.principal_id=approved_by AND m.tenant_id=nullif(current_setting('bci.tenant_id',true),'')::uuid
       AND m.product='content' AND m.active IS TRUE AND m.revoked_at IS NULL)
   AND EXISTS(SELECT 1 FROM bci_dev.content_reviewer_authorizations a
-    WHERE a.principal_id=approved_by AND a.tenant_id=tenant_id
+    WHERE a.principal_id=approved_by AND a.tenant_id=nullif(current_setting('bci.tenant_id',true),'')::uuid
       AND a.product='content' AND a.revoked_at IS NULL
       AND a.authorized_at<=clock_timestamp())
  );
