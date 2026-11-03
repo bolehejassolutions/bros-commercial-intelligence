@@ -220,3 +220,29 @@ test('ordinary script cannot borrow an image-only review across reviewer, time, 
   await assert.rejects(combinedCall(x,{deps:wrongTenant}),
     /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
 });
+
+
+test('generic V3 proof is signed, bound to original ordered media, and remains evidence-only',()=>{
+  const args=input();
+  args[2]={scriptId:'script-generic',revisionId:'rev-a',
+    openingHook:brief().hook,
+    situation:'A learning group considers two options.',
+    audienceQuestion:'Which approach meets the learning objective?',
+    explanation:'Explain each approach with its limitations.',
+    audienceAction:'Compare the options using one consistent criterion.',
+    takeaway:'Summarize the reasoning for the selected approach.',
+    shots:['Show the two approaches in context.',
+      'Show the comparison and the concluding takeaway.']};
+  const {receipt,keys}=signed(args);
+  const proof=prepare(...args);
+  assert.equal(proof.schemaVersion,3);
+  const verified=verifyReview(args,receipt,keys,now);
+  assert.equal(verified.proofEnvelopeId,proof.proofEnvelopeId);
+  assert.equal(verified.signatureVerified,true);
+  assert.equal(verified.executionAllowed,false);
+  assert.equal(verified.bciReservationRequestCandidate,null);
+  const altered=[...args];
+  altered[2]={...args[2],audienceAction:'Change the action after signature.'};
+  assert.throws(()=>verifyReview(altered,receipt,keys,now),
+    /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+});

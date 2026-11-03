@@ -115,3 +115,29 @@ test('script shots must cover every ordered image and inherited editorial holds 
   assert.equal(held.automatedFlagsAdjudicated,false);
   assert.notEqual(held.proofEnvelopeId,run().proofEnvelopeId);
 });
+
+
+test('universal V3 script accepts non-selling educational and community content without SELL fields',()=>{
+  const generic={scriptId:'script-education-a',revisionId:'rev-a',
+    openingHook:brief().hook,
+    situation:'A community group compares two available options.',
+    audienceQuestion:'Which option matches the stated goal?',
+    explanation:'Explain the relevant features and limitations.',
+    audienceAction:'Compare each option using the same criteria.',
+    takeaway:'Record the chosen option and the reason.',
+    shots:['Illustrate the situation and available options.',
+      'Illustrate the comparison and a practical takeaway.']};
+  const v3=run(generic);
+  assert.equal(v3.schemaVersion,3);
+  assert.equal(v3.script.situation,generic.situation);
+  assert.equal(v3.script.audienceAction,generic.audienceAction);
+  assert.equal(Object.hasOwn(v3.script,'sellerAction'),false);
+  assert.equal(v3.status,'INSTANCE_SCRIPT_AND_ORIGINAL_MEDIA_REVIEW_REQUIRED');
+  assert.equal(v3.executionAllowed,false);
+  assert.notEqual(v3.proofEnvelopeId,run().proofEnvelopeId);
+  assert.equal(v3.proofEnvelopeId,run({...generic}).proofEnvelopeId);
+  const tampered={...generic,audienceAction:'Recommend a different activity.'};
+  assert.notEqual(run(tampered).proofEnvelopeId,v3.proofEnvelopeId);
+  assert.throws(()=>run({...generic,sellerSituation:'Injected legacy field'}),
+    /CONTENT_INSTANCE_SCRIPT_PROOF_DENIED/);
+});
