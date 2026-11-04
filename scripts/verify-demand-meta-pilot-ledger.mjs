@@ -36,8 +36,19 @@ if (!exactPreview || !verification || verification === "completed-v1") {
 
 // Explicit owner-authorized GET-only scope audit. This does not unlock writes.
 if (exactPreview && process.env.BROS_DEMAND_META_TOKEN_AUDIT === "approved-v1") {
-  const audit = await inspectExistingDemandMetaToken(process.env.BROS_DEMAND_META_ADS_READ_TOKEN);
-  console.log("BROS_DEMAND_EXISTING_META_TOKEN_AUDIT", JSON.stringify(audit));
+  try {
+    const audit = await inspectExistingDemandMetaToken(process.env.BROS_DEMAND_META_ADS_READ_TOKEN);
+    console.log("BROS_DEMAND_EXISTING_META_TOKEN_AUDIT", JSON.stringify(audit));
+    // Explicitly requested read-only audits must not report a green Preview
+    // when the configured credential is absent or provider introspection fails.
+    if (audit.status !== "CAPABILITY_READBACK" || !audit.fixedAccountReadVerified) {
+      console.error("BROS_DEMAND_EXISTING_META_TOKEN_AUDIT", "READBACK_NOT_VERIFIED");
+      process.exitCode = 1;
+    }
+  } catch {
+    console.error("BROS_DEMAND_EXISTING_META_TOKEN_AUDIT", "PROVIDER_UNAVAILABLE");
+    process.exitCode = 1;
+  }
 }
 
 // Audit the separately owner-saved management credential without decrypting it
