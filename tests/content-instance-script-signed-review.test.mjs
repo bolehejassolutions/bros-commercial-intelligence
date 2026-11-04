@@ -339,3 +339,37 @@ test('V3 async preflight cannot mutate ordered source media or reuse changed tra
     /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
   for(let i=0;i<original.length;i++)assert.deepEqual(args[4][i],original[i]);
 });
+
+test('V3 async preflight cannot rewrite either signed receipt after source admission',async()=>{
+  const args=input();
+  args[2]={scriptId:'script-generic',revisionId:'rev-a',openingHook:brief().hook,
+    situation:'Two learning options.',audienceQuestion:'Which works?',
+    explanation:'Compare both.',audienceAction:'Choose a criterion.',
+    takeaway:'Summarize.',shots:['First shot.','Second shot.']};
+  const accepted=({envelope,mediaBytes})=>({
+    status:'BCI_V3_SCRIPT_REVIEW_PREFLIGHT_ONLY',signatureVerified:true,
+    reviewerAuthorized:true,proofEnvelopeId:envelope.proofEnvelopeId,
+    scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
+    tenantId:envelope.tenantId,mediaCount:mediaBytes.length,
+    signedScriptMediaEvidenceId:'content-instance-script-signed-test',
+    orderedMediaSha256:'a'.repeat(64),durableApprovalRecorded:false,
+    reservationGranted:false,providerSent:false,executionAllowed:false});
+  for(const which of ['editorial','script']){
+    const editorial={schemaVersion:1,signature:'original-editorial'};
+    const script={schemaVersion:1,signature:'original-script'};
+    await assert.rejects(admitContentInstanceScriptV3Source(args,editorial,script,
+      async request=>{
+        request.receipt[which].signature='mutated-after-preflight';
+        await Promise.resolve();
+        return accepted(request);
+      }),/CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+    assert.equal(editorial.signature,'original-editorial');
+    assert.equal(script.signature,'original-script');
+  }
+  const valid=await admitContentInstanceScriptV3Source(args,
+    {schemaVersion:1,signature:'original-editorial'},
+    {schemaVersion:1,signature:'original-script'},async request=>accepted(request));
+  assert.equal(valid.executionAllowed,false);
+  assert.match(valid.dispatchBinding.editorialReceiptSha256,/^[a-f0-9]{64}$/);
+  assert.match(valid.dispatchBinding.scriptReceiptSha256,/^[a-f0-9]{64}$/);
+});
