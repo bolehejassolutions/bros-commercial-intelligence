@@ -26,7 +26,7 @@ export function reconcileDemandPaidPurchaseWithHistory(pairs: unknown, now: stri
     const sets = [] as Set<string>[];
     for (const key of keys) {
       const values = h[key];
-      if (!Array.isArray(values) || values.length > 10000) return reject("INVALID_HISTORICAL_LEDGER");
+      if (!Array.isArray(values) || values.length > 10000 ||\n          Object.getPrototypeOf(values) !== Array.prototype ||\n          Reflect.ownKeys(values).length !== values.length + 1)\n        return reject("INVALID_HISTORICAL_LEDGER");
       const ids = new Set<string>();
       for (const id of values) {
         if (typeof id !== "string" || id.length < 1 || id.length > 256 || id.trim() !== id ||
