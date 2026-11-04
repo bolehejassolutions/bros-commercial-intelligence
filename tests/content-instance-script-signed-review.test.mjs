@@ -443,7 +443,12 @@ test('V3 asynchronous preflight rejects truncation and replacement of ordered or
 test('BCI V3 source verifier recomputes original bytes and rejects forged transport',async()=>{
   const {createContentV3ServerSourceVerifier}=await import('../lib/content/instance-script-signed-review.mjs');
   const {createHash}=await import('node:crypto');
-  const args=input(),envelope=prepare(...args);
+  const args=input();
+  args[2]={scriptId:'script-generic',revisionId:'rev-a',openingHook:brief().hook,
+    situation:'Two learning options.',audienceQuestion:'Which works?',
+    explanation:'Compare both.',audienceAction:'Choose a criterion.',
+    takeaway:'Summarize.',shots:['First shot.','Second shot.']};
+  const envelope=prepare(...args);
   assert.equal(envelope.schemaVersion,3);
   const hashes=args[4].map(b=>createHash('sha256').update(b).digest('hex'));
   const orderedMediaSha256=createHash('sha256').update('BCI_CONTENT_ORDERED_MEDIA_V3\\n')
