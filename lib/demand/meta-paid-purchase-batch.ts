@@ -22,6 +22,17 @@ export function reconcileDemandPaidPurchaseBatch(pairs: unknown, now: string): B
   try {
   if (!Array.isArray(pairs) || pairs.length === 0 || pairs.length > 100)
     return reject("INVALID_BATCH_SIZE");
+  // A provider-supplied array must be a dense, ordinary data-only sequence.
+  // Iteration alone can silently skip holes or execute getters; both are unsafe
+  // for a complete paid-order reconciliation decision.
+  if (Object.getPrototypeOf(pairs) !== Array.prototype ||
+      Reflect.ownKeys(pairs).length !== pairs.length + 1)
+    return reject("INVALID_BATCH_SHAPE");
+  for (let i = 0; i < pairs.length; i++) {
+    const descriptor = Object.getOwnPropertyDescriptor(pairs, String(i));
+    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, "value"))
+      return reject("INVALID_BATCH_SHAPE");
+  }
   const orders = new Set<string>();
   const events = new Set<string>();
   const references = new Set<string>();
