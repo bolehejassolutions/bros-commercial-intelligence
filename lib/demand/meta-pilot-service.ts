@@ -89,12 +89,11 @@ export function createPilotService(deps: PilotServiceDependencies) {
         independentPurchaseTrackingVerifiedByThisCheck: false,
       };
     },
-    async stage(scope: PilotScope, assets: { a: Uint8Array; b: Uint8Array }) {
+    async stage(scope: PilotScope, assets: { a?: Uint8Array; b?: Uint8Array }) {
       if (!configured().stage) throw Error("PAUSED_STAGING_GATE_LOCKED");
       // Even PAUSED objects are provider writes. Require current real-purchase
       // tracking evidence before uploading assets or creating any Meta child.
       launchAttestation(env, deps.now());
-      validateAsset("a", assets.a); validateAsset("b", assets.b);
       const identities = verifiedIdentities(env);
       const snapshot = await snapshotFor(scope), ledger = deps.ledger(scope);
       const api = provider(await writeCredential());
@@ -104,11 +103,17 @@ export function createPilotService(deps: PilotServiceDependencies) {
       if (state.adsets.some(s => s.status !== "PAUSED")) throw Error("PAUSED_ADSET_REQUIRED");
       const step = STAGE_STEPS.find(s => !snapshot[s]);
       if (!step) return { status: "staged", campaignId: PILOT.campaign, stagedSteps: STAGE_STEPS.length };
+      // Journaled images need not be re-uploaded for later PAUSED steps.
+      if (step === "image_a" || step === "image_b") {
+        const bytes = assets[step === "image_a" ? "a" : "b"];
+        if (!bytes) throw Error("APPROVED_V5_ASSET_REQUIRED");
+        validateAsset(step === "image_a" ? "a" : "b", bytes);
+      }
       await deps.reauthorize();
       await ledger.perform(step, async () => {
         await deps.reauthorize();
         const performWrite = async () => {
-        if (step === "image_a" || step === "image_b") return api.upload(assets[step === "image_a" ? "a" : "b"]);
+        if (step === "image_a" || step === "image_b") return api.upload(assets[step === "image_a" ? "a" : "b"]!);
         if (step === "adset") {
           const r = await api.createAdset(identities, deps.now());
           const after = await api.read(); api.assertPaused(after);
