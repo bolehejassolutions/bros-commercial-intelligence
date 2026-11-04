@@ -439,7 +439,7 @@ test('V3 asynchronous preflight rejects truncation and replacement of ordered or
           tenantId:request.envelope.tenantId,
           mediaCount:originals.length,
           signedScriptMediaEvidenceId:'content-instance-script-signed-test',
-          orderedMediaSha256:sourceOrderedMediaDigest(mediaBytes),
+          orderedMediaSha256:sourceOrderedMediaDigest(request.mediaBytes),
           durableApprovalRecorded:false,reservationGranted:false,
           providerSent:false,executionAllowed:false};
       }),/CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
