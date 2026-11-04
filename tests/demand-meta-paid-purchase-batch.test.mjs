@@ -61,3 +61,21 @@ test("throwing provider proxies reject safely without leaking exceptions",()=>{
     });
   }
 });
+
+test("provider batch rejects sparse, accessor-backed, and nonstandard arrays",()=>{
+  const sparse = [pair("001"), , pair("003")];
+  const accessor = [pair("001")];
+  Object.defineProperty(accessor, "0", {enumerable:true, configurable:true,
+    get(){throw Error("must not execute batch getter")}});
+  const extra = [pair("001")];
+  extra.untrusted = "unexpected";
+  const inherited = [pair("001")];
+  Object.setPrototypeOf(inherited, Object.create(Array.prototype));
+  for (const input of [sparse, accessor, extra, inherited]) {
+    const result = reconcile(input, now);
+    assert.equal(result.status, "REJECTED");
+    assert.equal(result.reason, "INVALID_BATCH_SHAPE");
+    assert.equal(result.acceptedCount, 0);
+    assert.equal(result.launchAllowed, false);
+  }
+});
