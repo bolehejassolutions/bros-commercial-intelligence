@@ -314,3 +314,28 @@ test('V3 admission rejects missing, malformed and mismatched BCI evidence identi
       /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
   }
 });
+
+
+test('V3 async preflight cannot mutate ordered source media or reuse changed transport bytes',async()=>{
+  const args=input();
+  args[2]={scriptId:'script-generic',revisionId:'rev-a',openingHook:brief().hook,
+    situation:'Two learning options.',audienceQuestion:'Which works?',
+    explanation:'Compare both.',audienceAction:'Choose a criterion.',
+    takeaway:'Summarize.',shots:['First shot.','Second shot.']};
+  const original=args[4].map(x=>Buffer.from(x));
+  const preflight=async ({envelope,mediaBytes})=>{
+    mediaBytes[0][29]^=1;
+    await Promise.resolve();
+    return {status:'BCI_V3_SCRIPT_REVIEW_PREFLIGHT_ONLY',
+      signatureVerified:true,reviewerAuthorized:true,
+      proofEnvelopeId:envelope.proofEnvelopeId,
+      scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
+      tenantId:envelope.tenantId,mediaCount:mediaBytes.length,
+      signedScriptMediaEvidenceId:'content-instance-script-signed-test',
+      orderedMediaSha256:'a'.repeat(64),durableApprovalRecorded:false,
+      reservationGranted:false,providerSent:false,executionAllowed:false};
+  };
+  await assert.rejects(admitContentInstanceScriptV3Source(args,{}, {},preflight),
+    /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+  for(let i=0;i<original.length;i++)assert.deepEqual(args[4][i],original[i]);
+});
