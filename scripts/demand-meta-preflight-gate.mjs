@@ -9,3 +9,11 @@ export function isVerifiedDemandMetaManagementPreflight(value) {
       value.providerFailure === null && value.checks?.token === true && value.checks?.app === true && value.checks?.account === true;
   } catch { return false; }
 }
+
+/** GET-only reporting credential must prove the exact account was readable. */
+export function isVerifiedDemandMetaReadTokenAudit(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  try {
+    return value.status === "CAPABILITY_READBACK" && value.fixedAccountReadVerified === true;
+  } catch { return false; }
+}
