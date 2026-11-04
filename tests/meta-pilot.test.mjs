@@ -287,3 +287,16 @@ test("HTTP reports unknown provider persistence explicitly without exposing the 
   const r = await h.handle(new Request(endpoint, { method: "POST", headers: { ...token, Origin: origin }, body: f }));
   assert.equal(r.status, 409); assert.equal((await r.json()).reconcileRequired, true);
 });
+
+test("resumed PAUSED stage needs no redundant original image uploads", async () => {
+  const f = fixture();
+  const r = await service(f).stage(scope, {});
+  assert.equal(r.status, "staging");
+  assert.equal(r.stagedSteps, 3);
+  assert.equal(f.calls.filter(c => c.init.method === "POST").length, 1);
+});
+test("uncommitted image stage rejects missing image bytes before Meta writes", async () => {
+  const f = fixture(); delete f.snapshot.image_a;
+  await assert.rejects(service(f).stage(scope, {}), /APPROVED_V5_ASSET_REQUIRED/);
+  assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
+});
