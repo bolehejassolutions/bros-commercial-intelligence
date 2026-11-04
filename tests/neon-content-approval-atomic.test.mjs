@@ -161,3 +161,17 @@ test("V3 duplicate conflict is rejected before readback, while V2 retains idempo
  assert.equal((await v2.ledger.append(p)).status,"append_reconciled",
   "V2 append behavior must remain backward-compatible");
 });
+
+
+test("V3 rejects object identifiers without invoking attacker-controlled coercion",async()=>{
+ let coerced=0;
+ const hostile={toString(){coerced++;throw Error("coercion executed");}};
+ const h=await harness();
+ for(const field of ["approvalId","tenantId","reviewerId","dispatchIntentId",
+  "signedReviewEvidenceId","scriptProofEnvelopeId","signedScriptMediaEvidenceId"]){
+  await assert.rejects(h.ledger.appendV3({...v3,[field]:hostile}),
+   /BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+ }
+ assert.equal(coerced,0,"untrusted identifiers must not execute toString");
+ assert.equal(h.calls.some(x=>x.q.startsWith("INSERT")),false);
+});
