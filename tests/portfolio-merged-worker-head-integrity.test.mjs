@@ -26,7 +26,7 @@ const workers = [
   {
     name: 'Neon/BCI',
     branch: 'feat/neon-bci-dev-ledger-20261025',
-    paths: ['lib/bci/internal-lineage.ts', 'lib/bci/audit-append-plan.ts'],
+    paths: ['lib/bci/internal-lineage.ts', 'lib/bci/audit-append-plan.ts', 'tests/content-trusted-issuer.test.mjs'],
   },
   {
     name: 'DEMAND',
@@ -36,7 +36,7 @@ const workers = [
   {
     name: 'DEMAND approved Meta pilot',
     branch: 'feat/demand-direct-meta-readonly-20261031',
-    paths: ['lib/demand/meta-pilot-policy.ts', 'lib/demand/meta-pilot-service.ts', 'lib/demand/meta-pilot-ledger.ts'],
+    paths: ['lib/demand/meta-pilot-policy.ts', 'lib/demand/meta-pilot-service.ts', 'lib/demand/meta-pilot-ledger.ts', 'tests/demand-meta-paid-purchase-reconciliation.test.mjs'],
   },
   {
     name: 'CONTENT',
