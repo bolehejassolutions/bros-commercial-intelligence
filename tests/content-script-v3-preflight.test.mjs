@@ -70,7 +70,7 @@ function setup(overrides={}){
    sourceCalls++;
    return overrides.source ? overrides.source(...args) : true;
   },
-  now:()=>now
+  now:overrides.now??(()=>now)
  });
  return {preflight,get sourceCalls(){return sourceCalls;}};
 }
@@ -117,4 +117,23 @@ test('untrusted source callback cannot mutate original receipts/media',async()=>
  assert.equal((await s.preflight(f)).executionAllowed,false);
  assert.equal(JSON.stringify(f.receipt),orig);
  assert.equal(h(f.mediaBytes[0]),origHash);
+});
+
+test('V3 expires during source recomputation and never authenticates reviewer',async()=>{
+ let ticks=0;
+ const clock=()=>++ticks===1?now:Date.parse(exp);
+ const s=setup({now:clock});
+ await assert.rejects(s.preflight(fixture()),/BCI_CONTENT_SCRIPT_V3_DENIED/);
+ assert.equal(s.sourceCalls,1);
+});
+test('V3 rejects clock rollback after source verification',async()=>{
+ let ticks=0;
+ const s=setup({now:()=>++ticks===1?now:now-1});
+ await assert.rejects(s.preflight(fixture()),/BCI_CONTENT_SCRIPT_V3_DENIED/);
+});
+test('V3 expires after reviewer authorization without issuing approval',async()=>{
+ let ticks=0;
+ const s=setup({now:()=>++ticks<3?now:Date.parse(exp)});
+ await assert.rejects(s.preflight(fixture()),/BCI_CONTENT_SCRIPT_V3_DENIED/);
+ assert.equal(s.sourceCalls,1);
 });
