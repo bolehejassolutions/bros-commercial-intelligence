@@ -288,12 +288,14 @@ test("HTTP reports unknown provider persistence explicitly without exposing the 
   assert.equal(r.status, 409); assert.equal((await r.json()).reconcileRequired, true);
 });
 
-test("resumed PAUSED stage needs no redundant original image uploads", async () => {
-  const f = fixture();
-  const r = await service(f).stage(scope, {});
-  assert.equal(r.status, "staging");
-  assert.equal(r.stagedSteps, 3);
-  assert.equal(f.calls.filter(c => c.init.method === "POST").length, 1);
+test("HTTP permits image-free resume and forwards no synthetic image bytes", async () => {
+  const h = http();
+  const form = new FormData(); form.set("action", "stage");
+  const r = await h.handle(new Request(endpoint, {
+    method: "POST", headers: { ...token, Origin: origin }, body: form,
+  }));
+  assert.equal(r.status, 200);
+  assert.deepEqual(h.calls, ["stage"]);
 });
 test("uncommitted image stage rejects missing image bytes before Meta writes", async () => {
   const f = fixture(); delete f.snapshot.image_a;
