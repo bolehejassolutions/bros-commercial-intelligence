@@ -131,6 +131,27 @@ test("provider read rejects campaign budget drift, account drift and incomplete 
   await assert.rejects(createPilotProvider("synthetic", async (u, i) => String(u).includes("/adsets?") ?
     Response.json({ data: [], paging: { next: "https://evil.invalid/" } }) : original(u, i)).read(), /COMPLETE/);
 });
+test("PAUSED staging refuses absent, stale or mismatched paid-order QA before any Meta request", async () => {
+  for (const change of [
+    f => { delete f.config.BROS_DEMAND_META_LAUNCH_QA_RECEIPT; },
+    f => { const q = JSON.parse(f.config.BROS_DEMAND_META_LAUNCH_QA_RECEIPT);
+      q.verifiedAt = new Date(now - 2 * 86400000).toISOString();
+      f.config.BROS_DEMAND_META_LAUNCH_QA_RECEIPT = JSON.stringify(q); },
+    f => { const q = JSON.parse(f.config.BROS_DEMAND_META_LAUNCH_QA_RECEIPT);
+      q.amountMinor = 5000; f.config.BROS_DEMAND_META_LAUNCH_QA_RECEIPT = JSON.stringify(q); },
+  ]) {
+    const f = fixture(); change(f);
+    const readiness = await service(f).readiness(scope);
+    assert.equal(readiness.canStage, false);
+    const before = f.calls.length;
+    await assert.rejects(service(f).stage(scope, {
+      a: new Uint8Array(ASSETS.a.size), b: new Uint8Array(ASSETS.b.size),
+    }), /APPROVED_V5_ASSET_REQUIRED|CURRENT_REAL_PURCHASE_QA_RECEIPT_REQUIRED/);
+    assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
+    assert.ok(f.calls.length >= before);
+  }
+});
+
 test("activation is blocked before any provider call when launch is locked", async () => {
   const f = fixture(); delete f.config.BROS_DEMAND_META_PILOT_LAUNCH;
   await assert.rejects(service(f).activate(scope), /LIVE_LAUNCH_GATE_LOCKED/); assert.equal(f.calls.length, 0);
