@@ -49,7 +49,9 @@ export function reconcileDemandPaidPurchaseCandidate(
       Date.parse(order.paidAt) > Date.parse(now) ||
       Date.parse(purchase.eventAt) > Date.parse(now) ||
       Math.abs(Date.parse(order.paidAt) - Date.parse(purchase.eventAt)) > 86400000 ||
-      Date.parse(now) - Date.parse(order.paidAt) > 86400000)
+      Date.parse(now) - Date.parse(order.paidAt) > 86400000 ||
+      Date.parse(now) - Date.parse(purchase.eventAt) > 86400000 ||
+      Date.parse(purchase.eventAt) < Date.parse(order.paidAt) - 300000)
     return fail("STALE_OR_INCONSISTENT_PROVIDER_TIMES");
   if (purchase.deduplicationVerified !== true)
     return fail("PURCHASE_DEDUP_NOT_VERIFIED");
