@@ -402,3 +402,39 @@ test('V3 preflight rejects asynchronous mutation of complete server-owned envelo
       }),/CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
   }
 });
+
+
+test('V3 asynchronous preflight rejects truncation and replacement of ordered original media',async()=>{
+  const cases=[
+    mediaBytes=>{mediaBytes.pop();},
+    mediaBytes=>{mediaBytes.shift();},
+    mediaBytes=>{mediaBytes.splice(0,1,Buffer.from(mediaBytes[1]));},
+    mediaBytes=>{mediaBytes[0]=new Uint8Array(mediaBytes[0].length);},
+    mediaBytes=>{mediaBytes[0]=null;}
+  ];
+  for(const mutate of cases){
+    const args=input();
+    args[2]={scriptId:'script-generic',revisionId:'rev-a',openingHook:brief().hook,
+      situation:'Two learning options.',audienceQuestion:'Which works?',
+      explanation:'Compare both.',audienceAction:'Choose a criterion.',
+      takeaway:'Summarize.',shots:['First shot.','Second shot.']};
+    const originals=args[4].map(x=>Buffer.from(x));
+    await assert.rejects(admitContentInstanceScriptV3Source(args,{}, {},
+      async request=>{
+        mutate(request.mediaBytes);
+        await Promise.resolve();
+        return {status:'BCI_V3_SCRIPT_REVIEW_PREFLIGHT_ONLY',
+          signatureVerified:true,reviewerAuthorized:true,
+          proofEnvelopeId:request.envelope.proofEnvelopeId,
+          scriptIntentId:request.envelope.scriptIntentId,
+          copySha256:request.envelope.copySha256,
+          tenantId:request.envelope.tenantId,
+          mediaCount:originals.length,
+          signedScriptMediaEvidenceId:'content-instance-script-signed-test',
+          orderedMediaSha256:'a'.repeat(64),
+          durableApprovalRecorded:false,reservationGranted:false,
+          providerSent:false,executionAllowed:false};
+      }),/CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+    for(let i=0;i<originals.length;i++)assert.deepEqual(args[4][i],originals[i]);
+  }
+});
