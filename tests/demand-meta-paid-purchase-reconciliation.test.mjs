@@ -40,3 +40,16 @@ test("accessor payloads never count as independent provider proof", () => {
   const evil={...order};Object.defineProperty(evil,"paidAt",{get(){throw Error("secret");},enumerable:true});
   assert.equal(reconcile(evil,purchase,now).status,"REJECTED");
 });
+
+test("standalone reconciliation fails closed for revoked or throwing provider proxies", () => {
+  const revoked = Proxy.revocable({...order}, {});
+  revoked.revoke();
+  const throwing = new Proxy({...purchase}, {getPrototypeOf(){throw Error("provider read failed");}});
+  for (const [o,p] of [[revoked.proxy,purchase],[order,throwing]]) {
+    const result = reconcile(o,p,now);
+    assert.equal(result.status,"REJECTED");
+    assert.equal(result.reason,"UNREADABLE_PROVIDER_EVIDENCE");
+    assert.equal(result.independentlyVerified,false);
+    assert.equal(result.launchAllowed,false);
+  }
+});
