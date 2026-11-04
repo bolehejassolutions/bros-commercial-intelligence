@@ -59,8 +59,13 @@ if (exactPreview && process.env.BROS_DEMAND_META_MANAGEMENT_TOKEN_AUDIT === "app
       // A diagnostic GET is not an authorization to stage or activate ads.
       // Reject missing or explicitly unsuccessful provider results.
       if (!preflight || typeof preflight !== "object" ||
-          preflight.status === "ERROR" || preflight.status === "FAILED" ||
-          preflight.ready === false) {
+          preflight.status !== "READY" || preflight.reason !== "VERIFIED" ||
+          preflight.mode !== "write" ||
+          preflight.accountId !== "act_1997776120879476" ||
+          preflight.businessPortfolioId !== "2091328444802994" ||
+          preflight.appId !== "1315572270590189" ||
+          preflight.checks?.token !== true || preflight.checks?.app !== true ||
+          preflight.checks?.account !== true) {
         console.error("BROS_DEMAND_MANAGEMENT_META_PREFLIGHT", "PROVIDER_REJECTED");
         process.exitCode = 1;
       }
