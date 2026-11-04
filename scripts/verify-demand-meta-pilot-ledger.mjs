@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { isVerifiedDemandMetaManagementPreflight } from "./demand-meta-preflight-gate.mjs";
+import { isVerifiedDemandMetaManagementPreflight, isVerifiedDemandMetaReadTokenAudit } from "./demand-meta-preflight-gate.mjs";
 import { parseNeonDevConnection } from "../lib/bci/neon-readonly-transaction.ts";
 import { verifyPilotLedger, PilotLedgerVerificationFailed } from "../lib/demand/meta-pilot-ledger-verification.ts";
 import { inspectExistingDemandMetaToken } from "../lib/demand/meta-token-capability.ts";
@@ -41,7 +41,7 @@ if (exactPreview && process.env.BROS_DEMAND_META_TOKEN_AUDIT === "approved-v1") 
     console.log("BROS_DEMAND_EXISTING_META_TOKEN_AUDIT", JSON.stringify(audit));
     // Explicitly requested read-only audits must not report a green Preview
     // when the configured credential is absent or provider introspection fails.
-    if (audit.status !== "CAPABILITY_READBACK" || !audit.fixedAccountReadVerified) {
+    if (!isVerifiedDemandMetaReadTokenAudit(audit)) {
       console.error("BROS_DEMAND_EXISTING_META_TOKEN_AUDIT", "READBACK_NOT_VERIFIED");
       process.exitCode = 1;
     }
