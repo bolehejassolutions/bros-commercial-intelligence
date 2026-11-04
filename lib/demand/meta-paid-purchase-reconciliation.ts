@@ -32,6 +32,7 @@ export function reconcileDemandPaidPurchaseCandidate(
   independentlyVerified: false; launchAllowed: false}> {
   const fail = (reason: string) => Object.freeze({status:"REJECTED" as const, reason,
     independentlyVerified:false as const, launchAllowed:false as const});
+  try {
   if (!timestamp(now) || !record(order, orderKeys) || !record(purchase, eventKeys))
     return fail("MALFORMED_PROVIDER_EVIDENCE");
   if (order.provider !== "hitpay" || purchase.provider !== "meta" ||
@@ -59,4 +60,9 @@ export function reconcileDemandPaidPurchaseCandidate(
   // cannot be established by two caller-supplied JSON objects.
   return Object.freeze({status:"MATCHED_UNATTESTED" as const, reason:"PROVIDER_AUTH_AND_UTM_JOIN_REQUIRED",
     independentlyVerified:false as const, launchAllowed:false as const});
+  } catch {
+    // A revoked proxy or hostile provider-shaped record must never throw through
+    // the standalone candidate validator or be interpreted as a verified match.
+    return fail("UNREADABLE_PROVIDER_EVIDENCE");
+  }
 }
