@@ -79,3 +79,47 @@ test("restricted ledger denies expired or not-yet-effective approvals on append 
   assert.equal(h.calls.some(x=>x.q.startsWith("INSERT")),false);
  }
 });
+
+const v3={...p,scriptProofEnvelopeId:"script-proof-1",
+ signedScriptMediaEvidenceId:"script-media-1",
+ orderedMediaManifestSha256:"e".repeat(64),
+ signedScriptReviewReceipt:"t".repeat(100),
+ scriptDispatchBindingSha256:"f".repeat(64),originalMediaCount:3};
+test("V3 restricted append binds all script fields and independently reads exact committed proof",async()=>{
+ const scriptReviewDigest=await hash(v3.signedScriptReviewReceipt);
+ const row={approvalId:p.approvalId,tenantId:tenant,product:"content",
+  dispatchIntentId:p.dispatchIntentId,approvedBy:uuid,bindingSha256:p.bindingSha256,
+  approvedAt:new Date(p.approvedAt),expiresAt:new Date(p.expiresAt),
+  signedProofVersion:3,signedReviewEvidenceId:p.signedReviewEvidenceId,
+  originalMediaSha256:p.originalMediaSha256,originalMediaCount:3,
+  signedDispatchIntentSha256:p.signedDispatchIntentSha256,
+  reviewDigest:await hash(p.signedReviewReceipt),
+  admissionDigest:await hash(p.signedAdmissionReceipt),
+  signedAdmissionNonce:p.signedAdmissionNonce,
+  scriptProofEnvelopeId:v3.scriptProofEnvelopeId,
+  signedScriptMediaEvidenceId:v3.signedScriptMediaEvidenceId,
+  orderedMediaManifestSha256:v3.orderedMediaManifestSha256,
+  scriptReviewDigest,scriptDispatchBindingSha256:v3.scriptDispatchBindingSha256};
+ const h=await harness({row});
+ assert.equal((await h.ledger.appendV3(v3)).status,"append_reconciled");
+ assert.equal((await h.ledger.readbackV3(v3)).status,"committed_readback");
+ const insert=h.calls.find(x=>x.q.startsWith("INSERT"));
+ assert.match(insert.q,/signed_script_review_receipt_sha256/);
+ assert.equal(insert.params.length,23);
+ assert.equal(insert.params[7],3);
+ assert.equal(insert.params[10],3);
+ assert.equal(insert.params[21],scriptReviewDigest);
+ for(const changed of [
+  {...row,orderedMediaManifestSha256:"0".repeat(64)},
+  {...row,scriptReviewDigest:"0".repeat(64)},
+  {...row,originalMediaCount:2},
+  {...row,signedProofVersion:2}]){
+  const bad=await harness({row:changed});
+  await assert.rejects(bad.ledger.readbackV3(v3),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+ }
+ const malformed=await harness({row});
+ await assert.rejects(malformed.ledger.appendV3({...v3,originalMediaCount:1}),
+  /BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+ await assert.rejects(malformed.ledger.appendV3({...v3,scriptProofEnvelopeId:""}),
+  /BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+});
