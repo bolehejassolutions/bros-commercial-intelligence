@@ -36,12 +36,12 @@ const workers = [
   {
     name: 'DEMAND approved Meta pilot',
     branch: 'feat/demand-direct-meta-readonly-20261031',
-    paths: ['lib/demand/meta-pilot-policy.ts', 'lib/demand/meta-pilot-service.ts'],
+    paths: ['lib/demand/meta-pilot-policy.ts', 'lib/demand/meta-pilot-service.ts', 'lib/demand/meta-pilot-ledger.ts'],
   },
   {
     name: 'CONTENT',
     branch: 'feat/content-measurement-gate-20261026',
-    paths: ['lib/content/buffer-observation.mjs', 'lib/content/source-byte-provider-bridge.mjs'],
+    paths: ['lib/content/buffer-observation.mjs', 'lib/content/source-byte-provider-bridge.mjs', 'lib/content/instance-script-signed-review.mjs'],
   },
   {
     name: 'Coordinator',
