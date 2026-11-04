@@ -373,3 +373,32 @@ test('V3 async preflight cannot rewrite either signed receipt after source admis
   assert.match(valid.dispatchBinding.editorialReceiptSha256,/^[a-f0-9]{64}$/);
   assert.match(valid.dispatchBinding.scriptReceiptSha256,/^[a-f0-9]{64}$/);
 });
+
+test('V3 preflight rejects asynchronous mutation of complete server-owned envelope',async()=>{
+  const args=input();
+  args[2]={scriptId:'script-generic',revisionId:'rev-a',openingHook:brief().hook,
+    situation:'Two learning options.',audienceQuestion:'Which works?',
+    explanation:'Compare both.',audienceAction:'Choose a criterion.',
+    takeaway:'Summarize.',shots:['First shot.','Second shot.']};
+  for(const change of [
+    envelope=>{envelope.script.shots[0]='changed';},
+    envelope=>{envelope.destination.channelId='changed-channel';},
+    envelope=>{envelope.copy.caption='changed caption';},
+    envelope=>{envelope.shotMediaBindings.reverse();}
+  ]){
+    await assert.rejects(admitContentInstanceScriptV3Source(args,{}, {},
+      async request=>{
+        change(request.envelope);
+        await Promise.resolve();
+        return {status:'BCI_V3_SCRIPT_REVIEW_PREFLIGHT_ONLY',
+          signatureVerified:true,reviewerAuthorized:true,
+          proofEnvelopeId:request.envelope.proofEnvelopeId,
+          scriptIntentId:request.envelope.scriptIntentId,
+          copySha256:request.envelope.copySha256,
+          tenantId:request.envelope.tenantId,mediaCount:request.mediaBytes.length,
+          signedScriptMediaEvidenceId:'content-instance-script-signed-test',
+          orderedMediaSha256:'a'.repeat(64),durableApprovalRecorded:false,
+          reservationGranted:false,providerSent:false,executionAllowed:false};
+      }),/CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+  }
+});
