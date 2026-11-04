@@ -224,6 +224,6 @@ test('V3 altered signed dispatch, source, reviewer and physical role fail closed
    const s=issuerSetup({sourceValid:variant!=='source',
      authorized:variant!=='reviewer',roleValid:variant!=='role'});
    await assert.rejects(s.issuer.issueScript(f),/BCI_CONTENT_TRUSTED_ISSUER_DENIED/);
-   assert.equal(s.writes,variant==='role'?0:0);
+   assert.equal(s.writes,0);
  }
 });
