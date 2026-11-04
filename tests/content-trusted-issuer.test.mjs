@@ -64,15 +64,16 @@ function setup(opts={}){
   calls.push(sql);
   if(sql.includes('AS "sessionRole"'))return {rows:[opts.role??role]};
   if(sql.includes('AS "members"'))return {rows:[{members:opts.members??1,reviewers:opts.reviewers??1}]};
+  if(sql.includes('clock_timestamp()'))return {rows:[{now:new Date(time)}]};
   if(sql.startsWith('INSERT')){
    inserts.push(params);
    row={approvalId:params[0],tenantId:params[1],product:'content',
     dispatchIntentId:params[2],approvedBy:params[3],bindingSha256:params[4],
     approvedAt:new Date(params[5]),expiresAt:new Date(params[6]),
-    signedProofVersion:2,signedReviewEvidenceId:params[7],
-    originalMediaSha256:params[8],originalMediaCount:1,
-    signedDispatchIntentSha256:params[9],reviewDigest:h(params[10]),
-    admissionDigest:h(params[11]),signedAdmissionNonce:params[14]};
+    signedProofVersion:params[7],signedReviewEvidenceId:params[8],
+    originalMediaSha256:params[9],originalMediaCount:params[10],
+    signedDispatchIntentSha256:params[11],reviewDigest:h(params[12]),
+    admissionDigest:h(params[13]),signedAdmissionNonce:params[16]};
    return {rows:[{approval_id:params[0]}]};
   }
   if(sql.startsWith('SELECT approval_id'))return {rows:row?[row]:[]};
@@ -161,8 +162,8 @@ test('async source verifier receives isolated proof and original-media copies',a
  const params=x.inserts[0];
  assert.equal(params[5],approved);
  assert.equal(params[6],expires);
- assert.equal(params[10],originalEditorial);
- assert.equal(params[11],originalAdmission);
- assert.equal(params[14],'b'.repeat(32));
+ assert.equal(params[12],originalEditorial);
+ assert.equal(params[13],originalAdmission);
+ assert.equal(params[16],'b'.repeat(32));
  assert.equal(h(f.mediaBytes),originalMediaDigest);
 });
