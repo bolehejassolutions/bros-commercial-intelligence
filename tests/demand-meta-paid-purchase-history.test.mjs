@@ -40,3 +40,17 @@ test("bad candidate still fails despite clean historic ledger",()=>{
  assert.equal(result.status,"REJECTED");
  assert.equal(result.acceptedCount,0);
 });
+
+test("historical ledger arrays reject accessors, sparse holes and extra own keys",()=>{
+ const getterHistory=history();
+ Object.defineProperty(getterHistory.eventIds,"0",{enumerable:true,configurable:true,get(){throw Error("should not read");}});
+ getterHistory.eventIds.length=1;
+ const sparse=history(); sparse.orderIds.length=1;
+ const extra=history(); extra.references.extra="unexpected";
+ const inherited=history(); Object.setPrototypeOf(inherited.eventIds,[]);
+ for(const h of [getterHistory,sparse,extra,inherited]){
+  const result=reconcile([pair()],now,h);
+  assert.equal(result.status,"REJECTED");
+  assert.equal(result.launchAllowed,false);
+ }
+});
