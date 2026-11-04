@@ -6,6 +6,6 @@ export function isVerifiedDemandMetaManagementPreflight(value) {
       value.accountId === "act_1997776120879476" &&
       value.businessPortfolioId === "2091328444802994" &&
       value.appId === "1315572270590189" &&
-      value.checks?.token === true && value.checks?.app === true && value.checks?.account === true;
+      value.providerFailure === null && value.checks?.token === true && value.checks?.app === true && value.checks?.account === true;
   } catch { return false; }
 }
