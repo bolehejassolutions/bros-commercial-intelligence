@@ -20,3 +20,25 @@ test('five-head integration stays disposable and read-only', () => {
   assert.doesNotMatch(workflow, /\b(?:git push|vercel deploy|neonctl|supabase db push)\b/);
   assert.doesNotMatch(workflow, /\b(?:contents: write|actions: write|id-token: write)\b/);
 });
+
+test('five-head integration preserves exact-source and fail-closed test gates', () => {
+  // Prevent a passing workflow after the integration step is silently skipped.
+  assert.match(workflow, /set -euo pipefail/);
+  assert.match(workflow, /git fetch --no-tags origin/);
+  assert.match(workflow, /git rev-parse "refs\/remotes\/origin\/\$branch"/);
+  assert.match(workflow, /git merge --no-ff --no-edit/);
+  assert.match(workflow, /CONFLICT .* integration NOT verified/);
+  assert.match(workflow, /exit 1/);
+
+  // Source compatibility requires application tests AND build validation.
+  assert.match(workflow, /node --experimental-strip-types --test tests\/\*\.test\.mjs/);
+  assert.match(workflow, /node --experimental-strip-types --test tests\/sdk\/\*\.test\.mjs/);
+  assert.match(workflow, /npx tsc --noEmit/);
+  assert.match(workflow, /npm run build/);
+  assert.match(workflow, /timeout-minutes: 20/);
+
+  // CI cannot acquire write authority or silently turn into a provider run.
+  assert.doesNotMatch(workflow, /\$\{\{\s*secrets\./);
+  assert.doesNotMatch(workflow, /\b(?:workflow_run|repository_dispatch|schedule):/);
+  assert.doesNotMatch(workflow, /\b(?:curl|wget)\s+[^\n]*(?:POST|PUT|PATCH|DELETE)/i);
+});
