@@ -19,6 +19,7 @@ export function reconcileDemandPaidPurchaseBatch(pairs: unknown, now: string): B
     status: "REJECTED", reason, acceptedCount: 0,
     independentlyVerified: false, launchAllowed: false,
   });
+  try {
   if (!Array.isArray(pairs) || pairs.length === 0 || pairs.length > 100)
     return reject("INVALID_BATCH_SIZE");
   const orders = new Set<string>();
@@ -50,4 +51,9 @@ export function reconcileDemandPaidPurchaseBatch(pairs: unknown, now: string): B
     status: "CANDIDATES_UNATTESTED", reason: "PROVIDER_AUTH_OWNERSHIP_UTM_AND_HISTORIC_DEDUP_REQUIRED",
     acceptedCount: pairs.length, independentlyVerified: false, launchAllowed: false,
   });
+  } catch {
+    // Untrusted provider-shaped objects may be revoked proxies or throw in traps.
+    // Never turn an evidence-parser exception into an operator-side 500 or approval.
+    return reject("UNREADABLE_PROVIDER_EVIDENCE");
+  }
 }
