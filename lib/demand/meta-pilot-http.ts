@@ -59,10 +59,15 @@ export function createPilotHttpHandler(deps: Dependencies) {
         return json({ error: "Campaign action rejected." }, 400);
       if (action === "stage") {
         const a = form.get("a"), b = form.get("b");
-        if (!(a instanceof File) || !(b instanceof File) || form.getAll("a").length !== 1 ||
-            form.getAll("b").length !== 1 || a.size !== 465709 || b.size !== 452762)
-          return json({ error: "Both approved V5 image files are required." }, 400);
-        return json(await service.stage(scope, { a: new Uint8Array(await a.arrayBuffer()), b: new Uint8Array(await b.arrayBuffer()) }), 200);
+        if ((a !== null && (!(a instanceof File) || a.size !== 465709)) ||
+            (b !== null && (!(b instanceof File) || b.size !== 452762)) ||
+            form.getAll("a").length > 1 || form.getAll("b").length > 1)
+          return json({ error: "Only approved-size V5 image files are accepted." }, 400);
+        // The service requires the exact approved bytes only for its next image step.
+        return json(await service.stage(scope, {
+          ...(a instanceof File ? { a: new Uint8Array(await a.arrayBuffer()) } : {}),
+          ...(b instanceof File ? { b: new Uint8Array(await b.arrayBuffer()) } : {}),
+        }), 200);
       }
       if ([...form.keys()].length !== 1) return json({ error: "Unexpected campaign input." }, 400);
       return json(action === "pause" ? await service.pause(scope) : await service.activate(scope), 200);
