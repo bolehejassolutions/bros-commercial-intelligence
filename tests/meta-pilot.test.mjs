@@ -146,7 +146,7 @@ test("PAUSED staging refuses absent, stale or mismatched paid-order QA before an
     const before = f.calls.length;
     await assert.rejects(service(f).stage(scope, {
       a: new Uint8Array(ASSETS.a.size), b: new Uint8Array(ASSETS.b.size),
-    }), /APPROVED_V5_ASSET_REQUIRED|CURRENT_REAL_PURCHASE_QA_RECEIPT_REQUIRED/);
+    }), /CURRENT_REAL_PURCHASE_QA_RECEIPT_REQUIRED/);
     assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
     assert.ok(f.calls.length >= before);
   }
