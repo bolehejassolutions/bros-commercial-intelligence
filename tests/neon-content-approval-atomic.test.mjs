@@ -123,3 +123,41 @@ test("V3 restricted append binds all script fields and independently reads exact
  await assert.rejects(malformed.ledger.appendV3({...v3,scriptProofEnvelopeId:""}),
   /BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
 });
+
+
+test("V3 duplicate conflict is rejected before readback, while V2 retains idempotent reconciliation",async()=>{
+ const scriptReviewDigest=await hash(v3.signedScriptReviewReceipt);
+ const row={approvalId:p.approvalId,tenantId:tenant,product:"content",
+  dispatchIntentId:p.dispatchIntentId,approvedBy:uuid,bindingSha256:p.bindingSha256,
+  approvedAt:new Date(p.approvedAt),expiresAt:new Date(p.expiresAt),
+  signedProofVersion:3,signedReviewEvidenceId:p.signedReviewEvidenceId,
+  originalMediaSha256:p.originalMediaSha256,originalMediaCount:3,
+  signedDispatchIntentSha256:p.signedDispatchIntentSha256,
+  reviewDigest:await hash(p.signedReviewReceipt),admissionDigest:await hash(p.signedAdmissionReceipt),
+  signedAdmissionNonce:p.signedAdmissionNonce,
+  scriptProofEnvelopeId:v3.scriptProofEnvelopeId,
+  signedScriptMediaEvidenceId:v3.signedScriptMediaEvidenceId,
+  orderedMediaManifestSha256:v3.orderedMediaManifestSha256,
+  scriptReviewDigest,scriptDispatchBindingSha256:v3.scriptDispatchBindingSha256};
+ const calls=[];
+ const tx=async fn=>fn(async(q)=>{
+  calls.push(q);
+  if(q.includes('AS "sessionRole"'))return {rows:[role]};
+  if(q.includes('AS "members"'))return {rows:[{members:1,reviewers:1}]};
+  if(q.includes('clock_timestamp() AS "now"'))
+   return {rows:[{now:new Date("2026-11-03T01:30:00.000Z")}]};
+  if(q.startsWith("INSERT"))return {rows:[]}; // ON CONFLICT DO NOTHING: duplicate
+  if(q.startsWith("SELECT approval_id"))return {rows:[row]};
+  return {rows:[{}]};
+ });
+ const ledger=createBciContentRestrictedApprovalLedger({writeTransaction:tx,readTransaction:tx});
+ await assert.rejects(ledger.appendV3(v3),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+ assert.equal(calls.filter(q=>q.startsWith("INSERT")).length,1);
+ assert.equal(calls.some(q=>q.startsWith("SELECT approval_id")),false,
+  "duplicate V3 append must not reconcile by reading an existing row");
+ assert.equal((await ledger.readbackV3(v3)).status,"committed_readback",
+  "separate restricted readback is allowed for previously committed evidence");
+ const v2=await harness();
+ assert.equal((await v2.ledger.append(p)).status,"append_reconciled",
+  "V2 append behavior must remain backward-compatible");
+});
