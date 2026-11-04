@@ -438,3 +438,26 @@ test('V3 asynchronous preflight rejects truncation and replacement of ordered or
     for(let i=0;i<originals.length;i++)assert.deepEqual(args[4][i],originals[i]);
   }
 });
+
+
+test('BCI V3 source verifier recomputes original bytes and rejects forged transport',async()=>{
+  const {createContentV3ServerSourceVerifier}=await import('../lib/content/instance-script-signed-review.mjs');
+  const {createHash}=await import('node:crypto');
+  const args=input(),envelope=prepare(...args);
+  assert.equal(envelope.schemaVersion,3);
+  const hashes=args[4].map(b=>createHash('sha256').update(b).digest('hex'));
+  const orderedMediaSha256=createHash('sha256').update('BCI_CONTENT_ORDERED_MEDIA_V3\\n')
+    .update(JSON.stringify(hashes.map((h,i)=>[i+1,h]))).digest('hex');
+  const bound={proofEnvelopeId:envelope.proofEnvelopeId,
+    scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
+    orderedMediaSha256};
+  const verifier=createContentV3ServerSourceVerifier(args);
+  const snapshot={envelope:structuredClone(envelope)};
+  assert.equal(await verifier(snapshot,args[4].map(x=>Buffer.from(x)),bound),true);
+  const tampered=args[4].map(x=>Buffer.from(x));tampered[0][20]^=1;
+  assert.equal(await verifier(snapshot,tampered,bound),false);
+  const forged={envelope:structuredClone(envelope)};
+  forged.envelope.copySha256='0'.repeat(64);
+  assert.equal(await verifier(forged,args[4],bound),false);
+  assert.equal(await verifier(snapshot,args[4],{...bound,orderedMediaSha256:'0'.repeat(64)}),false);
+});
