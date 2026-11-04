@@ -58,6 +58,14 @@ CREATE POLICY dev_content_issuer_approval_insert ON bci_dev.content_dispatch_app
     AND a.authorized_at<=approved_at)
  );
 -- @@STEP
+-- PostgreSQL column-level INSERT grants from V2 do not automatically cover
+-- columns added by migration 0024. Restrict the V3 extension to precisely
+-- the six required fields; never grant UPDATE, DELETE, or broad table INSERT.
+GRANT INSERT (script_proof_envelope_id,signed_script_media_evidence_id,
+ ordered_media_manifest_sha256,signed_script_review_receipt,
+ signed_script_review_receipt_sha256,script_dispatch_binding_sha256)
+ ON bci_dev.content_dispatch_approvals TO bci_dev_content_approval_issuer;
+-- @@STEP
 GRANT SELECT (script_proof_envelope_id,signed_script_media_evidence_id,
  ordered_media_manifest_sha256,signed_script_review_receipt_sha256,
  script_dispatch_binding_sha256)
@@ -73,6 +81,8 @@ BEGIN
     AND relrowsecurity AND relforcerowsecurity)
  OR has_column_privilege('bci_dev_content_approval_issuer',
     'bci_dev.content_dispatch_approvals','signed_script_review_receipt','SELECT')
+ OR NOT has_column_privilege('bci_dev_content_approval_issuer',
+    'bci_dev.content_dispatch_approvals','signed_script_review_receipt','INSERT')
  OR (SELECT count(*) FROM pg_policies WHERE schemaname='bci_dev'
      AND tablename='content_dispatch_approvals' AND policyname='dev_content_issuer_approval_insert')<>1
  THEN RAISE EXCEPTION 'BCI 0025 postcondition failed'; END IF;
