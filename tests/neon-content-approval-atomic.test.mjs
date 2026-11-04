@@ -175,3 +175,25 @@ test("V3 rejects object identifiers without invoking attacker-controlled coercio
  assert.equal(coerced,0,"untrusted identifiers must not execute toString");
  assert.equal(h.calls.some(x=>x.q.startsWith("INSERT")),false);
 });
+
+test("restricted ledger rejects approval expiring during append or readback",async()=>{
+ for(const operation of ["append","readback"]){
+  let clockReads=0,inserted=0;
+  const tx=async fn=>fn(async q=>{
+   if(q.includes('AS "sessionRole"'))return {rows:[role]};
+   if(q.includes('AS "members"'))return {rows:[{members:1,reviewers:1}]};
+   if(q.includes('clock_timestamp() AS "now"')){
+    clockReads++;
+    return {rows:[{now:new Date(clockReads===1?
+     "2026-11-03T01:30:00.000Z":"2026-11-03T02:00:00.000Z")}]};
+   }
+   if(q.startsWith("INSERT")){inserted++;return {rows:[{approval_id:p.approvalId}]};}
+   if(q.startsWith("SELECT approval_id"))throw Error("expired proof must not be read");
+   return {rows:[{}]};
+  });
+  const ledger=createBciContentRestrictedApprovalLedger({writeTransaction:tx,readTransaction:tx});
+  await assert.rejects(ledger[operation](p),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+  assert.equal(clockReads,2);
+  assert.equal(inserted,operation==="append"?1:0);
+ }
+});
