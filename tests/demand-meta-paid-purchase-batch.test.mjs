@@ -45,3 +45,19 @@ test("malformed or invalid evidence fails closed",()=>{
     assert.equal(r.launchAllowed,false);
   }
 });
+
+test("throwing provider proxies reject safely without leaking exceptions",()=>{
+  const throwing = new Proxy(pair("001"), { getPrototypeOf(){throw Error("untrusted provider trap")} });
+  const revoked = Proxy.revocable(pair("002"), {});
+  revoked.revoke();
+  const badArray = new Proxy([pair("003")], {get(target,key){if(key==="length")throw Error("untrusted length");return Reflect.get(target,key);}});
+  for(const input of [[throwing],[revoked.proxy],badArray]){
+    assert.doesNotThrow(()=>{
+      const r=reconcile(input,now);
+      assert.equal(r.status,"REJECTED");
+      assert.equal(r.reason,"UNREADABLE_PROVIDER_EVIDENCE");
+      assert.equal(r.acceptedCount,0);
+      assert.equal(r.launchAllowed,false);
+    });
+  }
+});
