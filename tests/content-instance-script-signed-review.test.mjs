@@ -278,3 +278,39 @@ test('V3 source admission deeply freezes whole-script binding and rejects unauth
     async request=>({...await preflight(request),reservationGranted:true})),
     /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
 });
+
+test('V3 admission rejects missing, malformed and mismatched BCI evidence identifiers',async()=>{
+  const args=input();
+  args[2]={scriptId:'script-generic',revisionId:'rev-a',openingHook:brief().hook,
+    situation:'Two learning options.',audienceQuestion:'Which works?',
+    explanation:'Compare both.',audienceAction:'Choose a criterion.',
+    takeaway:'Summarize.',shots:['First shot.','Second shot.']};
+  const valid=async ({envelope,mediaBytes})=>({
+    status:'BCI_V3_SCRIPT_REVIEW_PREFLIGHT_ONLY',signatureVerified:true,
+    reviewerAuthorized:true,proofEnvelopeId:envelope.proofEnvelopeId,
+    scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
+    tenantId:envelope.tenantId,mediaCount:mediaBytes.length,
+    signedScriptMediaEvidenceId:'content-instance-script-signed-test',
+    orderedMediaSha256:'a'.repeat(64),durableApprovalRecorded:false,
+    reservationGranted:false,providerSent:false,executionAllowed:false});
+  const invalid=[
+    x=>{delete x.signedScriptMediaEvidenceId;},
+    x=>{x.signedScriptMediaEvidenceId='';},
+    x=>{x.signedScriptMediaEvidenceId='bad identifier with spaces';},
+    x=>{delete x.orderedMediaSha256;},
+    x=>{x.orderedMediaSha256='test-only';},
+    x=>{x.orderedMediaSha256='A'.repeat(64);},
+    x=>{x.proofEnvelopeId='wrong-proof';},
+    x=>{x.copySha256='b'.repeat(64);},
+    x=>{x.tenantId='another-tenant';},
+    x=>{x.mediaCount=1;},
+    x=>{x.durableApprovalRecorded=true;},
+    x=>{x.reservationGranted=true;},
+    x=>{x.executionAllowed=true;}
+  ];
+  for(const mutate of invalid){
+    await assert.rejects(admitContentInstanceScriptV3Source(args,{}, {},
+      async request=>{const result=await valid(request);mutate(result);return result;}),
+      /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+  }
+});
