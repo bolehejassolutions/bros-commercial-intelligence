@@ -246,3 +246,35 @@ test('generic V3 proof is signed, bound to original ordered media, and remains e
   assert.throws(()=>verifyReview(altered,receipt,keys,now),
     /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
 });
+
+import {admitContentInstanceScriptV3Source} from '../lib/content/instance-script-signed-review.mjs';
+test('V3 source admission deeply freezes whole-script binding and rejects unauthorized grants',async()=>{
+  const args=input();
+  args[2]={scriptId:'script-generic',revisionId:'rev-a',openingHook:brief().hook,
+    situation:'Two learning options.',audienceQuestion:'Which works?',
+    explanation:'Compare both.',audienceAction:'Choose a criterion.',
+    takeaway:'Summarize.',shots:['First shot.','Second shot.']};
+  const preflight=async ({envelope,mediaBytes})=>({
+    status:'BCI_V3_SCRIPT_REVIEW_PREFLIGHT_ONLY',signatureVerified:true,
+    reviewerAuthorized:true,proofEnvelopeId:envelope.proofEnvelopeId,
+    scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
+    tenantId:envelope.tenantId,mediaCount:mediaBytes.length,
+    signedScriptMediaEvidenceId:'test-only',orderedMediaSha256:'test-only',
+    durableApprovalRecorded:false,reservationGranted:false,
+    providerSent:false,executionAllowed:false});
+  const out=await admitContentInstanceScriptV3Source(args,{}, {},preflight);
+  assert.equal(out.executionAllowed,false);
+  assert.equal(out.atomicReservationVerified,false);
+  for(const key of ['script','resourceMapping','shotMediaBindings',
+    'orderedMediaDigests','copy','destination']){
+    assert.equal(Object.isFrozen(out.dispatchBinding[key]),true,key);
+  }
+  assert.equal(Object.isFrozen(out.dispatchBinding.script.shots),true);
+  assert.equal(Object.isFrozen(out.destination),true);
+  assert.throws(()=>{out.dispatchBinding.script.shots[0]='tampered';},TypeError);
+  assert.throws(()=>{out.dispatchBinding.copy.caption='tampered';},TypeError);
+  assert.throws(()=>{out.destination.channelId='tampered';},TypeError);
+  await assert.rejects(admitContentInstanceScriptV3Source(args,{}, {},
+    async request=>({...await preflight(request),reservationGranted:true})),
+    /CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
+});
