@@ -44,12 +44,29 @@ if (exactPreview && process.env.BROS_DEMAND_META_TOKEN_AUDIT === "approved-v1") 
 if (exactPreview && process.env.BROS_DEMAND_META_MANAGEMENT_TOKEN_AUDIT === "approved-v1") {
   const { environment, managementCredentialConflict, configurationChecks } = pilotMetaConfiguration(process.env);
   console.log("BROS_DEMAND_MANAGEMENT_META_CONFIGURATION", JSON.stringify(configurationChecks));
-  if (managementCredentialConflict) {
-    console.log("BROS_DEMAND_MANAGEMENT_META_TOKEN_AUDIT", "CONFIGURATION_CONFLICT");
+  if (managementCredentialConflict || !configurationChecks.managementTokenFormatAccepted ||
+      !configurationChecks.appSecretFormatAccepted || !configurationChecks.appIdConfigured) {
+    // An explicitly approved Preview audit must not succeed when the management
+    // credential is missing, conflicting or malformed. Never log secret values.
+    console.error("BROS_DEMAND_MANAGEMENT_META_PREFLIGHT", "CONFIGURATION_REJECTED");
+    process.exitCode = 1;
   } else {
-    const audit = await inspectExistingDemandMetaToken(environment.META_ADS_MANAGEMENT_TOKEN);
-    console.log("BROS_DEMAND_MANAGEMENT_META_TOKEN_AUDIT", JSON.stringify(audit));
-    const preflight = await inspectMetaConnection("write", environment);
-    console.log("BROS_DEMAND_MANAGEMENT_META_PREFLIGHT", JSON.stringify(preflight));
+    try {
+      const audit = await inspectExistingDemandMetaToken(environment.META_ADS_MANAGEMENT_TOKEN);
+      console.log("BROS_DEMAND_MANAGEMENT_META_TOKEN_AUDIT", JSON.stringify(audit));
+      const preflight = await inspectMetaConnection("write", environment);
+      console.log("BROS_DEMAND_MANAGEMENT_META_PREFLIGHT", JSON.stringify(preflight));
+      // A diagnostic GET is not an authorization to stage or activate ads.
+      // Reject missing or explicitly unsuccessful provider results.
+      if (!preflight || typeof preflight !== "object" ||
+          preflight.status === "ERROR" || preflight.status === "FAILED" ||
+          preflight.ready === false) {
+        console.error("BROS_DEMAND_MANAGEMENT_META_PREFLIGHT", "PROVIDER_REJECTED");
+        process.exitCode = 1;
+      }
+    } catch {
+      console.error("BROS_DEMAND_MANAGEMENT_META_PREFLIGHT", "PROVIDER_UNAVAILABLE");
+      process.exitCode = 1;
+    }
   }
 }
