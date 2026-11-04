@@ -80,7 +80,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
         providerVerified, campaignStatus, adsets, stagedSteps: staged, totalStageSteps: STAGE_STEPS.length,
         managementVerified, ledgerVerified, blockers,
         // These indicate admission to an action; they are not E2E completion claims.
-        canStage: managementVerified && ledgerVerified && identities && flags.stage && providerVerified &&
+        canStage: managementVerified && ledgerVerified && identities && qa && flags.stage && providerVerified &&
           campaignStatus === "PAUSED" && staged < STAGE_STEPS.length && !snapshot.refresh_flight,
         canActivate: managementVerified && ledgerVerified && identities && flags.launch && qa &&
           providerVerified && launchReadbackVerified && campaignStatus === "PAUSED" && staged === STAGE_STEPS.length,
@@ -91,6 +91,9 @@ export function createPilotService(deps: PilotServiceDependencies) {
     },
     async stage(scope: PilotScope, assets: { a: Uint8Array; b: Uint8Array }) {
       if (!configured().stage) throw Error("PAUSED_STAGING_GATE_LOCKED");
+      // Even PAUSED objects are provider writes. Require current real-purchase
+      // tracking evidence before uploading assets or creating any Meta child.
+      launchAttestation(env, deps.now());
       validateAsset("a", assets.a); validateAsset("b", assets.b);
       const identities = verifiedIdentities(env);
       const snapshot = await snapshotFor(scope), ledger = deps.ledger(scope);
