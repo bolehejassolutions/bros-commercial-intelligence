@@ -42,3 +42,27 @@ test('five-head integration preserves exact-source and fail-closed test gates', 
   assert.doesNotMatch(workflow, /\b(?:workflow_run|repository_dispatch|schedule):/);
   assert.doesNotMatch(workflow, /\b(?:curl|wget)\s+[^\n]*(?:POST|PUT|PATCH|DELETE)/i);
 });
+
+test('integration attests exactly five distinct fetched heads before each merge', () => {
+  const block = workflow.match(/branches=\(\s*([\s\S]*?)\s*\)/);
+  assert.ok(block, 'missing explicit integration branch array');
+  const branches = block[1].trim().split(/\s+/);
+  assert.deepEqual(branches, [
+    'feat/neon-bci-dev-ledger-20261025',
+    'feat/demand-meta-funnel-readonly-20261026',
+    'feat/demand-direct-meta-readonly-20261031',
+    'feat/content-measurement-gate-20261026',
+    'feat/portfolio-hitpay-provider-smoke-20261026',
+  ]);
+  assert.equal(new Set(branches).size, 5, 'duplicate worker branch');
+
+  const fetch = workflow.indexOf('git fetch --no-tags origin');
+  const resolve = workflow.indexOf('sha="$(git rev-parse');
+  const attest = workflow.indexOf('echo "MERGE_ATTESTED');
+  const merge = workflow.indexOf('if git merge --no-ff --no-edit');
+  assert.ok(fetch >= 0 && fetch < resolve && resolve < attest && attest < merge,
+    'fetch, SHA resolution, attestation and merge must occur in that order');
+  assert.match(workflow, /\+refs\/heads\/\$branch:refs\/remotes\/origin\/\$branch/);
+  assert.match(workflow, /sha="\$\(git rev-parse "refs\/remotes\/origin\/\$branch"\)"/);
+  assert.match(workflow, /if git merge --no-ff --no-edit "refs\/remotes\/origin\/\$branch"; then/);
+});
