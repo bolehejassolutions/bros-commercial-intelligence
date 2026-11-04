@@ -17,6 +17,7 @@ const role={role:"bci_dev_content_approval_issuer",sessionRole:"bci_dev_content_
 const hash=async x=>(await import("node:crypto")).createHash("sha256").update(x).digest("hex");
 async function harness(opts={}){
  const calls=[],digestA=await hash(p.signedReviewReceipt),digestB=await hash(p.signedAdmissionReceipt);
+ let clockReads=0;
  const row={approvalId:p.approvalId,tenantId:tenant,product:"content",
  dispatchIntentId:p.dispatchIntentId,approvedBy:uuid,bindingSha256:p.bindingSha256,
  approvedAt:new Date(p.approvedAt),expiresAt:new Date(p.expiresAt),
@@ -28,7 +29,7 @@ async function harness(opts={}){
   calls.push({q,params});
   if(q.includes('AS "sessionRole"'))return {rows:[opts.role??role]};
   if(q.includes('AS "members"'))return {rows:[{members:opts.members??1,reviewers:opts.reviewers??1}]};
-  if(q.includes('clock_timestamp() AS "now"'))return {rows:[{now:opts.clock??new Date("2026-11-03T01:30:00.000Z")}]};
+  if(q.includes('clock_timestamp() AS "now"'))return {rows:[{now:opts.clockSequence?.[clockReads++]??opts.clock??new Date("2026-11-03T01:30:00.000Z")}]};
   if(q.startsWith("INSERT"))return {rows:[{approval_id:p.approvalId}]};
   if(q.startsWith("SELECT approval_id"))return {rows:[opts.row??row]};
   return {rows:[{}]};
@@ -195,5 +196,17 @@ test("restricted ledger rejects approval expiring during append or readback",asy
   await assert.rejects(ledger[operation](p),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
   assert.equal(clockReads,2);
   assert.equal(inserted,operation==="append"?1:0);
+ }
+});
+
+
+test("restricted append and readback reject expiry reached during final row fetch",async()=>{
+ const valid=new Date("2026-11-03T01:30:00.000Z");
+ const expired=new Date("2026-11-03T02:00:00.000Z");
+ for(const operation of ["append","readback"]){
+  const h=await harness({clockSequence:[valid,valid,expired]});
+  await assert.rejects(h.ledger[operation](p),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+  assert.equal(h.calls.filter(x=>x.q.startsWith("SELECT approval_id")).length,1);
+  assert.equal(h.calls.filter(x=>x.q.includes('clock_timestamp() AS "now"')).length,3);
  }
 });
