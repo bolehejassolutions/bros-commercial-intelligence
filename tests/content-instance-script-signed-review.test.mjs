@@ -259,7 +259,7 @@ test('V3 source admission deeply freezes whole-script binding and rejects unauth
     reviewerAuthorized:true,proofEnvelopeId:envelope.proofEnvelopeId,
     scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
     tenantId:envelope.tenantId,mediaCount:mediaBytes.length,
-    signedScriptMediaEvidenceId:'test-only',orderedMediaSha256:'test-only',
+    signedScriptMediaEvidenceId:'test-only',orderedMediaSha256:'a'.repeat(64),
     durableApprovalRecorded:false,reservationGranted:false,
     providerSent:false,executionAllowed:false});
   const out=await admitContentInstanceScriptV3Source(args,{}, {},preflight);
