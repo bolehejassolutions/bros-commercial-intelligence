@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { isVerifiedDemandMetaManagementPreflight as verified } from "../scripts/demand-meta-preflight-gate.mjs";
 const valid = () => ({ status: "READY", reason: "VERIFIED", mode: "write",
   accountId: "act_1997776120879476", businessPortfolioId: "2091328444802994",
-  appId: "1315572270590189", checks: { token: true, app: true, account: true } });
+  appId: "1315572270590189", providerFailure: null, checks: { token: true, app: true, account: true } });
 test("only exact verified management identity passes", () => {
   assert.equal(verified(valid()), true);
   for (const [key, value] of Object.entries({status:"BLOCKED",reason:"TOKEN_INVALID",mode:"read",
@@ -18,5 +18,12 @@ test("malformed and throwing provider evidence fails closed", () => {
   for (const evidence of [null,undefined,[],false,{}, {status:"READY"},
     new Proxy({}, {get(){throw Error("unreadable");}})]) {
     assert.equal(verified(evidence),false);
+  }
+});
+
+test("provider failure cannot be masked by READY and VERIFIED flags", () => {
+  assert.equal(verified(valid()), true);
+  for (const providerFailure of [undefined, "TOKEN_EXPIRED", {code: 190}, false]) {
+    assert.equal(verified({...valid(), providerFailure}), false);
   }
 });
