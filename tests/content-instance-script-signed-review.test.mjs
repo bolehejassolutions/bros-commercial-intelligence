@@ -1,4 +1,11 @@
 import test from 'node:test';
+import {createHash} from 'node:crypto';
+function sourceOrderedMediaDigest(mediaBytes){
+  const hashes=mediaBytes.map(b=>createHash('sha256').update(b).digest('hex'));
+  return createHash('sha256').update('BCI_CONTENT_ORDERED_MEDIA_V3\\n')
+    .update(JSON.stringify(hashes.map((sha,i)=>[i+1,sha]))).digest('hex');
+}
+
 import assert from 'node:assert/strict';
 import {deflateSync} from 'node:zlib';
 import {prepareContentInstanceScriptProofEnvelope as prepare} from '../lib/content/instance-editorial-script-proof.mjs';
@@ -259,7 +266,7 @@ test('V3 source admission deeply freezes whole-script binding and rejects unauth
     reviewerAuthorized:true,proofEnvelopeId:envelope.proofEnvelopeId,
     scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
     tenantId:envelope.tenantId,mediaCount:mediaBytes.length,
-    signedScriptMediaEvidenceId:'test-only',orderedMediaSha256:'a'.repeat(64),
+    signedScriptMediaEvidenceId:'test-only',orderedMediaSha256:sourceOrderedMediaDigest(mediaBytes),
     durableApprovalRecorded:false,reservationGranted:false,
     providerSent:false,executionAllowed:false});
   const out=await admitContentInstanceScriptV3Source(args,{}, {},preflight);
@@ -291,7 +298,7 @@ test('V3 admission rejects missing, malformed and mismatched BCI evidence identi
     scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
     tenantId:envelope.tenantId,mediaCount:mediaBytes.length,
     signedScriptMediaEvidenceId:'content-instance-script-signed-test',
-    orderedMediaSha256:'a'.repeat(64),durableApprovalRecorded:false,
+    orderedMediaSha256:sourceOrderedMediaDigest(mediaBytes),durableApprovalRecorded:false,
     reservationGranted:false,providerSent:false,executionAllowed:false});
   const invalid=[
     x=>{delete x.signedScriptMediaEvidenceId;},
@@ -300,6 +307,7 @@ test('V3 admission rejects missing, malformed and mismatched BCI evidence identi
     x=>{delete x.orderedMediaSha256;},
     x=>{x.orderedMediaSha256='test-only';},
     x=>{x.orderedMediaSha256='A'.repeat(64);},
+    x=>{x.orderedMediaSha256='a'.repeat(64);},
     x=>{x.proofEnvelopeId='wrong-proof';},
     x=>{x.copySha256='b'.repeat(64);},
     x=>{x.tenantId='another-tenant';},
@@ -332,7 +340,7 @@ test('V3 async preflight cannot mutate ordered source media or reuse changed tra
       scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
       tenantId:envelope.tenantId,mediaCount:mediaBytes.length,
       signedScriptMediaEvidenceId:'content-instance-script-signed-test',
-      orderedMediaSha256:'a'.repeat(64),durableApprovalRecorded:false,
+      orderedMediaSha256:sourceOrderedMediaDigest(mediaBytes),durableApprovalRecorded:false,
       reservationGranted:false,providerSent:false,executionAllowed:false};
   };
   await assert.rejects(admitContentInstanceScriptV3Source(args,{}, {},preflight),
@@ -352,7 +360,7 @@ test('V3 async preflight cannot rewrite either signed receipt after source admis
     scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
     tenantId:envelope.tenantId,mediaCount:mediaBytes.length,
     signedScriptMediaEvidenceId:'content-instance-script-signed-test',
-    orderedMediaSha256:'a'.repeat(64),durableApprovalRecorded:false,
+    orderedMediaSha256:sourceOrderedMediaDigest(mediaBytes),durableApprovalRecorded:false,
     reservationGranted:false,providerSent:false,executionAllowed:false});
   for(const which of ['editorial','script']){
     const editorial={schemaVersion:1,signature:'original-editorial'};
@@ -397,7 +405,7 @@ test('V3 preflight rejects asynchronous mutation of complete server-owned envelo
           copySha256:request.envelope.copySha256,
           tenantId:request.envelope.tenantId,mediaCount:request.mediaBytes.length,
           signedScriptMediaEvidenceId:'content-instance-script-signed-test',
-          orderedMediaSha256:'a'.repeat(64),durableApprovalRecorded:false,
+          orderedMediaSha256:sourceOrderedMediaDigest(mediaBytes),durableApprovalRecorded:false,
           reservationGranted:false,providerSent:false,executionAllowed:false};
       }),/CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
   }
@@ -431,7 +439,7 @@ test('V3 asynchronous preflight rejects truncation and replacement of ordered or
           tenantId:request.envelope.tenantId,
           mediaCount:originals.length,
           signedScriptMediaEvidenceId:'content-instance-script-signed-test',
-          orderedMediaSha256:'a'.repeat(64),
+          orderedMediaSha256:sourceOrderedMediaDigest(mediaBytes),
           durableApprovalRecorded:false,reservationGranted:false,
           providerSent:false,executionAllowed:false};
       }),/CONTENT_INSTANCE_SCRIPT_SIGNED_REVIEW_DENIED/);
