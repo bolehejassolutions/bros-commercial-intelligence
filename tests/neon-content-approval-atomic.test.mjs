@@ -28,6 +28,7 @@ async function harness(opts={}){
   calls.push({q,params});
   if(q.includes('AS "sessionRole"'))return {rows:[opts.role??role]};
   if(q.includes('AS "members"'))return {rows:[{members:opts.members??1,reviewers:opts.reviewers??1}]};
+  if(q.includes('clock_timestamp() AS "now"'))return {rows:[{now:opts.clock??new Date("2026-11-03T01:30:00.000Z")}]};
   if(q.startsWith("INSERT"))return {rows:[{approval_id:p.approvalId}]};
   if(q.startsWith("SELECT approval_id"))return {rows:[opts.row??row]};
   return {rows:[{}]};
@@ -67,5 +68,14 @@ test("admin/SET ROLE, revoked reviewer, foreign binding and mismatched readback 
   {...p,originalMediaSha256:"B".repeat(64)},
   {...p,signedAdmissionReceipt:"too-short"}]){
   await assert.rejects(h.ledger.append(v),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+ }
+});
+
+test("restricted ledger denies expired or not-yet-effective approvals on append and replay",async()=>{
+ for(const clock of ["2026-11-03T02:00:00.000Z","2026-11-03T00:59:59.000Z"]){
+  const h=await harness({clock:new Date(clock)});
+  await assert.rejects(h.ledger.append(p),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+  await assert.rejects(h.ledger.readback(p),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+  assert.equal(h.calls.some(x=>x.q.startsWith("INSERT")),false);
  }
 });
