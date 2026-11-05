@@ -110,8 +110,21 @@ export function createPilotProvider(token: string, rawTransport: typeof fetch = 
     if (complete && snapshot.refresh_flight && (Date.parse(String(set.start_time)) <= at ||
         Date.parse(String(set.end_time)) <= at)) throw Error("FLIGHT_DATES_EXPIRED_RECONCILE_REQUIRED");
   }
+  async function spendReadback(): Promise<{ source: "META_GRAPH_INSIGHTS"; spendMinor: number | null; window: string; status: "REPORTED" | "NO_ROWS" }> {
+    // Meta Insights can return no rows before delivery. No rows are not reported zero spend.
+    const response = await get(PILOT.campaign + "/insights", "spend,date_start,date_stop");
+    const rows = list(response);
+    if (rows.length === 0) return { source: "META_GRAPH_INSIGHTS", spendMinor: null, window: "lifetime", status: "NO_ROWS" };
+    if (rows.length !== 1 || typeof rows[0].spend !== "string" ||
+        !/^(?:0|[1-9]\\d*)(?:\\.\\d{1,2})?$/.test(rows[0].spend))
+      throw Error("META_INSIGHTS_UNVERIFIED");
+    const [whole, fraction = ""] = rows[0].spend.split(".");
+    const minor = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+    if (!Number.isSafeInteger(minor) || minor < 0) throw Error("META_INSIGHTS_UNVERIFIED");
+    return { source: "META_GRAPH_INSIGHTS", spendMinor: minor, window: "lifetime", status: "REPORTED" };
+  }
   return {
-    read, assertPaused, assertObjects,
+    read, spendReadback, assertPaused, assertObjects,
     assertIdentities(state: PilotProviderState, expected: Parameters<typeof adsetBody>[0]) {
       if (!state.adsets.length) return;
       const identities = object(state.adsets[0].regional_regulation_identities);
