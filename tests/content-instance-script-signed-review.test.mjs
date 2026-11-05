@@ -2,7 +2,7 @@ import test from 'node:test';
 import {createHash} from 'node:crypto';
 function sourceOrderedMediaDigest(mediaBytes){
   const hashes=mediaBytes.map(b=>createHash('sha256').update(b).digest('hex'));
-  return createHash('sha256').update('BCI_CONTENT_ORDERED_MEDIA_V3\\n')
+  return createHash('sha256').update('BCI_CONTENT_ORDERED_MEDIA_V3'+String.fromCharCode(10))
     .update(JSON.stringify(hashes.map((sha,i)=>[i+1,sha]))).digest('hex');
 }
 
@@ -459,7 +459,7 @@ test('BCI V3 source verifier recomputes original bytes and rejects forged transp
   const envelope=prepare(...args);
   assert.equal(envelope.schemaVersion,3);
   const hashes=args[4].map(b=>createHash('sha256').update(b).digest('hex'));
-  const orderedMediaSha256=createHash('sha256').update('BCI_CONTENT_ORDERED_MEDIA_V3\\n')
+  const orderedMediaSha256=createHash('sha256').update('BCI_CONTENT_ORDERED_MEDIA_V3'+String.fromCharCode(10))
     .update(JSON.stringify(hashes.map((h,i)=>[i+1,h]))).digest('hex');
   const bound={proofEnvelopeId:envelope.proofEnvelopeId,
     scriptIntentId:envelope.scriptIntentId,copySha256:envelope.copySha256,
