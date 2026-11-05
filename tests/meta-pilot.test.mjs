@@ -38,7 +38,7 @@ function fixture() {
     id: snapshot["ad_" + key].id, adset_id: snapshot.adset.id, status: "PAUSED", effective_status: "PAUSED",
     creative: { id: snapshot["creative_" + key].id, object_story_spec: creativeBody(key, snapshot["image_" + key].hash).object_story_spec },
   })) } };
-  let otherActive = false;
+  let otherActive = false, children = [set];
   const transport = async (input, init = {}) => {
     const u = new URL(String(input)); calls.push({ url: u, init });
     assert.equal(u.origin, "https://graph.facebook.com"); assert.equal(init.redirect, "error");
@@ -62,7 +62,7 @@ function fixture() {
     else if (u.pathname.endsWith("/2091328444802994/owned_apps")) data = { data: [{ id: config.META_APP_ID }] };
     else if (u.pathname.endsWith("/" + PILOT.account)) data = account;
     else if (u.pathname.endsWith("/" + PILOT.campaign)) data = campaign;
-    else if (u.pathname.endsWith("/" + PILOT.campaign + "/adsets")) data = { data: [set] };
+    else if (u.pathname.endsWith("/" + PILOT.campaign + "/adsets")) data = { data: children };
     else if (u.pathname.endsWith("/" + PILOT.account + "/campaigns")) data = { data: [campaign,
       ...(otherActive ? [{ id: "999999999999999", status: "ACTIVE", effective_status: "ACTIVE" }] : [])] };
     else throw Error("Unexpected synthetic read");
@@ -71,7 +71,8 @@ function fixture() {
   const ledger = { snapshot: async () => structuredClone(snapshot),
     perform: async (step, fn) => { if (snapshot[step]) return snapshot[step];
       const r = await fn(); snapshot[step] = r; return r; }, revoke: async () => { ledger.revoked = true; } };
-  return { config, calls, snapshot, account, campaign, set, ledger, transport, other: () => { otherActive = true; } };
+  return { config, calls, snapshot, account, campaign, set, ledger, transport,
+    emptyChildren: () => { children = []; }, other: () => { otherActive = true; } };
 }
 function service(f, overrides = {}) { return createPilotService({ environment: f.config, readToken: () => "synthetic-read-token",
   ledger: () => f.ledger, now: () => now, reauthorize: async () => {}, transport: f.transport, ...overrides }); }
@@ -329,7 +330,29 @@ test("HTTP permits image-free resume and forwards no synthetic image bytes", asy
   assert.deepEqual(h.calls, ["stage"]);
 });
 test("uncommitted image stage rejects missing image bytes before Meta writes", async () => {
-  const f = fixture(); delete f.snapshot.image_a;
+  const f = fixture();
+  for (const step of STAGE_STEPS) delete f.snapshot[step];
+  f.emptyChildren();
   await assert.rejects(service(f).stage(scope, {}), /APPROVED_V5_ASSET_REQUIRED/);
   assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
 });
+
+test("missing journaled image with existing ads requires reconciliation before any write", async () => {
+  const f = fixture(); delete f.snapshot.image_a;
+  await assert.rejects(service(f).stage(scope, {}), /AD_CREATIVE_READBACK_MISMATCH/);
+  assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
+});
+
+test("readable but mismatched objects or identities never authorize stage or activation", async () => {
+  for (const mutate of [
+    f => { f.set.ads.data[0].creative.object_story_spec.link_data.image_hash = "0".repeat(32); },
+    f => { f.set.regional_regulation_identities.universal_payer = "99999999000003"; },
+  ]) {
+    const f = fixture(); mutate(f);
+    const r = await service(f).readiness(scope);
+    assert.equal(r.providerVerified, true);
+    assert.equal(r.canStage, false); assert.equal(r.canActivate, false);
+    assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
+  }
+});
+

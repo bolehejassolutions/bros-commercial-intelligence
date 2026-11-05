@@ -16,7 +16,7 @@ export type PurchaseEvidence = Readonly<{
 }>;
 const REF = /^[A-Za-z0-9_-]{3,100}$/;
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const timestamp = (v: unknown) => typeof v === "string" && UTC.test(v) &&
+const timestamp = (v: unknown): v is string => typeof v === "string" && UTC.test(v) &&
   Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
 const record = (v: unknown, keys: string[]): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v) &&
@@ -66,3 +66,4 @@ export function reconcileDemandPaidPurchaseCandidate(
     return fail("UNREADABLE_PROVIDER_EVIDENCE");
   }
 }
+

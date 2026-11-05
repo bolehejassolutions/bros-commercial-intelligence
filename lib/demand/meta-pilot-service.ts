@@ -53,7 +53,9 @@ export function createPilotService(deps: PilotServiceDependencies) {
         try { snapshot = await snapshotFor(scope); ledgerVerified = true; }
         catch (e) { blockers.push(e instanceof PilotReconciliationRequired ? "PROVIDER_RECONCILIATION_REQUIRED" : "PILOT_LEDGER_UNAVAILABLE"); }
       }
-      let providerVerified = false, launchReadbackVerified = false, pausedUnspentVerified = false, campaignStatus: string | null = null, adsets: number | null = null;
+      let providerVerified = false, objectsVerified = false, identityReadbackVerified = false,
+        launchReadbackVerified = false, pausedUnspentVerified = false,
+        campaignStatus: string | null = null, adsets: number | null = null;
       const token = deps.readToken();
       if (token) {
         try {
@@ -65,8 +67,16 @@ export function createPilotService(deps: PilotServiceDependencies) {
             provider(token).assertPaused(state);
             pausedUnspentVerified = state.adsets.every(s => s.status === "PAUSED");
           } catch { blockers.push("PAUSED_UNSPENT_CAMPAIGN_REQUIRED"); }
-          if (ledgerVerified) provider(token).assertObjects(state, snapshot, false, deps.now());
-          if (identities) provider(token).assertIdentities(state, verifiedIdentities(env));
+          // A successful provider read is distinct from admission to mutate its
+          // objects. Keep each policy failure visible without losing read proof.
+          if (ledgerVerified) {
+            try { provider(token).assertObjects(state, snapshot, false, deps.now()); objectsVerified = true; }
+            catch { blockers.push("FRESH_CAMPAIGN_READBACK_NOT_VERIFIED"); }
+          }
+          if (identities) {
+            try { provider(token).assertIdentities(state, verifiedIdentities(env)); identityReadbackVerified = true; }
+            catch { blockers.push("MALAYSIA_IDENTITY_READBACK_MISMATCH"); }
+          }
           if (STAGE_STEPS.every(s => snapshot[s])) {
             try { provider(token).assertObjects(state, snapshot, true, deps.now()); launchReadbackVerified = true; }
             catch { blockers.push("META_LAUNCH_READBACK_NOT_VERIFIED"); }
@@ -87,9 +97,10 @@ export function createPilotService(deps: PilotServiceDependencies) {
         managementVerified, ledgerVerified, blockers,
         // These indicate admission to an action; they are not E2E completion claims.
         canStage: managementVerified && ledgerVerified && identities && qa && flags.stage && providerVerified &&
+          objectsVerified && identityReadbackVerified &&
           pausedUnspentVerified && staged < STAGE_STEPS.length && !snapshot.refresh_flight,
         canActivate: managementVerified && ledgerVerified && identities && flags.launch && qa &&
-          providerVerified && pausedUnspentVerified && launchReadbackVerified &&
+          providerVerified && objectsVerified && identityReadbackVerified && pausedUnspentVerified && launchReadbackVerified &&
           campaignStatus === "PAUSED" && staged === STAGE_STEPS.length,
         canPause: managementVerified,
         operatorLaunchAttestationConfigured: qa,
@@ -191,3 +202,4 @@ export function createPilotService(deps: PilotServiceDependencies) {
     },
   };
 }
+
