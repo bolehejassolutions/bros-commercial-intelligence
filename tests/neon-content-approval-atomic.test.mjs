@@ -216,3 +216,15 @@ test("restricted ledger rejects reviewer revoked during transaction",async()=>{
  const {ledger}=await harness({authSequence:[{members:1,reviewers:1},{members:1,reviewers:0}]});
  await assert.rejects(()=>ledger.append(p),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
 });
+
+// The final reviewer authorization query may be slow enough to cross expiry.
+test("restricted ledger rejects expiry after final authorization for append and readback",async()=>{
+ const valid=new Date("2026-11-03T01:30:00.000Z");
+ const expired=new Date("2026-11-03T02:00:00.000Z");
+ for(const operation of ["append","readback"]){
+  const h=await harness({clockSequence:[valid,valid,valid,expired]});
+  await assert.rejects(h.ledger[operation](p),/BCI_CONTENT_RESTRICTED_APPROVAL_DENIED/);
+  assert.equal(h.calls.filter(x=>x.q.includes('clock_timestamp() AS "now"')).length,4);
+  assert.equal(h.calls.filter(x=>x.q.startsWith("SELECT approval_id")).length,1);
+ }
+});
