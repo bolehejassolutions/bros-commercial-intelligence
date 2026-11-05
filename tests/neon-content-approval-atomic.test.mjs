@@ -102,7 +102,7 @@ test("V3 restricted append binds all script fields and independently reads exact
   orderedMediaManifestSha256:v3.orderedMediaManifestSha256,
   scriptReviewDigest,scriptDispatchBindingSha256:v3.scriptDispatchBindingSha256};
  const h=await harness({row});
- assert.equal((await h.ledger.appendV3(v3)).status,"append_reconciled");
+ assert.equal((await h.ledger.appendV3(v3)).status,"append_committed");
  assert.equal((await h.ledger.readbackV3(v3)).status,"committed_readback");
  const insert=h.calls.find(x=>x.q.startsWith("INSERT"));
  assert.match(insert.q,/signed_script_review_receipt_sha256/);
