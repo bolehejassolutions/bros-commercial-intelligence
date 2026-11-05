@@ -119,6 +119,22 @@ test("readiness never offers PAUSED staging for partially spent or active child 
   }
 });
 
+test("fully staged launch admission requires fresh unspent PAUSED provider state", async () => {
+  const f = fixture();
+  const start = new Date(now + 5 * 60000).toISOString();
+  const end = new Date(Date.parse(start) + 7 * 86400000).toISOString();
+  f.set.start_time = start; f.set.end_time = end;
+  f.snapshot.refresh_flight = { id: f.set.id, start, end };
+  const eligible = await service(f).readiness(scope);
+  assert.equal(eligible.canActivate, true);
+  f.campaign.budget_remaining = "13999";
+  const spent = await service(f).readiness(scope);
+  assert.equal(spent.providerVerified, true);
+  assert.equal(spent.canActivate, false);
+  assert.ok(spent.blockers.includes("PAUSED_UNSPENT_CAMPAIGN_REQUIRED"));
+  assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
+});
+
 test("owner-saved management name works through pilot readiness with authenticated GET proof", async () => {
   const f = fixture();
   f.config.BROS_DEMAND_META_ADS_MANAGEMENT_TOKEN = f.config.META_ADS_MANAGEMENT_TOKEN;
