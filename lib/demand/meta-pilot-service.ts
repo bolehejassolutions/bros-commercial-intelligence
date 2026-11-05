@@ -58,6 +58,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
         campaignStatus: string | null = null, adsets: number | null = null;
       let observedAds: { id: string; adsetId: string; status: string; effectiveStatus: string }[] = [];
       let externallyManaged = false;
+      let workV5Recognized = false;
       let spend: { source: "META_GRAPH_INSIGHTS"; spendMinor: number | null; window: string; status: "REPORTED" | "NO_ROWS" } | null = null;
       const token = deps.readToken();
       if (token) {
@@ -67,6 +68,19 @@ export function createPilotService(deps: PilotServiceDependencies) {
           try { spend = await provider(token).spendReadback(); }
           catch { blockers.push("META_SPEND_READBACK_UNVERIFIED"); }
           externallyManaged = state.adsets.length > 0 && !snapshot.adset?.id;
+          // Work-created V5 objects are observable, never silently imported into
+          // the pilot execution ledger. Require exact provider IDs and statuses.
+          const expectedWorkAdIds = ["120251321765180697", "120251323975550697"];
+          const observedWorkAdIds = state.adsets.flatMap(set =>
+            Array.isArray((set.ads as { data?: unknown } | undefined)?.data)
+              ? (set.ads as { data: Array<{ id?: unknown }> }).data.map(ad => String(ad.id ?? ""))
+              : []);
+          workV5Recognized = state.adsets.length === 1 &&
+            state.adsets[0].id === "120251321765170697" &&
+            observedWorkAdIds.length === 2 &&
+            expectedWorkAdIds.every(id => observedWorkAdIds.includes(id));
+          if (externallyManaged && !workV5Recognized)
+            blockers.push("EXTERNAL_CAMPAIGN_OBJECTS_UNRECONCILED");
           observedAds = state.adsets.flatMap(set => Array.isArray((set.ads as { data?: unknown } | undefined)?.data) ?
             ((set.ads as { data: unknown[] }).data).filter((ad): ad is Record<string, unknown> =>
               !!ad && typeof ad === "object" && !Array.isArray(ad)).map(ad => ({
@@ -105,7 +119,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
       const staged = STAGE_STEPS.filter(s => snapshot[s]).length;
       return { source: "BROS_DEMAND_META_PILOT" as const, campaignId: PILOT.campaign,
         budgetMinor: PILOT.budgetMinor, currency: "MYR", durationDays: 7,
-        providerVerified, campaignStatus, adsets, observedAds, externallyManaged, spend,
+        providerVerified, campaignStatus, adsets, observedAds, externallyManaged, workV5Recognized, spend,
         stagedSteps: staged, totalStageSteps: STAGE_STEPS.length,
         managementVerified, ledgerVerified, blockers,
         // These indicate admission to an action; they are not E2E completion claims.
