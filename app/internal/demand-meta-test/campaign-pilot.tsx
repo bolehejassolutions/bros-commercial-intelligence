@@ -5,7 +5,7 @@ type Readiness = { source: "BROS_DEMAND_META_PILOT"; campaignId: string; provide
   campaignStatus: string | null; adsets: number | null; stagedSteps: number; totalStageSteps: number;
   blockers: string[]; canStage: boolean; canActivate: boolean; canPause: boolean;
   spend: { source: "META_GRAPH_INSIGHTS"; spendMinor: number | null; window: string; status: "REPORTED" | "NO_ROWS" } | null;
-  externallyManaged: boolean; observedAds: { id: string; adsetId: string; status: string; effectiveStatus: string }[] };
+  externallyManaged: boolean; workV5Recognized: boolean; observedAds: { id: string; adsetId: string; status: string; effectiveStatus: string }[] };
 const endpoint = "/api/internal/demand-meta-pilot";
 const blockerText: Record<string, string> = {
   META_MANAGEMENT_TOKEN_MISSING: "Add the business-owned Meta management credential in the protected server settings.",
@@ -18,7 +18,7 @@ const blockerText: Record<string, string> = {
   PROVIDER_RECONCILIATION_REQUIRED: "A previous action may have committed. Reconcile Meta and the ledger before retrying.",
   PILOT_LEDGER_UNAVAILABLE: "The execution ledger could not be independently read.",
   FRESH_CAMPAIGN_READBACK_NOT_VERIFIED: "The current Meta campaign settings could not be verified.",
-  META_SPEND_READBACK_UNVERIFIED: "Meta spending data could not be independently verified; no spend amount is asserted.",
+  EXTERNAL_CAMPAIGN_OBJECTS_UNRECONCILED: "Meta contains externally created campaign objects that do not match the exact approved V5 IDs. No execution-ledger adoption or mutation is permitted.",\n  META_SPEND_READBACK_UNVERIFIED: "Meta spending data could not be independently verified; no spend amount is asserted.",
   META_READ_TOKEN_MISSING: "The server Meta reporting credential is unavailable.",
   META_MANAGEMENT_CONNECTION_NOT_VERIFIED: "Meta has not verified the management credential, app and account access.",
   META_LAUNCH_READBACK_NOT_VERIFIED: "The staged ads, Meta review status or flight settings need verification before launch.",
@@ -95,7 +95,7 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
     {readiness ? <>
       <p>Meta readback: {readiness.providerVerified ? "VERIFIED" : "UNVERIFIED"}. Campaign: {readiness.campaignStatus ?? "unknown"}. Paused staging: {readiness.stagedSteps}/{readiness.totalStageSteps} steps.</p>
       <p>Meta spending (maximum available reporting window): {readiness.spend?.status === "REPORTED" && readiness.spend.spendMinor !== null ? `RM ${(readiness.spend.spendMinor / 100).toFixed(2)} — Meta Graph Insights` : "Unavailable / no delivery rows; not verified as RM0"}.</p>
-      {readiness.externallyManaged ? <p role="status">Existing Meta-created ads detected. This pilot will not recreate or adopt them into its execution ledger. Read-only observation only; independent reconciliation is required before any write.</p> : null}
+      {readiness.externallyManaged ? <p role="status">{readiness.workV5Recognized ? "The exact two Work-created V5 ad IDs were recognized from Meta readback." : "External Meta objects detected; exact V5 IDs are not confirmed."} This pilot will not recreate or adopt them into its execution ledger. Read-only observation only; independent reconciliation is required before any write.</p> : null}
       {readiness.observedAds.length ? <div><h3>Meta provider ad readback</h3><ul>{readiness.observedAds.map(ad => <li key={ad.id}>Ad {ad.id} · Ad set {ad.adsetId} · {ad.status} / {ad.effectiveStatus}</li>)}</ul></div> : null}
       {readiness.blockers.length ? <ul>{readiness.blockers.map(reason => <li key={reason}>{blockerText[reason] ?? "An execution requirement remains unverified."}</li>)}</ul> : null}
       {readiness.canStage && readiness.stagedSteps < 2 ? <>
