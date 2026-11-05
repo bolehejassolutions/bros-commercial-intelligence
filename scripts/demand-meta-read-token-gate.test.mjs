@@ -2,18 +2,36 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { isVerifiedDemandMetaReadTokenAudit } from "./demand-meta-preflight-gate.mjs";
 
-test("read-token gate accepts authenticated exact-account readback only", () => {
-  assert.equal(isVerifiedDemandMetaReadTokenAudit({ status: "CAPABILITY_READBACK", fixedAccountReadVerified: true }), true);
-  for (const evidence of [null, undefined, [], {},
-    { status: "MISSING_SERVER_CREDENTIAL", fixedAccountReadVerified: true },
-    { status: "CAPABILITY_READBACK", fixedAccountReadVerified: false },
-    { status: "CAPABILITY_READBACK", fixedAccountReadVerified: "true" },
-    { status: "CAPABILITY_READBACK" }]) {
-    assert.equal(isVerifiedDemandMetaReadTokenAudit(evidence), false);
-  }
+const verified = () => ({
+  status: "CAPABILITY_READBACK",
+  fixedAccountReadVerified: true,
+  credentialChanged: false,
+  executionAllowed: false,
+  accountCode: null,
+  accountSubcode: null,
+});
+
+test("read-token gate accepts exact-account non-executable readback", () => {
+  assert.equal(isVerifiedDemandMetaReadTokenAudit(verified()), true);
+});
+
+test("read-token gate rejects contradictory or incomplete provider evidence", () => {
+  for (const change of [
+    { executionAllowed: true }, { credentialChanged: true },
+    { accountCode: 190 }, { accountSubcode: 12 },
+    { fixedAccountReadVerified: false }, { status: "BLOCKED" },
+    { executionAllowed: undefined }, { credentialChanged: undefined },
+    { accountCode: undefined }, { accountSubcode: undefined },
+  ]) assert.equal(isVerifiedDemandMetaReadTokenAudit({ ...verified(), ...change }), false,
+    JSON.stringify(change));
+  for (const value of [null, undefined, [], {}, "CAPABILITY_READBACK"])
+    assert.equal(isVerifiedDemandMetaReadTokenAudit(value), false);
 });
 
 test("read-token gate fails closed for unreadable provider evidence", () => {
-  const evidence = new Proxy({}, { get() { throw Error("provider failed"); } });
-  assert.equal(isVerifiedDemandMetaReadTokenAudit(evidence), false);
+  const getter = { ...verified(), get accountCode() { throw Error("provider failed"); } };
+  assert.equal(isVerifiedDemandMetaReadTokenAudit(getter), false);
+  const revoked = Proxy.revocable(verified(), {});
+  revoked.revoke();
+  assert.equal(isVerifiedDemandMetaReadTokenAudit(revoked.proxy), false);
 });
