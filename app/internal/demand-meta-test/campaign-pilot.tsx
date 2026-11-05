@@ -3,7 +3,8 @@ import { useState } from "react";
 
 type Readiness = { source: "BROS_DEMAND_META_PILOT"; campaignId: string; providerVerified: boolean;
   campaignStatus: string | null; adsets: number | null; stagedSteps: number; totalStageSteps: number;
-  blockers: string[]; canStage: boolean; canActivate: boolean; canPause: boolean };
+  blockers: string[]; canStage: boolean; canActivate: boolean; canPause: boolean;
+  externallyManaged: boolean; observedAds: { id: string; adsetId: string; status: string; effectiveStatus: string }[] };
 const endpoint = "/api/internal/demand-meta-pilot";
 const blockerText: Record<string, string> = {
   META_MANAGEMENT_TOKEN_MISSING: "Add the business-owned Meta management credential in the protected server settings.",
@@ -91,6 +92,8 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
     {!signedIn ? <p className="sub">Sign in above to check access. Unavailable controls will explain what is missing.</p> : null}
     {readiness ? <>
       <p>Meta readback: {readiness.providerVerified ? "VERIFIED" : "UNVERIFIED"}. Campaign: {readiness.campaignStatus ?? "unknown"}. Paused staging: {readiness.stagedSteps}/{readiness.totalStageSteps} steps.</p>
+      {readiness.externallyManaged ? <p role="status">Existing Meta-created ads detected. This pilot will not recreate or adopt them into its execution ledger. Read-only observation only; independent reconciliation is required before any write.</p> : null}
+      {readiness.observedAds.length ? <div><h3>Meta provider ad readback</h3><ul>{readiness.observedAds.map(ad => <li key={ad.id}>Ad {ad.id} · Ad set {ad.adsetId} · {ad.status} / {ad.effectiveStatus}</li>)}</ul></div> : null}
       {readiness.blockers.length ? <ul>{readiness.blockers.map(reason => <li key={reason}>{blockerText[reason] ?? "An execution requirement remains unverified."}</li>)}</ul> : null}
       {readiness.canStage && readiness.stagedSteps < 2 ? <>
         <label htmlFor="pilot-asset-a">Approved V5 image A</label><input id="pilot-asset-a" type="file" accept="image/jpeg" disabled={busy} onChange={e => setA(e.target.files?.[0] ?? null)} />
