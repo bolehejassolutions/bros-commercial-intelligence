@@ -36,6 +36,7 @@ export function createPilotProvider(token: string, rawTransport: typeof fetch = 
   async function get(path: string, fields: string) {
     const url = new URL(GRAPH + "/" + path); url.searchParams.set("fields", fields);
     if (path.endsWith("/adsets")) url.searchParams.set("limit", "20");
+    if (path.endsWith("/insights")) url.searchParams.set("date_preset", "maximum");
     const response = await metaProviderRequest(url.toString(), { method: "GET", cache: "no-store",
       headers: { Authorization: "Bearer " + token }, signal: AbortSignal.timeout(10000) }, transport);
     const data = await metaProviderJson(response);
