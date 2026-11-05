@@ -112,7 +112,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
         canActivate: managementVerified && ledgerVerified && identities && flags.launch && qa &&
           providerVerified && objectsVerified && identityReadbackVerified && pausedUnspentVerified && launchReadbackVerified &&
           campaignStatus === "PAUSED" && staged === STAGE_STEPS.length,
-        canPause: managementVerified,
+        canPause: managementVerified && providerVerified && ledgerVerified && !externallyManaged && Boolean(snapshot.adset?.id) && objectsVerified,
         operatorLaunchAttestationConfigured: qa,
         independentPurchaseTrackingVerifiedByThisCheck: false,
       };
@@ -200,7 +200,14 @@ export function createPilotService(deps: PilotServiceDependencies) {
     },
     async pause(scope: PilotScope) {
       // Emergency stop is independent of expired flight/QA/ledger/staging flags.
-      const api = provider(await writeCredential()); await deps.reauthorize();
+      // The pilot stop control is reserved for objects this ledger owns. A
+      // Work-created active campaign must never be modified by this pilot UI.
+      const snapshot = await snapshotFor(scope);
+      if (!snapshot.adset?.id) throw Error("EXTERNALLY_MANAGED_CAMPAIGN_WRITE_DENIED");
+      const api = provider(await writeCredential());
+      const state = await api.read();
+      api.assertObjects(state, snapshot, false, deps.now());
+      await deps.reauthorize();
       let futureCommandsRevoked = false;
       if (configured().ledger) {
         try { await deps.ledger(scope).revoke(); futureCommandsRevoked = true; }
