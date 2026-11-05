@@ -14,6 +14,8 @@ export function isVerifiedDemandMetaManagementPreflight(value) {
 export function isVerifiedDemandMetaReadTokenAudit(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   try {
-    return value.status === "CAPABILITY_READBACK" && value.fixedAccountReadVerified === true;
+    return value.status === "CAPABILITY_READBACK" && value.fixedAccountReadVerified === true &&
+      value.credentialChanged === false && value.executionAllowed === false &&
+      value.accountCode === null && value.accountSubcode === null;
   } catch { return false; }
 }
