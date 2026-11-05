@@ -11,7 +11,9 @@ permissions:
 
 concurrency:
   group: portfolio-merge-smoke-${{ github.ref }}
-  cancel-in-progress: true
+  # Preserve a running attested integration when coordinator source changes.
+  # A queued successor must fetch and attest its own five exact branch SHAs.
+  cancel-in-progress: false
 
 jobs:
   current-head-merge:
