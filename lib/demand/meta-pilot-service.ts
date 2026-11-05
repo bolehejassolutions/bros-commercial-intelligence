@@ -56,11 +56,20 @@ export function createPilotService(deps: PilotServiceDependencies) {
       let providerVerified = false, objectsVerified = false, identityReadbackVerified = false,
         launchReadbackVerified = false, pausedUnspentVerified = false,
         campaignStatus: string | null = null, adsets: number | null = null;
+      let observedAds: { id: string; adsetId: string; status: string; effectiveStatus: string }[] = [];
+      let externallyManaged = false;
       const token = deps.readToken();
       if (token) {
         try {
           const state = await provider(token).read();
           campaignStatus = String(state.campaign.status); adsets = state.adsets.length; providerVerified = true;
+          externallyManaged = state.adsets.length > 0 && !snapshot.adset?.id;
+          observedAds = state.adsets.flatMap(set => Array.isArray((set.ads as { data?: unknown } | undefined)?.data) ?
+            ((set.ads as { data: unknown[] }).data).filter((ad): ad is Record<string, unknown> =>
+              !!ad && typeof ad === "object" && !Array.isArray(ad)).map(ad => ({
+                id: String(ad.id ?? ""), adsetId: String(set.id ?? ""),
+                status: String(ad.status ?? "UNKNOWN"), effectiveStatus: String(ad.effective_status ?? "UNKNOWN"),
+              })) : []);
           // Readiness must not advertise staging when the actual stage() preconditions fail.
           // This is GET-only: no Meta write and no assertion of paid-order attribution.
           try {
@@ -93,11 +102,12 @@ export function createPilotService(deps: PilotServiceDependencies) {
       const staged = STAGE_STEPS.filter(s => snapshot[s]).length;
       return { source: "BROS_DEMAND_META_PILOT" as const, campaignId: PILOT.campaign,
         budgetMinor: PILOT.budgetMinor, currency: "MYR", durationDays: 7,
-        providerVerified, campaignStatus, adsets, stagedSteps: staged, totalStageSteps: STAGE_STEPS.length,
+        providerVerified, campaignStatus, adsets, observedAds, externallyManaged,
+        stagedSteps: staged, totalStageSteps: STAGE_STEPS.length,
         managementVerified, ledgerVerified, blockers,
         // These indicate admission to an action; they are not E2E completion claims.
         canStage: managementVerified && ledgerVerified && identities && qa && flags.stage && providerVerified &&
-          objectsVerified && identityReadbackVerified &&
+          objectsVerified && !externallyManaged && identityReadbackVerified &&
           pausedUnspentVerified && staged < STAGE_STEPS.length && !snapshot.refresh_flight,
         canActivate: managementVerified && ledgerVerified && identities && flags.launch && qa &&
           providerVerified && objectsVerified && identityReadbackVerified && pausedUnspentVerified && launchReadbackVerified &&
