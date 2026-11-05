@@ -53,12 +53,18 @@ export function createPilotService(deps: PilotServiceDependencies) {
         try { snapshot = await snapshotFor(scope); ledgerVerified = true; }
         catch (e) { blockers.push(e instanceof PilotReconciliationRequired ? "PROVIDER_RECONCILIATION_REQUIRED" : "PILOT_LEDGER_UNAVAILABLE"); }
       }
-      let providerVerified = false, launchReadbackVerified = false, campaignStatus: string | null = null, adsets: number | null = null;
+      let providerVerified = false, launchReadbackVerified = false, pausedUnspentVerified = false, campaignStatus: string | null = null, adsets: number | null = null;
       const token = deps.readToken();
       if (token) {
         try {
           const state = await provider(token).read();
           campaignStatus = String(state.campaign.status); adsets = state.adsets.length; providerVerified = true;
+          // Readiness must not advertise staging when the actual stage() preconditions fail.
+          // This is GET-only: no Meta write and no assertion of paid-order attribution.
+          try {
+            provider(token).assertPaused(state);
+            pausedUnspentVerified = state.adsets.every(s => s.status === "PAUSED");
+          } catch { blockers.push("PAUSED_UNSPENT_CAMPAIGN_REQUIRED"); }
           if (ledgerVerified) provider(token).assertObjects(state, snapshot, false, deps.now());
           if (identities) provider(token).assertIdentities(state, verifiedIdentities(env));
           if (STAGE_STEPS.every(s => snapshot[s])) {
@@ -81,7 +87,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
         managementVerified, ledgerVerified, blockers,
         // These indicate admission to an action; they are not E2E completion claims.
         canStage: managementVerified && ledgerVerified && identities && qa && flags.stage && providerVerified &&
-          campaignStatus === "PAUSED" && staged < STAGE_STEPS.length && !snapshot.refresh_flight,
+          pausedUnspentVerified && staged < STAGE_STEPS.length && !snapshot.refresh_flight,
         canActivate: managementVerified && ledgerVerified && identities && flags.launch && qa &&
           providerVerified && launchReadbackVerified && campaignStatus === "PAUSED" && staged === STAGE_STEPS.length,
         canPause: managementVerified,
