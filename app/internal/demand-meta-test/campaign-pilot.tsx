@@ -61,7 +61,14 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
       const limit = action === "stage" ? 7 : action === "activate" ? 5 : 1;
       for (let step = 0; step < limit; step++) {
         const form = new FormData(); form.set("action", action);
-        if (action === "stage") { if (!a || !b) throw Error("Select both approved V5 image files."); form.set("a", a); form.set("b", b); }
+        if (action === "stage") {
+          // The server journals each approved upload. Resuming later PAUSED steps
+          // must not require reselecting files already recorded in the ledger.
+          if (readiness?.stagedSteps === 0 && (!a || !b)) throw Error("Select both approved V5 image files.");
+          if (readiness?.stagedSteps === 1 && !b) throw Error("Select approved V5 image B.");
+          if (a) form.set("a", a);
+          if (b) form.set("b", b);
+        }
         const r = await request(form);
         if (r.campaignId !== "120251158023300697") throw Error("Campaign response could not be verified.");
         if (r.status === "staged") { setNotice("Approved ads staged in PAUSED state. Live launch remains a separate action."); break; }
@@ -85,11 +92,11 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
     {readiness ? <>
       <p>Meta readback: {readiness.providerVerified ? "VERIFIED" : "UNVERIFIED"}. Campaign: {readiness.campaignStatus ?? "unknown"}. Paused staging: {readiness.stagedSteps}/{readiness.totalStageSteps} steps.</p>
       {readiness.blockers.length ? <ul>{readiness.blockers.map(reason => <li key={reason}>{blockerText[reason] ?? "An execution requirement remains unverified."}</li>)}</ul> : null}
-      {readiness.canStage ? <>
+      {readiness.canStage && readiness.stagedSteps < 2 ? <>
         <label htmlFor="pilot-asset-a">Approved V5 image A</label><input id="pilot-asset-a" type="file" accept="image/jpeg" disabled={busy} onChange={e => setA(e.target.files?.[0] ?? null)} />
         <label htmlFor="pilot-asset-b">Approved V5 image B</label><input id="pilot-asset-b" type="file" accept="image/jpeg" disabled={busy} onChange={e => setB(e.target.files?.[0] ?? null)} />
       </> : null}
-      <button type="button" disabled={busy || !readiness.canStage || !a || !b} onClick={() => act("stage")}>Prepare approved ads — PAUSED</button>
+      <button type="button" disabled={busy || !readiness.canStage || (readiness.stagedSteps === 0 && (!a || !b)) || (readiness.stagedSteps === 1 && !b)} onClick={() => act("stage")}>Prepare approved ads — PAUSED</button>
       <button type="button" disabled={busy || !readiness.canActivate} onClick={() => act("activate")}>Launch approved RM140 campaign</button>
       <button type="button" disabled={busy || !readiness.canPause} onClick={() => act("pause")}>Pause existing campaign</button>
     </> : null}
