@@ -104,6 +104,21 @@ test("readiness with read-only credentials performs no writes and explains missi
   assert.equal(r.independentPurchaseTrackingVerifiedByThisCheck, false);
   assert.ok(f.calls.every(c => c.init.method === "GET"));
 });
+test("readiness never offers PAUSED staging for partially spent or active child state", async () => {
+  for (const mutate of [
+    f => { f.campaign.budget_remaining = "13999"; },
+    f => { f.set.status = "ACTIVE"; },
+  ]) {
+    const f = fixture(); mutate(f);
+    const r = await service(f).readiness(scope);
+    assert.equal(r.providerVerified, true);
+    assert.equal(r.managementVerified, true);
+    assert.equal(r.canStage, false);
+    assert.equal(r.canActivate, false);
+    assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
+  }
+});
+
 test("owner-saved management name works through pilot readiness with authenticated GET proof", async () => {
   const f = fixture();
   f.config.BROS_DEMAND_META_ADS_MANAGEMENT_TOKEN = f.config.META_ADS_MANAGEMENT_TOKEN;
