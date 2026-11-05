@@ -1,0 +1,758 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {projectBufferContentObservation as project,proposeContentNextStep as next,inspectContentSourceToSentReferences as inspect,buildContentBciEvidenceHandoff as handoff, classifyContentApprovalProvenance} from "../lib/content/buffer-observation.mjs";
+const scope={tenantId:"tenant-A",product:"content",instanceId:"sell-internal",contentId:"florist-001",channelService:"instagram",channelId:"ig123",expectedAssetCount:2};
+const post={id:"post123",status:"sent",channelService:"instagram",channelId:"ig123",sentAt:"2026-10-22T05:00:56.507Z",externalLink:"https://www.instagram.com/p/ABC/",assets:[{type:"image",source:"https://a.example/1.png"},{type:"image",source:"https://a.example/2.png"}],text:"Situasi rekaan / ilustrasi AI",metadata:{isAiGenerated:true},metricsUpdatedAt:"2026-10-25T15:34:40.061Z",metrics:[{type:"views",unit:"count",value:7},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:0}]};
+const make=(p={},s={})=>project({...post,...p},{...scope,...s});
+test("SENT provider snapshot preserves zero vs unknown and no provider attestation",()=>{const o=make();assert.equal(o.status,"MEASURED");assert.equal(o.metrics.views,7);assert.equal(o.metrics.reactions,0);assert.equal(o.metrics.clicks,null);assert.equal(o.providerAttestedByModule,false)});
+test("draft and scheduled are not published",()=>{for(const status of ["draft","scheduled"])assert.equal(make({status}).status,"NOT_SENT")});
+test("tenant/product and channel scope are enforced",()=>{assert.throws(()=>make({}, {product:"demand"}),/INVALID_TRUSTED_SCOPE/);assert.throws(()=>make({channelId:"other"}),/CHANNEL_SCOPE_MISMATCH/)});
+test("missing native SENT URL is held",()=>assert.equal(make({externalLink:null}).status,"REVIEW_REQUIRED"));
+test("stale metrics are not promoted to zero",()=>{const o=make({metricsUpdatedAt:"2026-10-21T00:00:00.000Z"});assert.equal(o.status,"REVIEW_REQUIRED");assert.equal(o.metrics.views,null)});
+test("no metric snapshot is unknown",()=>{const o=make({metricsUpdatedAt:null,metrics:null});assert.equal(o.status,"SENT_UNMEASURED");assert.equal(o.metrics.views,null)});
+test("invalid calendar and duplicate metrics fail closed",()=>{assert.equal(make({metricsUpdatedAt:"2026-02-30T15:00:00Z"}).status,"REVIEW_REQUIRED");assert.equal(make({metrics:[...post.metrics,{type:"views",unit:"count",value:99}]}).status,"REVIEW_REQUIRED")});
+test("invalid counts and asset count are held",()=>{for(const value of [-1,2.5])assert.equal(make({metrics:[{type:"views",unit:"count",value}]}).status,"REVIEW_REQUIRED");assert.equal(make({assets:[post.assets[0]]}).status,"REVIEW_REQUIRED")});
+// CONTENT_DUPLICATE_PROVIDER_MEDIA_REFERENCE_GUARD_20261028: synthetic media identity hold.
+test("distinct carousel slots cannot reuse one media source URL or provider asset ID",()=>{
+  const duplicateSource=make({assets:[post.assets[0],{...post.assets[1],source:post.assets[0].source}]});
+  assert.equal(duplicateSource.status,"REVIEW_REQUIRED");
+  assert.ok(duplicateSource.flags.includes("DUPLICATE_ASSET_SOURCE"));
+  assert.equal(next([duplicateSource]).reason,"EVIDENCE_QA_REVIEW");
+  assert.throws(()=>handoff(duplicateSource,scope,"2026-10-26T17:00:00.000Z"),/INVALID_CONTENT_EVIDENCE_SCOPE/);
+  const duplicateId=make({assets:[{...post.assets[0],id:"provider-asset-1"},
+    {...post.assets[1],id:"provider-asset-1"}]});
+  assert.equal(duplicateId.status,"REVIEW_REQUIRED");
+  assert.ok(duplicateId.flags.includes("DUPLICATE_PROVIDER_ASSET_ID"));
+  assert.equal(make().status,"MEASURED","two distinct sources remain valid provider-shaped observations");
+});
+
+test("AI caption/native metadata conflict triggers review",()=>{const o=make({metadata:{isAiGenerated:false}});assert.equal(o.status,"REVIEW_REQUIRED");assert.equal(next([o]).reason,"AI_DISCLOSURE_REVIEW")});
+
+// CONTENT_PROVIDER_ALT_TEXT_AI_PROVENANCE_PARITY_20261030: synthetic Buffer-shaped
+// metadata, not a live publication or authenticated provider attestation.
+test("image alt-text AI provenance contradicts native non-AI metadata even with neutral caption",()=>{
+  const assets=[{...post.assets[0],image:{altText:"Ilustrasi AI untuk pembelajaran"}},
+    {...post.assets[1],image:{altText:"Penjual bertanya kepada pelanggan"}}];
+  const neutral={text:"Slaid latihan penjual.",metadata:{isAiGenerated:false},assets};
+  for(const [service,channelId,externalLink] of [
+    ["instagram","ig123","https://www.instagram.com/p/ABC/"],
+    ["tiktok","tt123","https://www.tiktok.com/@bros.sell/video/7699352537861737735"]
+  ]){
+    const s={...scope,channelService:service,channelId};
+    const observed=make({...neutral,channelService:service,channelId,externalLink},s);
+    assert.equal(observed.status,"REVIEW_REQUIRED");
+    assert.ok(observed.flags.includes("AI_DISCLOSURE_ALT_TEXT_MISMATCH"));
+    assert.equal(next([observed]).reason,"AI_DISCLOSURE_REVIEW");
+    assert.throws(()=>handoff(observed,s,"2026-10-26T17:00:00.000Z"),/INVALID_CONTENT_EVIDENCE_SCOPE/);
+    const declared=make({...neutral,channelService:service,channelId,externalLink,
+      metadata:{isAiGenerated:true}},s);
+    assert.equal(declared.status,"MEASURED");
+    const manual=make({...neutral,channelService:service,channelId,externalLink,
+      assets:[{...assets[0],image:{altText:"Lakaran manual untuk latihan"}},assets[1]]},s);
+    assert.equal(manual.status,"MEASURED");
+  }
+});
+
+test("native URL must be HTTPS on matching channel",()=>{assert.equal(make({externalLink:"https://www.tiktok.com/@a/video/1"}).status,"REVIEW_REQUIRED");assert.equal(make({externalLink:"http://www.instagram.com/p/a"}).status,"REVIEW_REQUIRED")});
+test("learning rejects cross tenant and duplicate posts",()=>{const o=make();assert.throws(()=>next([o,{...o,tenantId:"tenant-B",postId:"post456"}]),/CROSS_SCOPE/);assert.throws(()=>next([o,o]),/DUPLICATE_POST/)});
+test("cross-platform views cannot be compared as a winner",()=>{const o=make();const t=make({id:"post456",channelService:"tiktok",channelId:"tt123",externalLink:"https://www.tiktok.com/@bros.sell/video/7699352537861737735"},{channelService:"tiktok",channelId:"tt123"});assert.equal(t.status,"MEASURED");assert.equal(next([o,t]).reason,"NO_SAME_CHANNEL_PAIR")});
+test("same channel candidate is nonexecuting and noncausal",()=>{const o=make();const r=next([o,{...o,postId:"post456"}]);assert.equal(r.reason,"SAME_CHANNEL_CANDIDATES");assert.equal(r.executionAllowed,false);assert.equal(r.causalLiftProven,false)});
+
+test("empty and unsupported metric snapshots remain unmeasured rather than zero",()=>{
+  for(const metrics of [[],[{type:"engagementRate",unit:"percentage",value:1}]]) {
+    const o=make({metrics});assert.equal(o.status,"SENT_UNMEASURED");assert.equal(o.metrics.views,null);
+  }
+});
+test("measurement age derives from SENT timestamp",()=>{
+  const o=make();assert.equal(o.measurementAgeSeconds,Math.floor((Date.parse(post.metricsUpdatedAt)-Date.parse(post.sentAt))/1000));
+});
+test("unequal cumulative measurement windows are not comparable",()=>{
+  const a=make(),b=make({id:"post456",metricsUpdatedAt:"2026-10-23T15:34:40.061Z"});
+  assert.equal(next([a,b]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+});
+test("different account or format cannot be compared",()=>{
+  const a=make();
+  assert.equal(next([a,{...make({id:"post456"}),channelId:"other-ig"}]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+  assert.equal(next([a,{...make({id:"post789"}),format:"video"}]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+});
+test("different measured metric types cannot be compared",()=>{
+  const a=make({metrics:[{type:"views",unit:"count",value:7}]}),b=make({id:"post456",metrics:[{type:"clicks",unit:"count",value:2}]});
+  assert.equal(next([a,b]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+});
+test("near-equal windows remain only nonexecuting candidates",()=>{
+  const a=make(),b=make({id:"post456",metricsUpdatedAt:"2026-10-25T16:20:40.061Z"});
+  const r=next([a,b]);assert.equal(r.reason,"SAME_CHANNEL_CANDIDATES");assert.equal(r.executionAllowed,false);assert.equal(r.causalLiftProven,false);
+});
+
+
+// CONTENT_NATIVE_PERMALINK_AND_FUTURE_SNAPSHOT_GUARD_20261026: provider-shaped URLs from existing BROS SELL posts; synthetic scoped IDs.
+test("realistic native IG/FB/TT permalinks are accepted and tracking is stripped",()=>{
+  const ig=make({externalLink:"https://www.instagram.com/p/DeyLqz7EYPk/?utm_source=buffer#part"});
+  assert.equal(ig.status,"MEASURED");
+  assert.equal(ig.nativeUrl,"https://www.instagram.com/p/DeyLqz7EYPk/");
+  const fb=make({channelService:"facebook",channelId:"fb123",externalLink:"https://www.facebook.com/967812963066089/posts/979084248605627"},{channelService:"facebook",channelId:"fb123"});
+  assert.equal(fb.status,"MEASURED");
+  const tt=make({channelService:"tiktok",channelId:"tt123",externalLink:"https://www.tiktok.com/@bros.sell/video/7699352537861737735?utm_source=7103819247981182978"},{channelService:"tiktok",channelId:"tt123"});
+  assert.equal(tt.status,"MEASURED");
+  assert.equal(tt.nativeUrl,"https://www.tiktok.com/@bros.sell/video/7699352537861737735");
+});
+test("homepages profiles login and off-platform lookalikes are not SENT proof",()=>{
+  for(const url of [
+    "https://www.instagram.com/",
+    "https://www.instagram.com/accounts/login/",
+    "https://www.instagram.com/bros.sell/",
+    "https://www.instagram.com.evil.example/p/DeyLqz7EYPk/",
+    "https://user:pass@www.instagram.com/p/DeyLqz7EYPk/",
+    "https://www.instagram.com/p/ABC%2Ffake/"
+  ]){
+    const o=make({externalLink:url});
+    assert.equal(o.status,"REVIEW_REQUIRED",url);
+    assert.equal(o.nativeUrl,null,url);
+  }
+});
+test("trusted asOf rejects future SENT and metric snapshots without inventing zero",()=>{
+  const asOf="2026-10-26T14:00:00.000Z";
+  const good=make({}, {asOf});assert.equal(good.status,"MEASURED");
+  const futureSent=make({sentAt:"2026-10-27T01:00:00.000Z",metricsUpdatedAt:null,metrics:null},{asOf});
+  assert.equal(futureSent.status,"REVIEW_REQUIRED");
+  assert.ok(futureSent.flags.includes("SENT_IN_FUTURE"));
+  const futureMetrics=make({metricsUpdatedAt:"2026-10-27T01:00:00.000Z"},{asOf});
+  assert.equal(futureMetrics.status,"REVIEW_REQUIRED");
+  assert.ok(futureMetrics.flags.includes("METRICS_IN_FUTURE"));
+  assert.throws(()=>make({}, {asOf:"2026-02-30T14:00:00.000Z"}),/INVALID_TRUSTED_OBSERVATION_TIME/);
+});
+
+// CONTENT_PROVIDER_SCOPE_URL_GUARD_20261027_0054: synthetic negative regression fixtures only.
+test("missing channel identity cannot pass even when both sides omit channelId",()=>{
+  assert.throws(()=>make({channelId:undefined},{channelId:undefined}),/INVALID_TRUSTED_SCOPE/);
+  assert.throws(()=>make({channelId:""},{channelId:""}),/INVALID_TRUSTED_SCOPE/);
+});
+test("attacker-controlled social subdomains cannot serve as native SENT permalinks",()=>{
+  for(const url of ["https://evil.instagram.com/p/ABC/","https://mimic.www.instagram.com/p/ABC/","https://cdn.instagram.com/p/ABC/"]){
+    const o=make({externalLink:url});
+    assert.equal(o.status,"REVIEW_REQUIRED",url);
+    assert.equal(o.nativeUrl,null,url);
+  }
+});
+test("malformed or credential-bearing asset links require review",()=>{
+  for(const source of ["https://","https://user:pass@drive.google.com/a.png","https://drive.google.com/a.png#fragment","https://drive.google.com:444/a.png","http://drive.google.com/a.png"]){
+    const o=make({assets:[{type:"image",source},post.assets[1]]});
+    assert.equal(o.status,"REVIEW_REQUIRED",source);
+    assert.ok(o.flags.includes("ASSET_EVIDENCE_MISMATCH"),source);
+  }
+});
+
+// CONTENT_IG_FRESH_METRICS_LEARNING_6ADCA7AD_20261026: synthetic replay of observed provider-shaped snapshot.
+test("fresh post-SENT metrics yield evidence-linked, noncausal next action",()=>{
+  const o=make({id:"post-fresh",sentAt:"2026-10-26T01:02:51.262Z",
+    metricsUpdatedAt:"2026-10-26T14:32:54.244Z",
+    metrics:[{type:"views",unit:"count",value:6},{type:"reach",unit:"count",value:4}]},
+    {asOf:"2026-10-26T15:00:00.000Z"});
+  assert.equal(o.status,"MEASURED");
+  const r=next([o]);
+  assert.equal(r.reason,"INSUFFICIENT_MEASURED_POSTS");
+  assert.equal(r.nextAction,"COLLECT_COMPARABLE_SAME_CHANNEL_MEASUREMENT");
+  assert.equal(r.evidenceStatus,"UNATTESTED_PROVIDER_PROJECTION");
+  assert.deepEqual(r.evidence.map(x=>[x.postId,x.views,x.reach,x.providerAttestedByModule]),[["post-fresh",6,4,false]]);
+  assert.equal(r.evidence[0].nativeUrl,"https://www.instagram.com/p/ABC/");
+  assert.equal(r.executionAllowed,false);assert.equal(r.causalLiftProven,false);
+});
+test("unequal-age measured posts produce evidence, not a performance winner",()=>{
+  const a=make({id:"post-old",sentAt:"2026-10-22T05:00:56.507Z",
+    metricsUpdatedAt:"2026-10-26T14:32:54.245Z"});
+  const b=make({id:"post-new",sentAt:"2026-10-26T01:02:51.262Z",
+    metricsUpdatedAt:"2026-10-26T14:32:54.244Z",
+    metrics:[{type:"views",unit:"count",value:6},{type:"reach",unit:"count",value:4}]});
+  const r=next([a,b]);
+  assert.equal(r.reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+  assert.equal(r.evidence.length,2);
+  assert.deepEqual(r.evidence.map(x=>x.postId),["post-new","post-old"]);
+  assert.equal(r.nextAction,"COLLECT_COMPARABLE_SAME_CHANNEL_MEASUREMENT");
+  assert.equal(r.causalLiftProven,false);
+});
+test("review-required observations cannot become learning evidence",()=>{
+  const held=make({metadata:{isAiGenerated:false}});
+  const r=next([held]);
+  assert.equal(r.reason,"AI_DISCLOSURE_REVIEW");
+  assert.equal(r.nextAction,"REVIEW_AI_DISCLOSURE");
+  assert.deepEqual(r.evidence,[]);
+});
+
+
+// CONTENT_SOURCE_TO_SENT_REFERENCE_GATE_20261027_0250: synthetic PNG QA digest fixture + actual provider-shaped JPEG metadata.
+const sourceUrls=["https://drive.google.com/uc?id=source1&export=download","https://drive.google.com/uc?id=source2&export=download"];
+const sourceQa={status:"SOURCE_BYTES_STRUCTURALLY_VERIFIED",distinctFileHashes:true,distinctPixelHashes:true,
+  images:[
+    {format:"PNG",width:1080,height:1350,bytes:1751408,sha256:"a".repeat(64),pixelSha256:"b".repeat(64),structuralIntegrity:"CRC_AND_DEFLATE_VALID"},
+    {format:"PNG",width:1080,height:1350,bytes:1790827,sha256:"c".repeat(64),pixelSha256:"d".repeat(64),structuralIntegrity:"CRC_AND_DEFLATE_VALID"}
+  ]};
+const providerAssets=sourceUrls.map(source=>({type:"image",source,mimeType:"image/jpeg"}));
+test("actual Buffer-shaped JPEG metadata does not attest original PNG bytes",()=>{
+  const o=inspect({...post,assets:providerAssets},scope,sourceQa,sourceUrls);
+  assert.equal(o.status,"REVIEW_REQUIRED");
+  assert.ok(o.flags.includes("PROVIDER_MEDIA_FORMAT_NOT_SOURCE_PNG"));
+  assert.equal(o.providerByteIdentityVerified,false);
+  assert.equal(o.approvalVerified,false);
+  assert.equal(o.executionAllowed,false);
+  assert.deepEqual(o.sourceFileSha256,["a".repeat(64),"c".repeat(64)]);
+});
+test("matching PNG references are still untrusted, not approved or provider byte-attested",()=>{
+  const o=inspect({...post,assets:providerAssets.map(a=>({...a,mimeType:"image/png"}))},scope,sourceQa,sourceUrls);
+  assert.equal(o.status,"SOURCE_REFERENCES_MATCHED_UNATTESTED");
+  assert.equal(o.sourceBytesRevalidatedByModule,false);
+  assert.equal(o.providerAttestedByModule,false);
+  assert.equal(o.providerByteIdentityVerified,false);
+});
+test("swapped media references, missing assets and malformed QA fail closed",()=>{
+  const swapped=inspect({...post,assets:[providerAssets[1],providerAssets[0]]},scope,sourceQa,sourceUrls);
+  assert.equal(swapped.status,"REVIEW_REQUIRED");
+  assert.ok(swapped.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"));
+  const missing=inspect({...post,assets:[providerAssets[0]]},scope,sourceQa,sourceUrls);
+  assert.ok(missing.flags.includes("SOURCE_ASSET_COUNT_MISMATCH"));
+  assert.throws(()=>inspect(post,scope,{...sourceQa,images:[{...sourceQa.images[0],sha256:"not-a-hash"},sourceQa.images[1]]},sourceUrls),/INVALID_SOURCE_QA_EVIDENCE/);
+  assert.throws(()=>inspect(post,scope,sourceQa,["http://invalid.test",sourceUrls[1]]),/INVALID_SOURCE_REFERENCE_MANIFEST/);
+});
+test("scheduled media cannot become SENT through matching source references",()=>{
+  const o=inspect({...post,status:"scheduled",assets:providerAssets},scope,sourceQa,sourceUrls);
+  assert.equal(o.status,"NOT_SENT");
+});
+
+
+// CONTENT_BCI_HANDOFF_V1_20261027: product adapter contract only, no provider or BCI authentication.
+test("BCI handoff keeps provider projection unverified, null distinct from zero",()=>{
+  const e=handoff(make(),scope,"2026-10-26T17:00:00.000Z");
+  assert.equal(e.product,"content");
+  assert.equal(e.provenance.provider,"buffer");
+  assert.equal(e.provenance.completeness,"unverified");
+  assert.equal(e.metrics.reactions,0);
+  assert.equal(e.metrics.clicks,null);
+  assert.ok(e.unknowns.includes("SHARED_BCI_AUDIT_NOT_WRITTEN"));
+  assert.ok(e.evidenceId.startsWith("content-buffer-"));
+});
+test("BCI handoff deduplicates repeated provider snapshots while tracking real revisions",()=>{
+  const time="2026-10-26T17:00:00.000Z",o=make();
+  const a=handoff(o,scope,time);
+  const replay=handoff(o,scope,"2026-10-26T17:01:00.000Z");
+  assert.equal(handoff(o,scope,time).evidenceId,a.evidenceId);
+  assert.equal(replay.evidenceId,a.evidenceId,"collection-time-only retry must not create duplicate BCI evidence");
+  assert.notEqual(replay.provenance.collectedAt,a.provenance.collectedAt,"collection time remains auditable");
+  assert.notEqual(handoff({...o,nativeUrl:"https://www.instagram.com/p/DEF/"},scope,time).evidenceId,a.evidenceId,"native permalink is part of source identity");
+  const revisedTime="2026-10-25T15:35:40.061Z";
+  assert.notEqual(handoff({...o,metricsUpdatedAt:revisedTime,measurementAgeSeconds:Math.floor((Date.parse(revisedTime)-Date.parse(o.sentAt))/1000)},scope,time).evidenceId,a.evidenceId,"provider metric timestamp revision is distinct");
+  assert.notEqual(handoff(make({metrics:[{type:"views",unit:"count",value:8},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:0}]}),scope,time).evidenceId,a.evidenceId);
+  assert.notEqual(handoff(make({metrics:[{type:"views",unit:"count",value:7},{type:"reach",unit:"count",value:4},{type:"reactions",unit:"count",value:1}]}),scope,time).evidenceId,a.evidenceId);
+});
+// CONTENT_BCI_UTC_EVIDENCE_IDEMPOTENCY_20261028: same provider instant, same evidence ID.
+test("BCI handoff canonicalizes equivalent UTC SENT and metric timestamps",()=>{
+  const time="2026-10-26T17:00:00.000Z";
+  const a=make({sentAt:"2026-10-22T05:00:56Z",metricsUpdatedAt:"2026-10-25T15:34:40Z"});
+  const b=make({sentAt:"2026-10-22T05:00:56.000Z",metricsUpdatedAt:"2026-10-25T15:34:40.000Z"});
+  const first=handoff(a,scope,time),replay=handoff(b,scope,time);
+  assert.equal(first.evidenceId,replay.evidenceId,"equivalent UTC serialization is one provider snapshot");
+  assert.notEqual(first.provenance.observedAt,replay.provenance.observedAt,"retain raw provider timestamps for audit");
+  assert.equal(first.metrics.views,7);
+  const changed=make({sentAt:"2026-10-22T05:00:56.000Z",metricsUpdatedAt:"2026-10-25T15:34:40.000Z",metrics:[{type:"views",unit:"count",value:8}]});
+  assert.notEqual(handoff(changed,scope,time).evidenceId,first.evidenceId,"changed metric values must create a distinct evidence revision");
+  const later=make({sentAt:"2026-10-22T05:00:56.000Z",metricsUpdatedAt:"2026-10-25T15:34:41.000Z"});
+  assert.notEqual(handoff(later,scope,time).evidenceId,first.evidenceId,"new provider timestamp is a new revision");
+  const unmeasuredA=handoff(make({sentAt:"2026-10-22T05:00:56Z",metricsUpdatedAt:null,metrics:null}),scope,time);
+  const unmeasuredB=handoff(make({sentAt:"2026-10-22T05:00:56.000Z",metricsUpdatedAt:null,metrics:null}),scope,time);
+  assert.equal(unmeasuredA.evidenceId,unmeasuredB.evidenceId,"unmeasured SENT replay is idempotent");
+  assert.equal(unmeasuredA.metrics.views,null,"unknown is not zero");
+});
+test("BCI handoff fails closed on cross-tenant, cross-product, spoofed attestation and review",()=>{
+  const time="2026-10-26T17:00:00.000Z",o=make();
+  assert.throws(()=>handoff(o,{...scope,tenantId:"other"},time),/SCOPE/);
+  assert.throws(()=>handoff(o,{...scope,product:"demand"},time),/SCOPE/);
+  assert.throws(()=>handoff({...o,providerAttestedByModule:true},scope,time),/SCOPE/);
+  assert.throws(()=>handoff(make({status:"scheduled"}),scope,time),/SCOPE/);
+  assert.throws(()=>handoff(make({metadata:{isAiGenerated:false}}),scope,time),/SCOPE|METRICS/);
+});
+test("BCI handoff rejects forged freshness, native URL, metric values and age",()=>{
+  const time="2026-10-26T17:00:00.000Z",o=make();
+  assert.throws(()=>handoff(o,scope,"2026-10-21T00:00:00.000Z"),/PROVENANCE/);
+  assert.throws(()=>handoff({...o,nativeUrl:"https://fake.instagram.com/p/ABC/"},scope,time),/PROVENANCE/);
+  assert.throws(()=>handoff({...o,nativeUrl:null},scope,time),/PROVENANCE/);
+  assert.throws(()=>handoff({...o,metrics:{...o.metrics,views:-1}},scope,time),/METRICS/);
+  assert.throws(()=>handoff({...o,measurementAgeSeconds:0},scope,time),/STATUS/);
+});
+test("BCI handoff preserves SENT but unmeasured as unknown, not a zero",()=>{
+  const o=make({metricsUpdatedAt:null,metrics:null});
+  const e=handoff(o,scope,"2026-10-26T17:00:00.000Z");
+  assert.equal(e.provenance.windowEnd,null);
+  assert.equal(e.metrics.views,null);
+  assert.ok(e.unknowns.includes("MEASUREMENT_UNAVAILABLE"));
+});
+
+
+// CONTENT_APPROVAL_BINDING_CANDIDATE_20261027_0748: synthetic, non-authorizing contract tests.
+const approvalScope={product:"content",tenantId:"tenant-A",instanceId:"pilot-A",
+  contentId:"content-A",contentVersionId:"version-1",channelId:"channel-A",
+  asOf:"2026-10-27T00:00:00.000Z"};
+const approvalManifest={contentSha256:"a".repeat(64),assetSha256:["b".repeat(64),"c".repeat(64)]};
+const approvalEvent={schemaVersion:1,authorityType:"content_specific",
+  eventId:"approval-event-001",decision:"approved",reviewerPrincipalId:"reviewer-001",
+  tenantId:"tenant-A",instanceId:"pilot-A",contentId:"content-A",
+  contentVersionId:"version-1",channelId:"channel-A",
+  contentSha256:"a".repeat(64),assetSha256:["b".repeat(64),"c".repeat(64)],
+  approvedAt:"2026-10-26T10:00:00.000Z",recordedAt:"2026-10-26T10:01:00.000Z",
+  auditRef:"audit-001"};
+test("conditional owner policy and missing event are never content approval",()=>{
+  const p=classifyContentApprovalProvenance({authorityType:"owner_conditional_policy",
+    policyRef:"22Oct2026"},approvalScope,approvalManifest);
+  assert.equal(p.status,"POLICY_ONLY");
+  assert.equal(p.approvalVerified,false);
+  assert.equal(p.executionAllowed,false);
+  assert.equal(classifyContentApprovalProvenance(null,approvalScope,approvalManifest).status,"NO_APPROVAL_EVENT");
+});
+test("content-bound candidate is deterministic but never authenticated or executable",()=>{
+  const a=classifyContentApprovalProvenance(approvalEvent,approvalScope,approvalManifest);
+  const b=classifyContentApprovalProvenance({...approvalEvent},approvalScope,approvalManifest);
+  assert.equal(a.status,"CONTENT_BOUND_CANDIDATE_UNATTESTED");
+  assert.equal(a.candidateId,b.candidateId);
+  assert.equal(a.approvalVerified,false);
+  assert.equal(a.executionAllowed,false);
+  assert.equal(a.providerAttested,false);
+});
+test("cross-tenant/version/channel and swapped or changed media fail closed",()=>{
+  for(const k of ["tenantId","instanceId","contentId","contentVersionId","channelId"])
+    assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,[k]:"other"},
+      approvalScope,approvalManifest),/SCOPE_MISMATCH/);
+  for(const assetSha256 of [["c".repeat(64),"b".repeat(64)],["b".repeat(64),"d".repeat(64)]])
+    assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,assetSha256},
+      approvalScope,approvalManifest),/INVALID_CONTENT_APPROVAL_RECORD/);
+  assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,contentSha256:"f".repeat(64)},
+    approvalScope,approvalManifest),/INVALID_CONTENT_APPROVAL_RECORD/);
+});
+test("forged trust claims, invalid time and duplicate manifest are rejected",()=>{
+  for(const extra of [{approvalVerified:true},{authenticated:true},{accessToken:"secret"}])
+    assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,...extra},
+      approvalScope,approvalManifest),/INVALID_CONTENT_APPROVAL_RECORD/);
+  assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,approvedAt:"2026-10-28T00:00:00.000Z"},
+    approvalScope,approvalManifest),/INVALID_CONTENT_APPROVAL_TIMELINE/);
+  assert.throws(()=>classifyContentApprovalProvenance(approvalEvent,approvalScope,
+    {...approvalManifest,assetSha256:["b".repeat(64),"b".repeat(64)]}),/INVALID_CONTENT_APPROVAL_BINDING_SCOPE/);
+});
+
+
+// CONTENT_APPROVAL_EQUIVALENT_UTC_EVENT_IDEMPOTENCY_20261028: synthetic-only.
+test("equivalent UTC approval timestamps produce the same nonauthorizing candidate ID",()=>{
+  const base=classifyContentApprovalProvenance(approvalEvent,approvalScope,approvalManifest);
+  const same=classifyContentApprovalProvenance({...approvalEvent,
+    approvedAt:"2026-10-26T10:00:00Z",recordedAt:"2026-10-26T10:01:00Z"},
+    approvalScope,approvalManifest);
+  assert.equal(same.candidateId,base.candidateId);
+  assert.equal(same.approvalVerified,false);
+  assert.equal(same.executionAllowed,false);
+  assert.equal(same.providerAttested,false);
+  const changed=classifyContentApprovalProvenance({...approvalEvent,
+    recordedAt:"2026-10-26T10:01:01Z"},approvalScope,approvalManifest);
+  assert.notEqual(changed.candidateId,base.candidateId);
+  assert.throws(()=>classifyContentApprovalProvenance({...approvalEvent,
+    approvedAt:"2026-10-26T10:02:00Z"},approvalScope,approvalManifest),
+    /INVALID_CONTENT_APPROVAL_TIMELINE/);
+});
+
+// CONTENT_BUFFER_LIST_DETAIL_HYDRATION_GATE_20261027_1200: provider-shape regression, not authenticated provider evidence.
+const hydrate=(await import("../lib/content/buffer-observation.mjs")).reconcileBufferListAndDetail;
+const detailedPost={...post,dueAt:"2026-10-22T05:00:00.000Z",
+  assets:post.assets.map((a,i)=>({...a,id:"asset-"+i,mimeType:"image/jpeg"}))};
+const listSummary={...detailedPost};
+delete listSummary.externalLink;
+delete listSummary.metricsUpdatedAt;
+delete listSummary.metrics;
+delete listSummary.metadata;
+test("Buffer list without permalink/metrics needs matching get_post detail",()=>{
+  const r=hydrate(listSummary,detailedPost,scope);
+  assert.equal(r.status,"MEASURED");
+  assert.equal(r.observation.nativeUrl,detailedPost.externalLink);
+  assert.equal(r.observation.metrics.views,7);
+  assert.equal(r.listOnlySufficient,false);
+  assert.equal(r.providerAttestedByModule,false);
+  assert.equal(r.approvalVerified,false);
+  assert.equal(r.executionAllowed,false);
+});
+test("detail missing native permalink or stale pre-SENT metrics cannot be promoted",()=>{
+  assert.equal(hydrate(listSummary,{...detailedPost,externalLink:null},scope).status,"REVIEW_REQUIRED");
+  const stale={...detailedPost,metricsUpdatedAt:"2026-10-21T00:00:00.000Z"};
+  assert.throws(()=>hydrate({...listSummary,metricsUpdatedAt:detailedPost.metricsUpdatedAt},stale,scope),
+    /BUFFER_DETAIL_METRICS_STALE/);
+});
+test("list/detail identity and content drift fail closed",()=>{
+  for(const field of ["id","channelId","channelService","status","sentAt","dueAt"])
+    assert.throws(()=>hydrate(listSummary,{...detailedPost,[field]:"changed"},scope),/IDENTITY_DRIFT/);
+  assert.throws(()=>hydrate(listSummary,{...detailedPost,text:"changed"},scope),/CONTENT_DRIFT/);
+  assert.throws(()=>hydrate({...listSummary,externalLink:"https://www.instagram.com/p/DEF/"},detailedPost,scope),/PERMALINK_DRIFT/);
+});
+test("list/detail ordered asset IDs, URLs and media types must agree",()=>{
+  assert.throws(()=>hydrate(listSummary,{...detailedPost,assets:[...detailedPost.assets].reverse()},scope),/ASSET_DRIFT/);
+  assert.throws(()=>hydrate(listSummary,{...detailedPost,assets:[{...detailedPost.assets[0],source:"https://other.example/media"},detailedPost.assets[1]]},scope),/ASSET_DRIFT/);
+  assert.throws(()=>hydrate(listSummary,{...detailedPost,assets:[{...detailedPost.assets[0],mimeType:"image/png"},detailedPost.assets[1]]},scope),/ASSET_DRIFT/);
+});
+test("stale list metric values and AI flags never override fresh detailed post",()=>{
+  const summary={...listSummary,metricsUpdatedAt:"2026-10-21T00:00:00.000Z",
+    metrics:[{type:"views",unit:"count",value:0}],metadata:{isAiGenerated:false}};
+  const r=hydrate(summary,detailedPost,scope);
+  assert.equal(r.status,"MEASURED");
+  assert.equal(r.observation.metrics.views,7);
+  assert.deepEqual(r.observation.flags,[]);
+  const disclosure=hydrate(listSummary,{...detailedPost,metadata:{isAiGenerated:false}},scope);
+  assert.equal(disclosure.status,"REVIEW_REQUIRED");
+  assert.ok(disclosure.observation.flags.includes("AI_DISCLOSURE_MISMATCH"));
+});
+test("matching list/detail scheduled status remains NOT_SENT",()=>{
+  const summary={...listSummary,status:"scheduled"},detail={...detailedPost,status:"scheduled"};
+  const r=hydrate(summary,detail,scope);
+  assert.equal(r.status,"NOT_SENT");
+  assert.equal(r.executionAllowed,false);
+});
+
+
+// CONTENT_MEASURED_NEXT_STEP_PROVENANCE_GUARD_20261027_1350
+// Synthetic negative regressions: a caller cannot label malformed or flagged
+// evidence MEASURED and obtain a comparable-post recommendation.
+test("next-step refuses forged MEASURED status, flags, native link, metrics and timeline",()=>{
+  const good=make(),second=make({id:"post456"});
+  const bad=[
+    {flags:["AI_DISCLOSURE_MISMATCH"]},
+    {providerAttestedByModule:true},
+    {nativeUrl:"https://www.instagram.com/accounts/login/"},
+    {measurementAgeSeconds:0},
+    {metricsUpdatedAt:"2026-10-21T00:00:00.000Z"},
+    {metrics:{...second.metrics,views:-1}},
+    {metrics:Object.fromEntries(Object.keys(second.metrics).map(k=>[k,null]))}
+  ];
+  for(const patch of bad)
+    assert.throws(()=>next([good,{...second,...patch}]),
+      /INVALID_MEASURED_NEXT_STEP_EVIDENCE/,JSON.stringify(patch));
+});
+test("valid measured snapshots still yield only nonexecuting advisory comparison",()=>{
+  const a=make(),b=make({id:"post456"});
+  const r=next([a,b]);
+  assert.equal(r.reason,"SAME_CHANNEL_CANDIDATES");
+  assert.equal(r.evidenceStatus,"UNATTESTED_PROVIDER_PROJECTION");
+  assert.equal(r.executionAllowed,false);
+  assert.equal(r.causalLiftProven,false);
+  assert.equal(r.evidence.length,2);
+});
+test("next-step requires concrete tenant, instance and post identities",()=>{
+  assert.throws(()=>next([{...make(),tenantId:undefined}]),/INVALID_NEXT_STEP_SCOPE/);
+  assert.throws(()=>next([{...make(),postId:undefined}]),/INVALID_NEXT_STEP_POST_ID/);
+});
+
+// CONTENT_SINGLE_IMAGE_SOURCE_QA_20261027_1453: one-image FB references remain untrusted until independent provider byte attestation.
+test("one-image Facebook source reference is inspected, never auto-approved",()=>{
+  const fbScope={...scope,channelService:"facebook",channelId:"fb123",expectedAssetCount:1};
+  const url="https://drive.google.com/uc?id=fb-single&export=download";
+  const fbPost={...post,channelService:"facebook",channelId:"fb123",
+    externalLink:"https://www.facebook.com/967812963066089/posts/983614971485888",
+    assets:[{type:"image",source:url,mimeType:"image/png"}]};
+  const qa={...sourceQa,images:[sourceQa.images[0]]};
+  const matched=inspect(fbPost,fbScope,qa,[url]);
+  assert.equal(matched.status,"SOURCE_REFERENCES_MATCHED_UNATTESTED");
+  assert.deepEqual(matched.flags,[]);
+  assert.equal(matched.sourceFileSha256.length,1);
+  assert.equal(matched.providerByteIdentityVerified,false);
+  assert.equal(matched.approvalVerified,false);
+  assert.equal(matched.executionAllowed,false);
+  const jpeg=inspect({...fbPost,assets:[{...fbPost.assets[0],mimeType:"image/jpeg"}]},fbScope,qa,[url]);
+  assert.equal(jpeg.status,"REVIEW_REQUIRED");
+  assert.ok(jpeg.flags.includes("PROVIDER_MEDIA_FORMAT_NOT_SOURCE_PNG"));
+  assert.equal(jpeg.providerByteIdentityVerified,false);
+  assert.throws(()=>inspect(fbPost,fbScope,{...qa,images:[]},[url]),/INVALID_SOURCE_QA_EVIDENCE/);
+});
+
+
+// CONTENT_JPEG_SOURCE_TO_SENT_REFERENCE_20261027_1657
+// Synthetic structurally parseable JPEG is NOT decoded or provider-authenticated.
+// A real FB JPEG was independently byte-decoded in the prior 15:50 checkpoint.
+test("JPEG source reference parity is inspected but remains REVIEW_REQUIRED without decoded pixels",async()=>{
+  const {verifyDistinctJpegSources}=await import("../lib/content/jpeg-source-qa.mjs");
+  const segment=(marker,payload)=>{
+    const b=Buffer.alloc(payload.length+4);b[0]=255;b[1]=marker;
+    b.writeUInt16BE(payload.length+2,2);payload.copy(b,4);return b;
+  };
+  const frame=Buffer.alloc(15);frame[0]=8;frame.writeUInt16BE(2,1);frame.writeUInt16BE(2,3);frame[5]=3;
+  const scan=Buffer.from([3,1,0,2,0,3,0,0,63,0]);
+  const bytes=Buffer.concat([Buffer.from([255,216]),segment(0xdb,Buffer.from([0,1])),
+    segment(0xc0,frame),segment(0xc4,Buffer.from([0,1])),segment(0xda,scan),
+    Buffer.alloc(80,3),Buffer.from([255,217])]);
+  const qa=verifyDistinctJpegSources([bytes],{expectedWidth:2,expectedHeight:2});
+  const url="https://drive.google.com/uc?export=download&id=1yVYCap3_SWhPkwuQorqppDpZeQl-LjGy";
+  const fbScope={...scope,channelService:"facebook",channelId:"fb123",expectedAssetCount:1};
+  const fbPost={...post,channelService:"facebook",channelId:"fb123",
+    externalLink:"https://www.facebook.com/967812963066089/posts/983614971485888",
+    assets:[{type:"image",source:url,mimeType:"image/jpeg"}]};
+  const x=inspect(fbPost,fbScope,qa,[url]);
+  assert.equal(x.status,"REVIEW_REQUIRED");
+  assert.deepEqual(x.flags,["JPEG_PIXEL_DECODE_NOT_ATTESTED"]);
+  assert.deepEqual(x.sourceFileSha256,[qa.images[0].sha256]);
+  assert.deepEqual(x.sourcePixelSha256,[null]);
+  assert.equal(x.sourceBytesRevalidatedByModule,false);
+  assert.equal(x.providerAttestedByModule,false);
+  assert.equal(x.providerByteIdentityVerified,false);
+  assert.equal(x.approvalVerified,false);
+  assert.equal(x.executionAllowed,false);
+  const mismatch=inspect({...fbPost,assets:[{...fbPost.assets[0],source:"https://other.example/a.jpg"}]},
+    fbScope,qa,[url]);
+  assert.ok(mismatch.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"));
+  const wrongMime=inspect({...fbPost,assets:[{...fbPost.assets[0],mimeType:"image/png"}]},
+    fbScope,qa,[url]);
+  assert.ok(wrongMime.flags.includes("PROVIDER_MEDIA_FORMAT_NOT_SOURCE_JPEG"));
+  assert.throws(()=>inspect(fbPost,fbScope,{...qa,images:[{...qa.images[0],
+    decodedPixelIntegrityVerified:true}]},[url]),/INVALID_SOURCE_QA_EVIDENCE/);
+  assert.throws(()=>inspect(fbPost,fbScope,{...qa,images:[qa.images[0],qa.images[0]]},
+    [url,url]),/INVALID_SOURCE_QA_EVIDENCE/);
+});
+
+
+// CONTENT_BUFFER_DETAIL_METRIC_MONOTONICITY_20261027_V1
+// Synthetic list/detail provider-shaped revisions: no provider authentication.
+test("newer list metric revision cannot be silently replaced by stale detail",()=>{
+  const later="2026-10-26T15:34:46.678Z";
+  const earlier="2026-10-26T14:32:54.244Z";
+  const list={...listSummary,metricsUpdatedAt:later};
+  const stale={...detailedPost,metricsUpdatedAt:earlier};
+  assert.throws(()=>hydrate(list,stale,scope),/BUFFER_DETAIL_METRICS_STALE/);
+  assert.throws(()=>hydrate(list,{...detailedPost,metricsUpdatedAt:null},scope),
+    /BUFFER_DETAIL_METRICS_STALE/);
+  assert.throws(()=>hydrate({...list,metricsUpdatedAt:"not-a-date"},detailedPost,scope),
+    /BUFFER_LIST_METRIC_TIMESTAMP_INVALID/);
+  const current={...detailedPost,metricsUpdatedAt:later};
+  const accepted=hydrate(list,current,scope);
+  assert.equal(accepted.status,"MEASURED");
+  assert.equal(accepted.providerAttestedByModule,false);
+  assert.equal(accepted.approvalVerified,false);
+  assert.equal(accepted.executionAllowed,false);
+  const olderList={...listSummary,metricsUpdatedAt:earlier};
+  assert.equal(hydrate(olderList,current,scope).status,"MEASURED");
+});
+
+
+// CONTENT_BUFFER_SAME_REVISION_METRIC_CONSISTENCY_20261027_V1
+// Synthetic list/detail disagreement is not a trustworthy measured observation.
+test("same-revision list/detail metric disagreement fails closed without inventing zero",()=>{
+  const current={...listSummary,metricsUpdatedAt:detailedPost.metricsUpdatedAt,
+    metrics:[{type:"views",unit:"count",value:7}]};
+  assert.equal(hydrate(current,detailedPost,scope).status,"MEASURED",
+    "a partial matching list revision is acceptable");
+  assert.throws(()=>hydrate({...current,metrics:[{type:"views",unit:"count",value:0}]},
+    detailedPost,scope),/BUFFER_LIST_DETAIL_METRIC_CONFLICT/,
+    "zero and seven are contradictory at the same provider revision");
+  assert.throws(()=>hydrate({...current,metrics:[{type:"shares",unit:"count",value:0}]},
+    detailedPost,scope),/BUFFER_LIST_DETAIL_METRIC_CONFLICT/,
+    "a missing detail metric is unknown, not observed zero");
+  assert.throws(()=>hydrate({...current,metrics:[
+    {type:"views",unit:"count",value:7},{type:"views",unit:"count",value:7}]},
+    detailedPost,scope),/BUFFER_LIST_METRIC_CONFLICT/);
+  assert.throws(()=>hydrate({...current,metrics:[{type:"views",unit:"count",value:-1}]},
+    detailedPost,scope),/BUFFER_LIST_METRIC_CONFLICT/);
+  assert.throws(()=>hydrate(current,{...detailedPost,metrics:[
+    {type:"views",unit:"count",value:7},{type:"views",unit:"count",value:7}]},scope),
+    /BUFFER_DETAIL_METRIC_CONFLICT/);
+  const older={...current,metricsUpdatedAt:"2026-10-21T00:00:00.000Z",
+    metrics:[{type:"views",unit:"count",value:0}]};
+  assert.equal(hydrate(older,detailedPost,scope).observation.metrics.views,7,
+    "an older list snapshot cannot override newer detail metrics");
+  assert.equal(hydrate({...current,metrics:undefined},detailedPost,scope).status,"MEASURED",
+    "an omitted list metrics array is unknown, not conflicting");
+});
+
+
+// CONTENT_BUFFER_EQUIVALENT_UTC_METRIC_REVISION_20261027_V1
+// Different valid ISO-UTC spellings can represent the same provider revision.
+// Do not allow conflicting metrics to bypass the same-instant consistency gate.
+test("equivalent UTC metric timestamps cannot bypass list/detail conflict guard",()=>{
+  const atWholeSecond="2026-10-25T15:34:40Z";
+  const atMilliseconds="2026-10-25T15:34:40.000Z";
+  const detail={...detailedPost,metricsUpdatedAt:atMilliseconds};
+  const summary={...listSummary,metricsUpdatedAt:atWholeSecond,
+    metrics:[{type:"views",unit:"count",value:0}]};
+  assert.throws(()=>hydrate(summary,detail,scope),
+    /BUFFER_LIST_DETAIL_METRIC_CONFLICT/,
+    "same UTC instant with different textual precision must fail closed");
+  const consistent={...summary,metrics:[{type:"views",unit:"count",value:7}]};
+  const observed=hydrate(consistent,detail,scope);
+  assert.equal(observed.status,"MEASURED");
+  assert.equal(observed.observation.metrics.views,7);
+  assert.equal(observed.providerAttestedByModule,false);
+  assert.equal(observed.approvalVerified,false);
+  assert.equal(observed.executionAllowed,false);
+});
+
+
+// CONTENT_DRIVE_SOURCE_REFERENCE_EQUIVALENCE_20261028
+// Actual Buffer sources use both ?id=...&export=download and the reverse order.
+// The same Drive file must not count as two independent carousel images.
+test("Drive download query-order variants are duplicate media references",()=>{
+  const id="1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM";
+  const a="https://drive.google.com/uc?id="+id+"&export=download";
+  const b="https://drive.google.com/uc?export=download&id="+id;
+  const o=make({assets:[{type:"image",source:a},{type:"image",source:b}]});
+  assert.equal(o.status,"REVIEW_REQUIRED");
+  assert.ok(o.flags.includes("DUPLICATE_ASSET_SOURCE"));
+  assert.throws(()=>handoff(o,scope,"2026-10-26T17:00:00.000Z"),
+    /INVALID_CONTENT_EVIDENCE_SCOPE/);
+});
+test("Drive source-to-SENT reference parity ignores only approved query ordering",()=>{
+  const a="https://drive.google.com/uc?id=1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM&export=download";
+  const b="https://drive.google.com/uc?export=download&id=1WZY8YTFz-bOStIixu6uuTgLeCNQ-nJ4d";
+  const swapped="https://drive.google.com/uc?export=download&id=1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM";
+  const assets=[{type:"image",source:swapped,mimeType:"image/png"},
+    {type:"image",source:b,mimeType:"image/png"}];
+  const matched=inspect({...post,assets},scope,sourceQa,[a,b]);
+  assert.equal(matched.status,"SOURCE_REFERENCES_MATCHED_UNATTESTED");
+  assert.deepEqual(matched.flags,[]);
+  assert.equal(matched.providerByteIdentityVerified,false);
+  assert.equal(matched.approvalVerified,false);
+  assert.equal(matched.executionAllowed,false);
+  assert.throws(()=>inspect({...post,assets},scope,sourceQa,[a,swapped]),
+    /INVALID_SOURCE_REFERENCE_MANIFEST/,
+    "query-order aliases of one file are not independent manifest assets");
+  const extra={...assets[0],source:swapped+"&unreviewed=1"};
+  const held=inspect({...post,assets:[extra,assets[1]]},scope,sourceQa,[a,b]);
+  assert.equal(held.status,"REVIEW_REQUIRED");
+  assert.ok(held.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"),
+    "unreviewed query parameters must not be silently accepted");
+});
+
+// CONTENT_DRIVE_VIEW_DOWNLOAD_ALIAS_GATE_20261028
+// A Drive file view/preview/open link and its download link are one source,
+// not independent carousel slides. Unreviewed query parameters are not ignored.
+test("strict Drive view, preview, open and download aliases cannot fake independent slides",()=>{
+  const id="1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM";
+  const download="https://drive.google.com/uc?export=download&id="+id;
+  const variants=[
+    "https://drive.google.com/file/d/"+id+"/view",
+    "https://drive.google.com/file/d/"+id+"/preview/",
+    "https://drive.google.com/open?id="+id
+  ];
+  for(const variant of variants){
+    const observation=make({assets:[
+      {type:"image",source:download},{type:"image",source:variant}
+    ]});
+    assert.equal(observation.status,"REVIEW_REQUIRED");
+    assert.ok(observation.flags.includes("DUPLICATE_ASSET_SOURCE"));
+    assert.throws(()=>inspect({...post,assets:[
+      {type:"image",source:download,mimeType:"image/png"},
+      {type:"image",source:variant,mimeType:"image/png"}
+    ]},scope,sourceQa,[download,variant]),/INVALID_SOURCE_REFERENCE_MANIFEST/);
+  }
+});
+test("Drive view/download reference parity remains unverified and query additions require review",()=>{
+  const a="https://drive.google.com/uc?id=1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM&export=download";
+  const b="https://drive.google.com/uc?id=1WZY8YTFz-bOStIixu6uuTgLeCNQ-nJ4d&export=download";
+  const view="https://drive.google.com/file/d/1ipqCnUALK-QAqO2ytfiv3jbEUidx6IsM/view";
+  const assets=[{type:"image",source:view,mimeType:"image/png"},
+    {type:"image",source:b,mimeType:"image/png"}];
+  const matched=inspect({...post,assets},scope,sourceQa,[a,b]);
+  assert.equal(matched.status,"SOURCE_REFERENCES_MATCHED_UNATTESTED");
+  assert.equal(matched.providerByteIdentityVerified,false);
+  assert.equal(matched.approvalVerified,false);
+  assert.equal(matched.executionAllowed,false);
+  const unreviewed={...assets[0],source:view+"?usp=sharing"};
+  const held=inspect({...post,assets:[unreviewed,assets[1]]},scope,sourceQa,[a,b]);
+  assert.equal(held.status,"REVIEW_REQUIRED");
+  assert.ok(held.flags.includes("SOURCE_PROVIDER_REFERENCE_MISMATCH"));
+});
+
+
+// CONTENT_COMPARABLE_POST_AGE_AND_COHORT_GUARD_20261029
+// Buffer-observed timestamps/counts with synthetic IDs and source references.
+// Historical SELL data only; never CONTENT-owned publishing or causal learning.
+test("2019 posts refreshed in 2026 cannot be compared as current pilot evidence",()=>{
+  const a=make({id:"old-2019-a",assets:[post.assets[0]],
+    sentAt:"2019-07-30T06:47:13.000Z",metricsUpdatedAt:"2026-10-23T16:29:27.280Z",
+    metrics:[{type:"views",unit:"count",value:0},{type:"reach",unit:"count",value:0}]},
+    {expectedAssetCount:1});
+  const b=make({id:"old-2019-b",assets:[post.assets[1]],
+    sentAt:"2019-07-30T06:51:08.000Z",metricsUpdatedAt:"2026-10-23T16:29:27.152Z",
+    metrics:[{type:"views",unit:"count",value:0},{type:"reach",unit:"count",value:0}]},
+    {expectedAssetCount:1});
+  assert.equal(a.status,"MEASURED");assert.equal(b.status,"MEASURED");
+  assert.ok(a.measurementAgeSeconds>7*86400);
+  const result=next([a,b]);
+  assert.equal(result.reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+  assert.equal(result.executionAllowed,false);assert.equal(result.causalLiftProven,false);
+});
+test("recent same-format same-cohort five-day posts remain review candidates only",()=>{
+  const a=make({id:"recent-a",sentAt:"2026-10-23T18:23:09.484Z",
+    metricsUpdatedAt:"2026-10-28T15:35:15.551Z",
+    metrics:[{type:"views",unit:"count",value:4},{type:"reach",unit:"count",value:2}]});
+  const b=make({id:"recent-b",sentAt:"2026-10-23T18:23:00.546Z",
+    metricsUpdatedAt:"2026-10-28T15:35:15.578Z",
+    metrics:[{type:"views",unit:"count",value:5},{type:"reach",unit:"count",value:2}]});
+  assert.equal(a.status,"MEASURED");assert.equal(b.status,"MEASURED");
+  const result=next([a,b]);
+  assert.equal(result.reason,"SAME_CHANNEL_CANDIDATES");
+  assert.equal(result.evidenceStatus,"UNATTESTED_PROVIDER_PROJECTION");
+  assert.equal(result.executionAllowed,false);assert.equal(result.causalLiftProven,false);
+});
+test("equal two-day measurement ages across different months fail cohort gate",()=>{
+  const a=make({id:"month-a",sentAt:"2026-10-01T01:00:00.000Z",
+    metricsUpdatedAt:"2026-10-03T01:00:00.000Z"});
+  const b=make({id:"month-b",sentAt:"2026-10-23T01:00:00.000Z",
+    metricsUpdatedAt:"2026-10-25T01:00:00.000Z"});
+  assert.equal(a.status,"MEASURED");assert.equal(b.status,"MEASURED");
+  assert.equal(a.measurementAgeSeconds,b.measurementAgeSeconds);
+  assert.equal(next([a,b]).reason,"NONCOMPARABLE_MEASUREMENT_WINDOWS_OR_FORMAT");
+});
+
+
+// CONTENT_BUFFER_PRE_SENT_EMPTY_METRIC_TIMESTAMP_20261029: actual connected
+// Buffer Instagram SENT payload shape, with synthetic trusted CONTENT scope.
+// Historical SELL publisher proof only; no CONTENT publication or attestation.
+test("Buffer SENT with pre-SENT empty metrics timestamp remains SENT_UNMEASURED, not failed or measured",()=>{
+  const channelId="6ac9e9716a5c39ccb66e9544";
+  const o=make({
+    id:"6ae1ee5c8f09daaaac15a6c0",channelId,
+    sentAt:"2026-10-29T01:01:28.747Z",
+    externalLink:"https://www.instagram.com/p/DfDx1X_gK_L/",
+    assets:[
+      {type:"image",id:"18639592846001152",source:"https://drive.google.com/uc?export=download&id=1FaJTzxi8EntveRYQB515gZHuacPZsP6g"},
+      {type:"image",id:"18639592873001152",source:"https://drive.google.com/uc?export=download&id=1D4K_5NlniFAefAnB1-wWKsVKBMOFadrc"}
+    ],
+    metricsUpdatedAt:"2026-10-28T12:45:16.092Z",metrics:null
+  },{channelId,asOf:"2026-10-29T02:00:00.000Z"});
+  assert.equal(o.status,"SENT_UNMEASURED");
+  assert.equal(o.nativeUrl,"https://www.instagram.com/p/DfDx1X_gK_L/");
+  assert.equal(o.metricsUpdatedAt,null);
+  assert.equal(o.measurementAgeSeconds,null);
+  assert.equal(o.metrics.views,null);
+  assert.deepEqual(o.flags,["PRE_SENT_EMPTY_METRICS_TIMESTAMP"]);
+  assert.equal(next([o]).reason,"INSUFFICIENT_MEASURED_POSTS");
+  assert.deepEqual(next([o]).evidence,[]);
+  const h=handoff(o,{...scope,channelId},"2026-10-29T02:00:00.000Z");
+  assert.equal(h.metrics.views,null);
+  assert.ok(h.unknowns.includes("PRE_SENT_METRIC_TIMESTAMP_NOT_A_MEASUREMENT"));
+  assert.ok(h.unknowns.includes("MEASUREMENT_UNAVAILABLE"));
+  assert.equal(h.provenance.completeness,"unverified");
+});
+
+test("pre-SENT nonempty metrics stay REVIEW_REQUIRED; empty array is unmeasured",()=>{
+  const stamp="2026-10-21T00:00:00.000Z";
+  const invalid=make({metricsUpdatedAt:stamp,metrics:[{type:"views",unit:"count",value:12}]});
+  assert.equal(invalid.status,"REVIEW_REQUIRED");
+  assert.ok(invalid.flags.includes("METRICS_PRECEDE_SENT"));
+  assert.equal(invalid.metrics.views,null);
+  const empty=make({metricsUpdatedAt:stamp,metrics:[]});
+  assert.equal(empty.status,"SENT_UNMEASURED");
+  assert.equal(empty.metricsUpdatedAt,null);
+  assert.equal(empty.metrics.views,null);
+  const malformed=make({metricsUpdatedAt:"2026-02-30T00:00:00.000Z",metrics:null});
+  assert.equal(malformed.status,"REVIEW_REQUIRED");
+  assert.ok(malformed.flags.includes("INVALID_METRIC_TIMESTAMP"));
+});
+
+// CONTENT_AI_DISCLOSURE_PROVIDER_READBACK_PARITY_20261030: provider-shaped,
+// non-attested fixtures; do not infer platform disclosure or CONTENT-owned SENT.
+test("Malay AI provenance captions trigger the same disclosure hold after provider readback",()=>{
+  for(const caption of ["Ilustrasi AI", "Imej AI", "Dijana oleh AI", "Dijana AI", "AI-generated", "Generated by AI"]){
+    const o=make({text:caption,metadata:{isAiGenerated:false}});
+    assert.equal(o.status,"REVIEW_REQUIRED",caption);
+    assert.ok(o.flags.includes("AI_DISCLOSURE_MISMATCH"),caption);
+  }
+  const manual=make({text:"Ilustrasi manual, bukan dijana secara digital.",metadata:{isAiGenerated:false}});
+  assert.equal(manual.status,"MEASURED");
+  assert.ok(!manual.flags.includes("AI_DISCLOSURE_MISMATCH"));
+});
