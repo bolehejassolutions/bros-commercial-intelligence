@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { APPROVED_DEMAND_META_PILOT as approved, assessPausedPilotReadback as assess } from "../scripts/demand-paused-pilot-contract.mjs";
 
-const valid = () => ({ ...approved, effectiveStatus: "PAUSED", budgetRemainingMinor: 14000 });
+const valid = () => ({ ...approved, status: "PAUSED", effectiveStatus: "PAUSED", budgetRemainingMinor: 14000 });
 
 test("exact approved paused readback is still unattested and cannot activate", () => {
   assert.deepEqual(assess(valid()), {
