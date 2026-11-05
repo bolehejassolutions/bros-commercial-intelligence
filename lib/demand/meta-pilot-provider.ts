@@ -117,7 +117,7 @@ export function createPilotProvider(token: string, rawTransport: typeof fetch = 
     const rows = list(response);
     if (rows.length === 0) return { source: "META_GRAPH_INSIGHTS", spendMinor: null, window: "lifetime", status: "NO_ROWS" };
     if (rows.length !== 1 || typeof rows[0].spend !== "string" ||
-        !/^(?:0|[1-9]\\d*)(?:\\.\\d{1,2})?$/.test(rows[0].spend))
+        !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(rows[0].spend))
       throw Error("META_INSIGHTS_UNVERIFIED");
     const [whole, fraction = ""] = rows[0].spend.split(".");
     const minor = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
