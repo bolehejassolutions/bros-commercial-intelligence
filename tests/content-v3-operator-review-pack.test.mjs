@@ -7,7 +7,7 @@ const png=()=>{const b=Buffer.alloc(32);Buffer.from([137,80,78,71,13,10,26,10]).
 function fixture(){
  const mediaBytes=[png(),png()];
  const envelope={schemaVersion:3,product:'content',executionAllowed:false,
-  proofEnvelopeId:'proof-1',script:{openingHook:'Explain <why>',shots:['First','Second']},
+  proofEnvelopeId:'proof-1',script:{openingHook:'Explain <why>',shots:['First','Second'],direction:{voiceover:'Read & verify',frames:[{shot:1,note:'Show <source>'}]}},
   copy:{caption:'Safe & clear'},destination:{channelService:'facebook',channelId:'page-1'},
   shotMediaBindings:mediaBytes.map((b,i)=>({shotIndex:i+1,shot:['First','Second'][i],mediaSlot:i+1,sourceSha256:sha(b)})),
   orderedMediaDigests:mediaBytes.map((b,i)=>({slot:i+1,sourceSha256:sha(b)}))};
@@ -18,6 +18,9 @@ test('operator pack renders original ordered bytes, escaped script and no author
  assert.match(html,/NOT APPROVED\. NOT AUTHORIZED TO PUBLISH/);
  assert.match(html,/Explain &lt;why&gt;/);
  assert.doesNotMatch(html,/Explain <why>/);
+ assert.match(html,/Read &amp; verify/);
+ assert.match(html,/Show &lt;source&gt;/);
+ assert.doesNotMatch(html,/\[object Object\]/);
  assert.equal((html.match(/data:image\/png;base64,/g)||[]).length,2);
  assert.match(html,new RegExp(sha(f.mediaBytes[0])));
  assert.match(html,/Content-Security-Policy/);
