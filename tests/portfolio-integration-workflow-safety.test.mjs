@@ -21,6 +21,14 @@ test('five-head integration stays disposable and read-only', () => {
   assert.doesNotMatch(workflow, /\b(?:contents: write|actions: write|id-token: write)\b/);
 });
 
+test('coordinator pushes cannot cancel running attested integration', () => {
+  assert.match(workflow, /concurrency:\s*\n\s*group:\s*portfolio-merge-smoke-\$\{\{ github\.ref \}\}/);
+  assert.match(workflow, /cancel-in-progress:\s*false/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /push:\s*\n\s*branches:\s*\n\s*- feat\/portfolio-hitpay-provider-smoke-20261026/);
+  assert.doesNotMatch(workflow, /cancel-in-progress:\s*true/);
+});
+
 test('five-head integration preserves exact-source and fail-closed test gates', () => {
   // Prevent a passing workflow after the integration step is silently skipped.
   assert.match(workflow, /set -euo pipefail/);
