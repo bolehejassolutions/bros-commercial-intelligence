@@ -58,11 +58,14 @@ export function createPilotService(deps: PilotServiceDependencies) {
         campaignStatus: string | null = null, adsets: number | null = null;
       let observedAds: { id: string; adsetId: string; status: string; effectiveStatus: string }[] = [];
       let externallyManaged = false;
+      let spend: { source: "META_GRAPH_INSIGHTS"; spendMinor: number | null; window: string; status: "REPORTED" | "NO_ROWS" } | null = null;
       const token = deps.readToken();
       if (token) {
         try {
           const state = await provider(token).read();
           campaignStatus = String(state.campaign.status); adsets = state.adsets.length; providerVerified = true;
+          try { spend = await provider(token).spendReadback(); }
+          catch { blockers.push("META_SPEND_READBACK_UNVERIFIED"); }
           externallyManaged = state.adsets.length > 0 && !snapshot.adset?.id;
           observedAds = state.adsets.flatMap(set => Array.isArray((set.ads as { data?: unknown } | undefined)?.data) ?
             ((set.ads as { data: unknown[] }).data).filter((ad): ad is Record<string, unknown> =>
@@ -102,7 +105,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
       const staged = STAGE_STEPS.filter(s => snapshot[s]).length;
       return { source: "BROS_DEMAND_META_PILOT" as const, campaignId: PILOT.campaign,
         budgetMinor: PILOT.budgetMinor, currency: "MYR", durationDays: 7,
-        providerVerified, campaignStatus, adsets, observedAds, externallyManaged,
+        providerVerified, campaignStatus, adsets, observedAds, externallyManaged, spend,
         stagedSteps: staged, totalStageSteps: STAGE_STEPS.length,
         managementVerified, ledgerVerified, blockers,
         // These indicate admission to an action; they are not E2E completion claims.
