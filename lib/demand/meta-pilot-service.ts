@@ -89,7 +89,8 @@ export function createPilotService(deps: PilotServiceDependencies) {
         canStage: managementVerified && ledgerVerified && identities && qa && flags.stage && providerVerified &&
           pausedUnspentVerified && staged < STAGE_STEPS.length && !snapshot.refresh_flight,
         canActivate: managementVerified && ledgerVerified && identities && flags.launch && qa &&
-          providerVerified && launchReadbackVerified && campaignStatus === "PAUSED" && staged === STAGE_STEPS.length,
+          providerVerified && pausedUnspentVerified && launchReadbackVerified &&
+          campaignStatus === "PAUSED" && staged === STAGE_STEPS.length,
         canPause: managementVerified,
         operatorLaunchAttestationConfigured: qa,
         independentPurchaseTrackingVerifiedByThisCheck: false,
