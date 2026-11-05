@@ -75,10 +75,22 @@ export function createPilotService(deps: PilotServiceDependencies) {
             Array.isArray((set.ads as { data?: unknown } | undefined)?.data)
               ? (set.ads as { data: Array<{ id?: unknown }> }).data.map(ad => String(ad.id ?? ""))
               : []);
-          workV5Recognized = state.adsets.length === 1 &&
-            state.adsets[0].id === "120251321765170697" &&
-            observedWorkAdIds.length === 2 &&
-            expectedWorkAdIds.every(id => observedWorkAdIds.includes(id));
+          // Exact IDs alone do not attest delivery state. The Work-created
+          // campaign is external to this ledger; recognize only a complete
+          // current provider snapshot, never use recognition to authorize writes.
+          const workSet = state.adsets[0];
+          const workAds = Array.isArray((workSet?.ads as { data?: unknown } | undefined)?.data)
+            ? (workSet.ads as { data: Array<{ id?: unknown; status?: unknown; effective_status?: unknown }> }).data : [];
+          workV5Recognized = state.campaign.status === "ACTIVE" &&
+            state.campaign.effective_status === "ACTIVE" &&
+            state.adsets.length === 1 &&
+            workSet.id === "120251321765170697" &&
+            workSet.campaign_id === PILOT.campaign &&
+            workSet.account_id === PILOT.account.slice(4) &&
+            workSet.status === "ACTIVE" &&
+            workAds.length === 2 && observedWorkAdIds.length === 2 &&
+            expectedWorkAdIds.every(id => workAds.some(ad => ad.id === id &&
+              ad.status === "ACTIVE" && ad.effective_status === "ACTIVE"));
           if (externallyManaged && !workV5Recognized)
             blockers.push("EXTERNAL_CAMPAIGN_OBJECTS_UNRECONCILED");
           observedAds = state.adsets.flatMap(set => Array.isArray((set.ads as { data?: unknown } | undefined)?.data) ?
