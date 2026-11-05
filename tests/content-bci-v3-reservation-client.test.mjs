@@ -35,6 +35,21 @@ test('rejects unsigned/uncommitted approval without contacting provider',async()
     /CONTENT_V3_RESERVATION_UNCONFIRMED/);
   assert.equal(calls,0);
 });
+test('accepts compact JWT separators and rejects malformed tokens before transport',async()=>{
+  let calls=0;
+  const fetchImpl=async()=>{calls++;return response();};
+  for(const jwt of ['aaa.bbb.ccc','a_-9.b_-0.c_-1']){
+    const out=await reserveContentV3Dispatch({origin,jwt,approval,fetchImpl});
+    assert.equal(out.status,'BCI_V3_RESERVATION_CONFIRMED_NO_DISPATCH');
+  }
+  assert.equal(calls,2);
+  for(const jwt of ['', 'aaa', 'aaa.bbb', 'aaa..ccc','aaa.bbb.ccc.ddd',
+    'aaa\\.bbb\\.ccc','aaa bbb ccc','Bearer aaa.bbb.ccc','a'.repeat(16000)+'.b.c']){
+    await assert.rejects(reserveContentV3Dispatch({origin,jwt,approval,fetchImpl}),
+      /CONTENT_V3_RESERVATION_UNCONFIRMED/);
+  }
+  assert.equal(calls,2);
+});
 test('rejects redirect, spoofed response, network ambiguity and unexpected fields',async()=>{
   for(const impl of [
     async()=>response(result,'https://attacker.test/api/internal/neon-content-reservation'),
@@ -44,3 +59,4 @@ test('rejects redirect, spoofed response, network ambiguity and unexpected field
   ])await assert.rejects(reserveContentV3Dispatch({origin,jwt,approval,fetchImpl:impl}),
     /CONTENT_V3_RESERVATION_UNCONFIRMED/);
 });
+
