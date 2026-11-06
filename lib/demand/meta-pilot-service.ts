@@ -114,8 +114,9 @@ export function createPilotService(deps: PilotServiceDependencies) {
             const expected = ad.id === expectedWorkAdIds[0] ? ASSETS.a :
               ad.id === expectedWorkAdIds[1] ? ASSETS.b : null;
             return expected !== null && story?.page_id === PILOT.page &&
-              link?.link === expected.url && cta?.type === "LEARN_MORE" &&
-              ctaValue?.link === expected.url;
+              link?.link === expected.url && link?.message === expected.text &&
+              link?.name === expected.headline && link?.description === expected.description &&
+              cta?.type === "LEARN_MORE" && ctaValue?.link === expected.url;
           });
           workV5Recognized = state.campaign.status === "ACTIVE" &&
             state.campaign.effective_status === "ACTIVE" &&
