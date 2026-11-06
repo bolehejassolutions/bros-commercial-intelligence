@@ -5,6 +5,7 @@ import {createPausedCampaignService} from '../lib/demand/meta-paused-campaign-se
 import {createPausedCampaignHttpHandler} from '../lib/demand/meta-paused-campaign-http.ts';
 import {createPilotLedger,PilotReconciliationRequired} from '../lib/demand/meta-pilot-ledger.ts';
 import {PILOT} from '../lib/demand/meta-pilot-policy.ts';
+import {creativeRetryNamespace,sealCreativeRecovery,verifyCreativeRecovery} from '../lib/demand/meta-paused-recovery-receipt.ts';
 const now=Date.parse('2026-11-07T00:00:00.000Z');
 const scope={tenantId:'11111111-1111-4111-8111-111111111111',principalId:'22222222-2222-4222-8222-222222222222'};
 const draft=()=>({name:'BROS SELL reviewed test',budgetMinor:14000,durationDays:7,startTime:'2026-11-07T02:00:00.000Z',
@@ -14,7 +15,7 @@ const identities={universal_beneficiary:'99999999000001',universal_payer:'999999
 function fixture(disabled=false){
   const env={META_APP_ID:'1315572270590189',META_APP_SECRET:'synthetic-app-secret-value',META_ADS_MANAGEMENT_TOKEN:'synthetic-management-token-value',
     BROS_DEMAND_META_PAUSED_CREATE:disabled?undefined:'operator-approved-v1',BROS_DEMAND_META_CREATOR_LEDGER:'reviewed-v1'};
-  const calls=[],objects=new Map(),ledgers=new Map();let counter=0,corrupt=false,failCreativeReadback=false;
+  const calls=[],objects=new Map(),ledgers=new Map();let counter=0,corrupt=false,failCreativeReadback=false,validationAllowed=false,denyCreativePost=false;
   const account={id:PILOT.account,account_id:PILOT.account.slice(4),account_status:1,currency:'MYR',timezone_name:'Asia/Kuala_Lumpur',
     business:{id:'2091328444802994'},user_tasks:['ADVERTISE']};
   const transport=async(input,init={})=>{
@@ -24,8 +25,10 @@ function fixture(disabled=false){
       assert.equal(path[0],PILOT.account);assert.ok(['campaigns','adsets','adcreatives','ads'].includes(path[1]));
       const form=new URLSearchParams(init.body),r=Object.fromEntries(form);
       if(form.has('execution_options')){assert.equal(path[1],'adcreatives');assert.deepEqual(JSON.parse(form.get('execution_options')),['validate_only']);
-        return Response.json({error:{code:100,error_subcode:123,message:'Synthetic validation rejection',
+        if(validationAllowed)return Response.json({success:true});
+        return Response.json({error:{code:100,error_subcode:1885183,message:'Synthetic validation rejection',
           error_user_title:'Synthetic title',error_user_msg:'Synthetic reason '+env.META_ADS_MANAGEMENT_TOKEN}},{status:400});}
+      if(path[1]==='adcreatives'&&denyCreativePost)return Response.json({error:{code:100,error_subcode:1885183}},{status:400});
       for(const key of ['special_ad_categories','targeting','promoted_object','regional_regulated_categories','regional_regulation_identities','object_story_spec','creative'])
         if(key in r)r[key]=JSON.parse(r[key]);
       const id='9000000000'+String(++counter).padStart(4,'0');
@@ -56,7 +59,8 @@ function fixture(disabled=false){
     return ledgers.get(sha);
   };
   const service=createPausedCampaignService({environment:env,ledger,reauthorize:async()=>{},now:()=>now,transport});
-  return {service,env,calls,objects,ledger,transport,corrupt:()=>{corrupt=true;},interruptCreative:()=>{failCreativeReadback=true;}};
+  return {service,env,calls,objects,ledger,transport,corrupt:()=>{corrupt=true;},interruptCreative:()=>{failCreativeReadback=true;},
+    rejectCreative:()=>{denyCreativePost=true;},allowValidation:()=>{validationAllowed=true;denyCreativePost=false;}};
 }
 test('plan binds exact input and scope; budget, host and caller authority injection deny',()=>{
   const p=preparePausedCampaignPlan(scope,draft(),14000,now);
@@ -149,4 +153,40 @@ test('recovery requires exact scope-bound hash and separate explicit authority b
   await assert.rejects(f.service.reconcile(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY'));
   await assert.rejects(f.service.reconcile({...scope,principalId:scope.tenantId},draft(),p.planSha256,'RECONCILE_PAUSED_ONLY'));
   assert.equal(f.calls.length,0);
+});
+async function rejectedCreative(){
+  const f=fixture(),p=preparePausedCampaignPlan(scope,draft(),14000,now);
+  await f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY');
+  await f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY');f.rejectCreative();
+  await assert.rejects(f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY'),PilotReconciliationRequired);
+  const readback=await f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY');
+  assert.equal(readback.discovery.status,'NO_MATCH');assert.ok(readback.recoveryReceipt);
+  return {f,p,receipt:readback.recoveryReceipt};
+}
+const creationPosts=f=>f.calls.filter(x=>x.init.method==='POST'&&!new URLSearchParams(x.init.body).has('execution_options')).length;
+test('machine recovery receipt is scoped, authenticated, short-lived and cannot become human/activation authority',()=>{
+  const sha='d'.repeat(64),secret='synthetic-private-server-key',r=sealCreativeRecovery(scope,sha,secret,now);
+  verifyCreativeRecovery(scope,sha,r,secret,now+1000);
+  for(const change of [()=>verifyCreativeRecovery({...scope,tenantId:scope.principalId},sha,r,secret,now),
+    ()=>verifyCreativeRecovery(scope,'e'.repeat(64),r,secret,now),()=>verifyCreativeRecovery(scope,sha,r+'.x',secret,now),
+    ()=>verifyCreativeRecovery(scope,sha,r,secret,now+45*60000),()=>verifyCreativeRecovery(scope,sha,r,'another-private-server-key',now)])assert.throws(change);
+  assert.notEqual(creativeRetryNamespace(sha),sha);assert.equal(creativeRetryNamespace(sha),creativeRetryNamespace(sha));
+});
+test('same approved plan retries the rejected creative only after fresh validation passes; durable recovery namespace prevents duplicates (MOCK)',async()=>{
+  const {f,p,receipt}=await rejectedCreative(),before=creationPosts(f);
+  const held=await f.service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE');
+  assert.equal(held.status,'RECOVERY_HELD');assert.equal(creationPosts(f),before);
+  f.allowValidation();const r=await f.service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE');
+  assert.equal(r.status,'RECOVERED_PAUSED');assert.equal(r.canContinue,true);assert.equal(creationPosts(f),before+1);
+  await f.service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE');assert.equal(creationPosts(f),before+1);
+  const done=await f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY');assert.equal(done.status,'CREATED_PAUSED_VERIFIED');
+  assert.equal(f.objects.size,4);assert.equal(creationPosts(f),before+2);
+});
+test('uncertain recovery POST blocks another retry and can reconcile the one exact accepted object without new creation (MOCK)',async()=>{
+  const {f,p,receipt}=await rejectedCreative();f.allowValidation();f.interruptCreative();const before=creationPosts(f);
+  await assert.rejects(f.service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE'),PilotReconciliationRequired);
+  await assert.rejects(f.service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE'),PilotReconciliationRequired);
+  assert.equal(creationPosts(f),before+1);
+  const r=await f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY');assert.equal(r.status,'RECOVERED_PAUSED');
+  assert.equal(creationPosts(f),before+1);
 });

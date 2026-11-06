@@ -18,6 +18,7 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
   const [notice,setNotice]=useState('Prepare a new campaign, review its exact settings, then create it in PAUSED status.');
   const [setup,setSetup]=useState<string[]>([]),[result,setResult]=useState<Record<string,string>|null>(null),[uncertain,setUncertain]=useState(false);
   const [recovery,setRecovery]=useState<unknown>(null);
+  const [retryReceipt,setRetryReceipt]=useState<string|null>(null),[retryApproved,setRetryApproved]=useState(false);
   async function request(payload?:unknown){
     const jwt=await getToken();const r=await fetch(endpoint,{method:payload?'POST':'GET',cache:'no-store',credentials:'same-origin',redirect:'error',
       headers:{Authorization:'Bearer '+jwt,...(payload?{'Content-Type':'application/json'}:{})},
@@ -27,7 +28,7 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
     const data=await r.json();if(!r.ok){if(data.reconcileRequired)setUncertain(true);throw Error(data.reconcileRequired?
       'An operation may have committed. Reconcile the saved plan reference before retrying.':'Action blocked. Check the form, connection and setup.');}return data;
   }
-  function changed(){setPreview(null);setApproved(false);setResult(null);setUncertain(false);}
+  function changed(){setPreview(null);setApproved(false);setResult(null);setUncertain(false);setRetryReceipt(null);setRetryApproved(false);}
   function draft():Draft{
     const m=budget.trim().match(/^(\d+)(?:\.(\d{1,2}))?$/);if(!m)throw Error('Enter a MYR amount with up to two decimal places.');
     const minor=Number(m[1])*100+Number((m[2]||'').padEnd(2,'0'));
@@ -68,12 +69,23 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
     try{const data=await request({action:'reconcile',draft:draft(),planSha256:preview.plan.planSha256,authorization:'RECONCILE_PAUSED_ONLY'});
       if(data.source!=='BROS_DEMAND_PAUSED_CREATOR'||data.planSha256!==preview.plan.planSha256||data.activationAvailable!==false||data.spendAuthorized!==false)throw Error('Recovery response unverified.');
       setRecovery(data.discovery||null);
-      if(data.status==='RECOVERY_HELD'){setUncertain(true);setNotice('Recovery held: '+data.discovery.status+'. No provider write or confirmation was performed.');return;}
+      setRetryReceipt(data.recoveryReceipt||null);setRetryApproved(false);
+      if(data.status==='RECOVERY_HELD'){setUncertain(true);setNotice(data.discovery.validation?.userTitle||('Recovery held: '+data.discovery.status+'. No creation or confirmation was performed.'));return;}
       if(!data.providerReadbackVerified||!data.committedReadback)throw Error('Recovery readback unverified.');
       setResult(data.objects);setUncertain(!data.canContinue);setPreview({...preview,canCreate:data.canContinue,blockers:[]});setApproved(false);
       localStorage.setItem('bros-demand-paused:'+preview.plan.planSha256,JSON.stringify(data));
       setNotice(data.canContinue?'Existing PAUSED objects reconciled. Review the same plan to continue the remaining stages.':'All four existing objects verified PAUSED. No new provider write was made.');
     }catch(e){setUncertain(true);setNotice(e instanceof Error?e.message:'Recovery unverified.');}finally{setBusy(false);}}
+  async function retryCreative(){if(!preview||!retryReceipt||!retryApproved||busy)return;setBusy(true);
+    try{const data=await request({action:'retry_creative',draft:draft(),planSha256:preview.plan.planSha256,
+      recoveryReceipt:retryReceipt,authorization:'RETRY_RECONCILED_PAUSED_CREATIVE'});
+      if(data.source!=='BROS_DEMAND_PAUSED_CREATOR'||data.planSha256!==preview.plan.planSha256||data.activationAvailable!==false||data.spendAuthorized!==false)throw Error('Retry result unverified.');
+      setRecovery(data.discovery||null);
+      if(data.status==='RECOVERY_HELD'){setNotice(data.discovery.validation?.userTitle||'Retry held. Meta validation must pass and no matching creative may exist.');return;}
+      if(!data.providerReadbackVerified||!data.committedReadback)throw Error('Retry readback unverified.');
+      setResult(data.objects);setUncertain(!data.canContinue);setPreview({...preview,canCreate:data.canContinue,blockers:[]});
+      setRetryReceipt(null);setRetryApproved(false);setApproved(false);setNotice('Recovery creative verified. Continue the same reviewed plan to finish the remaining ad.');
+    }catch(e){setUncertain(true);setNotice(e instanceof Error?e.message:'Retry outcome unverified; reconcile before continuing.');}finally{setBusy(false);}}
   return <section className='auth-form' aria-labelledby='paused-creator-title' style={{border:'1px solid #52647a',padding:'1.2rem',borderRadius:12,marginBottom:'2rem'}}>
     <h3 id='paused-creator-title'>Create a Meta campaign</h3><p>Malaysia · ages 21–45 · Facebook and Instagram feeds · Website Purchase · maximum RM140 lifetime · PAUSED creation.</p>
     <p role='status'>{notice}</p><button type='button' disabled={!signedIn||busy} onClick={connect}>Check connection and load images</button>
@@ -95,6 +107,9 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
       {uncertain&&<p>A submission already exists for this plan. Reconcile its recorded objects before submitting another operation.</p>}
       <button type='button' disabled={busy||!signedIn} onClick={reconcile}>Reconcile existing PAUSED objects</button>
       {recovery!==null&&<details open><summary>Recovery readback checks</summary><pre>{JSON.stringify(recovery,null,2)}</pre></details>}
+      {retryReceipt&&<div><p>Meta rejected the creative while its app was in Development mode. Resolve the app setting first. One guarded retry is available only after fresh Meta validation passes and the account still contains no matching creative.</p>
+        <label><input type='checkbox' checked={retryApproved} disabled={busy} onChange={e=>setRetryApproved(e.target.checked)}/>I approve one reconciled creative retry in PAUSED status.</label>
+        <button type='button' disabled={busy||!retryApproved||!signedIn} onClick={retryCreative}>Retry reconciled creative — PAUSED</button></div>}
       <label><input type='checkbox' checked={approved} disabled={busy||uncertain} onChange={e=>setApproved(e.target.checked)}/>I approve creating this reviewed campaign in PAUSED status.</label>
       <button type='button' disabled={!preview.canCreate||!approved||busy||uncertain} onClick={create}>Create reviewed campaign — PAUSED</button>
       <details><summary>Plan and operation references</summary><p>Plan: <code>{preview.plan.planSha256}</code></p>{result&&Object.entries(result).map(([kind,id])=><p key={kind}>{kind}: {id}</p>)}</details>

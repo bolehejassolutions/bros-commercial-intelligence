@@ -40,6 +40,9 @@ export function createPausedCampaignHttpHandler(deps:Deps){
       if(p.action==='reconcile'&&Object.keys(p).length===4&&Object.hasOwn(p,'draft')&&
          typeof p.planSha256==='string'&&/^[a-f0-9]{64}$/.test(p.planSha256)&&p.authorization==='RECONCILE_PAUSED_ONLY')
         return json(await service.reconcile(scope,p.draft,p.planSha256,p.authorization),200);
+      if(p.action==='retry_creative'&&Object.keys(p).length===5&&Object.hasOwn(p,'draft')&&typeof p.recoveryReceipt==='string'&&p.recoveryReceipt.length<=2048&&
+         typeof p.planSha256==='string'&&/^[a-f0-9]{64}$/.test(p.planSha256)&&p.authorization==='RETRY_RECONCILED_PAUSED_CREATIVE')
+        return json(await service.retryCreative(scope,p.draft,p.planSha256,p.recoveryReceipt,p.authorization),200);
       if(p.action==='create_paused'&&Object.keys(p).length===4&&Object.hasOwn(p,'draft')&&
          typeof p.planSha256==='string'&&/^[a-f0-9]{64}$/.test(p.planSha256)&&p.authorization==='CREATE_PAUSED_ONLY')
         return json(await service.stage(scope,p.draft,p.planSha256,p.authorization),200);

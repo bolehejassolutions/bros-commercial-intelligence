@@ -4,6 +4,7 @@ import {createPausedCampaignProvider} from './meta-paused-campaign-provider.ts';
 import {preparePausedCampaignPlan} from './meta-paused-campaign-plan.ts';
 import type {PilotScope} from './meta-pilot-ledger.ts';
 import {createPilotLedger} from './meta-pilot-ledger.ts';
+import {creativeRetryNamespace,sealCreativeRecovery,verifyCreativeRecovery} from './meta-paused-recovery-receipt.ts';
 const steps=['campaign','adset','creative_a','ad_a'] as const;
 type Deps={environment:NodeJS.ProcessEnv;ledger:(scope:PilotScope,sha:string)=>ReturnType<typeof createPilotLedger>;
   reauthorize:()=>Promise<void>;now:()=>number;transport?:typeof fetch;verifyLedger?:(scope:PilotScope)=>Promise<unknown>};
@@ -35,10 +36,19 @@ export function createPausedCampaignService(deps:Deps){
         discovery=await p.discoverPending(plan,state.confirmed,step as 'creative_a'|'ad_a');
         if(discovery.status!=='EXACT_MATCH'){
           const validation=step==='creative_a'&&discovery.status==='NO_MATCH'?await p.validateCreative(plan,identities):undefined;
+          const recoveryReceipt=validation?.accepted===false&&validation.code===100&&validation.subcode===1885183?
+            sealCreativeRecovery(scope,plan.planSha256,env.META_APP_SECRET||'',deps.now()):undefined;
           return {source:'BROS_DEMAND_PAUSED_CREATOR',status:'RECOVERY_HELD',
-            planSha256:plan.planSha256,discovery:{...discovery,...(validation?{validation}:{})},canContinue:false,activationAvailable:false,spendAuthorized:false};
+            planSha256:plan.planSha256,discovery:{...discovery,...(validation?{validation}:{})},recoveryReceipt,
+            canContinue:false,activationAvailable:false,spendAuthorized:false};
         }
         const objectId=discovery.candidates[0].objectId;
+        if(step==='creative_a'){
+          const retry=deps.ledger(scope,creativeRetryNamespace(plan.planSha256)),retryState=await retry.recoveryState();
+          if(retryState.pending.length===1&&retryState.pending[0]==='creative_a')await retry.confirmRecovered('creative_a',objectId,
+            async()=>{await deps.reauthorize();await p.verify(plan,{...state.confirmed,creative_a:{id:objectId}},identities);});
+          else if(retryState.pending.length||retryState.confirmed.creative_a&&retryState.confirmed.creative_a.id!==objectId)throw Error('RETRY_RECONCILIATION_REQUIRED');
+        }
         await ledger.confirmRecovered(step,objectId,async()=>{
           await deps.reauthorize();await p.verify(plan,{...state.confirmed,[step]:{id:objectId}},identities);
         });
@@ -48,6 +58,36 @@ export function createPausedCampaignService(deps:Deps){
       return {source:'BROS_DEMAND_PAUSED_CREATOR',status:complete?'CREATED_PAUSED_VERIFIED':'RECOVERED_PAUSED',
         planSha256:plan.planSha256,objects:Object.fromEntries(steps.filter(k=>confirmed[k]?.id).map(k=>[k,confirmed[k]!.id])),
         providerReadbackVerified:true,committedReadback:true,canContinue:!complete,activationAvailable:false,spendAuthorized:false};
+    },
+    retryCreative:async(scope:PilotScope,draft:unknown,expectedHash:string,receipt:string,authorization:string)=>{
+      const f=flags();if(!f.enabled||!f.ledger||authorization!=='RETRY_RECONCILED_PAUSED_CREATIVE')throw Error('PAUSED_RETRY_NOT_AUTHORIZED');
+      const plan=preparePausedCampaignPlan(scope,draft,cap(),deps.now());if(plan.planSha256!==expectedHash)throw Error('PLAN_CHANGED_REVIEW_AGAIN');
+      verifyCreativeRecovery(scope,plan.planSha256,receipt,env.META_APP_SECRET||'',deps.now());
+      await deps.reauthorize();const p=await provider(),identities=await p.inputReadback(plan),ledger=deps.ledger(scope,plan.planSha256);
+      const state=await ledger.recoveryState();await p.verify(plan,state.confirmed,identities);
+      if(!state.pending.length&&!state.confirmed.creative_a?.id)throw Error('PAUSED_RETRY_STATE_INVALID');
+      if(state.pending.length){
+        if(state.pending.length!==1||state.pending[0]!=='creative_a'||!state.confirmed.campaign?.id||!state.confirmed.adset?.id||state.confirmed.ad_a)throw Error('PAUSED_RETRY_STATE_INVALID');
+        const retry=deps.ledger(scope,creativeRetryNamespace(plan.planSha256)),prior=await retry.snapshot();
+        let objectId=prior.creative_a?.id;
+        if(!objectId){
+          const discovery=await p.discoverPending(plan,state.confirmed,'creative_a');
+          const validation=discovery.status==='NO_MATCH'?await p.validateCreative(plan,identities):undefined;
+          if(discovery.status!=='NO_MATCH'||validation?.accepted!==true)return {source:'BROS_DEMAND_PAUSED_CREATOR',status:'RECOVERY_HELD',
+            planSha256:plan.planSha256,discovery:{...discovery,...(validation?{validation}:{})},canContinue:false,activationAvailable:false,spendAuthorized:false};
+          // A separate deterministic namespace in the SAME existing journal commits
+          // the single recovery-attempt intent before POST. Unknown outcome blocks
+          // all further retries. The original intent/history is never changed.
+          objectId=(await retry.perform('creative_a',async()=>{await deps.reauthorize();return p.create('creative_a',plan,state.confirmed,identities);})).id;
+        }
+        if(!objectId)throw Error('PAUSED_RETRY_RESULT_INVALID');
+        const recovered=objectId;await ledger.confirmRecovered('creative_a',recovered,async()=>{
+          await deps.reauthorize();await p.verify(plan,{...state.confirmed,creative_a:{id:recovered}},identities);});
+      }
+      await deps.reauthorize();const confirmed=await ledger.snapshot();await p.verify(plan,confirmed,identities);
+      return {source:'BROS_DEMAND_PAUSED_CREATOR',status:'RECOVERED_PAUSED',planSha256:plan.planSha256,
+        objects:Object.fromEntries(steps.filter(k=>confirmed[k]?.id).map(k=>[k,confirmed[k]!.id])),
+        providerReadbackVerified:true,committedReadback:true,canContinue:!confirmed.ad_a?.id,activationAvailable:false,spendAuthorized:false};
     },
     verifyLedger:async(scope:PilotScope)=>{
       if(!deps.verifyLedger)throw Error('CREATOR_LEDGER_VERIFICATION_UNAVAILABLE');
