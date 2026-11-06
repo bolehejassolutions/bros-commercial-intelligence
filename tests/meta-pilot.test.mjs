@@ -356,3 +356,38 @@ test("readable but mismatched objects or identities never authorize stage or act
   }
 });
 
+
+test("external Work V5 recognition requires exact flight, purchase optimization and adset linkage", async () => {
+  const f = fixture();
+  delete f.snapshot.adset;
+  f.campaign.status = "ACTIVE"; f.campaign.effective_status = "ACTIVE";
+  f.set.id = "120251321765170697";
+  f.set.status = "ACTIVE"; f.set.effective_status = "ACTIVE";
+  f.set.start_time = "2026-11-06T08:00:00+08:00";
+  f.set.end_time = "2026-11-13T08:00:00+08:00";
+  f.set.ads.data.forEach((ad, index) => {
+    ad.id = ["120251321765180697", "120251323975550697"][index];
+    ad.adset_id = f.set.id; ad.status = "ACTIVE"; ad.effective_status = "ACTIVE";
+  });
+  const accepted = await service(f).readiness(scope);
+  assert.equal(accepted.workV5Recognized, true);
+  assert.equal(accepted.externallyManaged, true);
+  assert.equal(accepted.canStage, false);
+  assert.equal(accepted.canActivate, false);
+  assert.equal(accepted.canPause, false);
+  for (const change of [
+    () => { f.set.end_time = "2026-11-14T08:00:00+08:00"; return () => { f.set.end_time = "2026-11-13T08:00:00+08:00"; }; },
+    () => { f.set.targeting.age_max = 55; return () => { f.set.targeting.age_max = 45; }; },
+    () => { f.set.promoted_object.custom_event_type = "LEAD"; return () => { f.set.promoted_object.custom_event_type = "PURCHASE"; }; },
+    () => { f.set.ads.data[0].adset_id = "999999999999"; return () => { f.set.ads.data[0].adset_id = f.set.id; }; },
+  ]) {
+    const undo = change();
+    const rejected = await service(f).readiness(scope);
+    assert.equal(rejected.workV5Recognized, false);
+    assert.ok(rejected.blockers.includes("EXTERNAL_CAMPAIGN_OBJECTS_UNRECONCILED"));
+    assert.equal(rejected.canStage, false);
+    assert.equal(rejected.canPause, false);
+    undo();
+  }
+  assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
+});
