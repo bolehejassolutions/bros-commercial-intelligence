@@ -35,7 +35,7 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
   const [draftName, setDraftName] = useState("");
   const [draftBudget, setDraftBudget] = useState("");
   const [draftUrl, setDraftUrl] = useState("");
-  const budgetSen = /^\\d+(?:\\.\\d{1,2})?$/.test(draftBudget.trim())
+  const budgetSen = /^\d+(?:\.\d{1,2})?$/.test(draftBudget.trim())
     ? Math.round(Number(draftBudget) * 100) : NaN;
   const draftValid = draftName.trim().length >= 3 && draftName.trim().length <= 100 &&
     Number.isSafeInteger(budgetSen) && budgetSen > 0 && budgetSen <= 10000000 &&
