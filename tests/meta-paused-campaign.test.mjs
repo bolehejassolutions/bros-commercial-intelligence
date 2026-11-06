@@ -24,7 +24,8 @@ function fixture(disabled=false){
       assert.equal(path[0],PILOT.account);assert.ok(['campaigns','adsets','adcreatives','ads'].includes(path[1]));
       const form=new URLSearchParams(init.body),r=Object.fromEntries(form);
       if(form.has('execution_options')){assert.equal(path[1],'adcreatives');assert.deepEqual(JSON.parse(form.get('execution_options')),['validate_only']);
-        return Response.json({error:{code:100,error_subcode:123,message:'Synthetic validation rejection'}},{status:400});}
+        return Response.json({error:{code:100,error_subcode:123,message:'Synthetic validation rejection',
+          error_user_title:'Synthetic title',error_user_msg:'Synthetic reason '+env.META_ADS_MANAGEMENT_TOKEN}},{status:400});}
       for(const key of ['special_ad_categories','targeting','promoted_object','regional_regulated_categories','regional_regulation_identities','object_story_spec','creative'])
         if(key in r)r[key]=JSON.parse(r[key]);
       const id='9000000000'+String(++counter).padStart(4,'0');
@@ -139,7 +140,8 @@ test('missing, mismatched or duplicate recovery candidates leave intent blocked 
     assert.equal(r.discovery.status,{missing:'NO_MATCH',mismatch:'READBACK_MISMATCH',duplicate:'AMBIGUOUS'}[kind]);
     await assert.rejects(f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY'),PilotReconciliationRequired);
     assert.equal(f.calls.filter(x=>x.init.method==='POST'&&!new URLSearchParams(x.init.body).has('execution_options')).length,3);
-    if(kind==='missing'){assert.equal(r.discovery.validation.mode,'VALIDATE_ONLY');assert.equal(r.discovery.validation.code,100);assert.equal(r.discovery.validation.accepted,false);}
+    if(kind==='missing'){assert.equal(r.discovery.validation.mode,'VALIDATE_ONLY');assert.equal(r.discovery.validation.code,100);assert.equal(r.discovery.validation.accepted,false);
+      assert.equal(r.discovery.validation.userTitle,'Synthetic title');assert.equal(r.discovery.validation.userMessage,'Synthetic reason [redacted]');}
   }
 });
 test('recovery requires exact scope-bound hash and separate explicit authority before any provider request',async()=>{

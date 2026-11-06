@@ -122,10 +122,11 @@ export function createPausedCampaignProvider(token:string,secret:string,rawTrans
     const r=await transport(GRAPH+'/'+PILOT.account+'/adcreatives',{method:'POST',headers:{Authorization:'Bearer '+token,
       'Content-Type':'application/x-www-form-urlencoded'},body:form.toString(),cache:'no-store',signal:AbortSignal.timeout(16000)});
     const data=await metaProviderJson(r),e=data.error?object(data.error):undefined;
-    const message=typeof e?.message==='string'?e.message.split(token).join('[redacted]').split(secret).join('[redacted]')
+    const safeMessage=(v:unknown)=>typeof v==='string'?v.split(token).join('[redacted]').split(secret).join('[redacted]')
       .replace(/https?:\/\/[^\s]+/g,'[url]').replace(/EA[A-Za-z0-9_-]{24,}/g,'[redacted]').slice(0,600):null;
     return {mode:'VALIDATE_ONLY',accepted:r.ok&&!e,code:typeof e?.code==='number'?e.code:null,
-      subcode:typeof e?.error_subcode==='number'?e.error_subcode:null,message};
+      subcode:typeof e?.error_subcode==='number'?e.error_subcode:null,message:safeMessage(e?.message),
+      userTitle:safeMessage(e?.error_user_title),userMessage:safeMessage(e?.error_user_msg)};
   }
   async function create(kind:'campaign'|'adset'|'creative_a'|'ad_a',plan:PausedCampaignPlan,snapshot:Snapshot,identities:CreatorIdentities){
     const b=pausedCampaignBodies(plan,identities);
