@@ -15,6 +15,7 @@ const neonPreviewPaths = new Set([
   "/api/internal/demand-meta-diagnosis",
   "/api/internal/demand-meta-pilot",
   "/api/internal/demand-meta-campaigns",
+  "/api/internal/portfolio-lineage",
 ]);
 
 export function usesNeonPreviewAuthentication(pathname: string): boolean {
