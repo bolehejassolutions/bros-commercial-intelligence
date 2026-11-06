@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 type Result = Readonly<{
   lineageKey: string;trackedLandingUrl: string;status: string;
@@ -23,6 +23,27 @@ export default function PortfolioLineagePanel({
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState("");
   const [result,setResult]=useState<Result|null>(null);
+  // CONTENT handoff fragment carries only a plan digest, copy digest and channel.
+  // It never grants approval or authorization; authenticated DEMAND generates a
+  // non-executing candidate after verifying joint tenant/product membership.
+  useEffect(()=>{
+    if(!window.location.hash)return;
+    const p=new URLSearchParams(window.location.hash.slice(1));
+    const names=[...p.keys()];
+    if(names.length!==3 || names.some(x=>!["contentPlanId","creativeSha256","channel"].includes(x)) ||
+       !["contentPlanId","creativeSha256","channel"].every(x=>p.getAll(x).length===1))return;
+    const planId=p.get("contentPlanId")??"";
+    const creativeId=p.get("creativeSha256")??"";
+    const destination=p.get("channel")??"";
+    if(!/^content-plan-[a-f0-9]{64}$/.test(planId)||
+       !/^[a-f0-9]{64}$/.test(creativeId)||
+       !["facebook","instagram","tiktok"].includes(destination))return;
+    setPlan(planId);setCreative(creativeId);setChannel(destination);
+    setResult(null);
+    setNotice("CONTENT reference received. It is not proof of publication or sale. Confirm the campaign details before preparing the link.");
+    window.history.replaceState(window.history.state,"",window.location.pathname+window.location.search);
+  },[]);
+
   function invalidate(){setResult(null);setNotice("");}
   async function submit(event:FormEvent<HTMLFormElement>){
     event.preventDefault();
