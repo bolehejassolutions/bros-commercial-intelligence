@@ -7,7 +7,7 @@ export const revalidate = 0;
 
 const handle = createContentDemandLinkHttpHandler({
   enabled: demandMetaPilotRuntime.enabled,
-  authorize: jwt => demandMetaPilotRuntime.authorize(jwt),
+  authorize: jwt => demandMetaPilotRuntime.authorizeContentDemand(jwt),
 });
 export const POST = handle;
 export const GET = handle;
