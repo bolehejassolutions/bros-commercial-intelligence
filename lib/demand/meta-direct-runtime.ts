@@ -231,6 +231,17 @@ export const demandMetaPilotRuntime = {
         grants[0].tenantId.toLowerCase() !== process.env.BROS_DEMAND_META_TENANT_ID?.toLowerCase()) throw Error();
     return { tenantId: grants[0].tenantId.toLowerCase(), principalId: principal.userId };
   },
+  async authorizeContentDemand(jwt: string) {
+    // Cross-product candidate generation requires independent active membership
+    // in BOTH products for the SAME tenant. This does not authorize publishing.
+    const scope = await demandMetaPilotRuntime.authorize(jwt);
+    const grants = await getMemberships(() => {})(scope.principalId, "content");
+    if (grants.length !== 1 || grants[0].active !== true ||
+        grants[0].product !== "content" ||
+        grants[0].principalId !== scope.principalId ||
+        grants[0].tenantId.toLowerCase() !== scope.tenantId) throw Error();
+    return scope;
+  },
   transaction: pilotTransaction,
   campaignTransaction: (async fn=>{
     if(!enabled()||process.env.BROS_DEMAND_META_CREATOR_LEDGER!=="reviewed-v1")throw Error();
