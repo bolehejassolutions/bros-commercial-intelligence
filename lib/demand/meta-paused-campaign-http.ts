@@ -37,6 +37,9 @@ export function createPausedCampaignHttpHandler(deps:Deps){
       let p:Record<string,unknown>;try{p=await body(request);}catch{return json({error:'Invalid campaign form.'},400);}
       if(p.action==='verify_ledger'&&Object.keys(p).length===1)return json(await service.verifyLedger(scope),200);
       if(p.action==='preview'&&Object.keys(p).length===2&&Object.hasOwn(p,'draft'))return json(await service.preview(scope,p.draft),200);
+      if(p.action==='reconcile'&&Object.keys(p).length===4&&Object.hasOwn(p,'draft')&&
+         typeof p.planSha256==='string'&&/^[a-f0-9]{64}$/.test(p.planSha256)&&p.authorization==='RECONCILE_PAUSED_ONLY')
+        return json(await service.reconcile(scope,p.draft,p.planSha256,p.authorization),200);
       if(p.action==='create_paused'&&Object.keys(p).length===4&&Object.hasOwn(p,'draft')&&
          typeof p.planSha256==='string'&&/^[a-f0-9]{64}$/.test(p.planSha256)&&p.authorization==='CREATE_PAUSED_ONLY')
         return json(await service.stage(scope,p.draft,p.planSha256,p.authorization),200);

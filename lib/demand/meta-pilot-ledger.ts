@@ -69,6 +69,38 @@ export function createPilotLedger(transaction: PilotTransaction, scope: PilotSco
   const readEvents = (query: Query) => query(`SELECT step, kind, result FROM bci_dev.demand_meta_pilot_events
     WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 ORDER BY created_at, id`, [scope.tenantId, policyKey]);
   return {
+    async recoveryState(): Promise<{confirmed:Snapshot;pending:Step[]}> {
+      if(!options)throw Error("PAUSED_RECOVERY_SCOPE_REQUIRED");
+      return scoped(async query=>{
+        const events=await readEvents(query),confirmed:Snapshot={},intents=new Set<Step>();
+        for(const value of events.rows){const e=row(value),step=String(e.step) as Step;
+          if(!pausedSteps.includes(step))throw Error("PILOT_LEDGER_INVALID");
+          if(e.kind==='intent')intents.add(step);
+          else if(e.kind==='confirmed')confirmed[step]=result(e.result);
+          else throw Error("PILOT_LEDGER_INVALID");
+        }
+        return {confirmed,pending:[...intents].filter(step=>!confirmed[step])};
+      });
+    },
+    async confirmRecovered(step:Step,objectId:string,verifyProvider:()=>Promise<void>) {
+      if(!options||!['creative_a','ad_a'].includes(step)||!/^\d{6,30}$/.test(objectId))throw Error("PAUSED_RECOVERY_SCOPE_REQUIRED");
+      return scoped(async query=>{
+        const prior=await query(`SELECT kind,result FROM bci_dev.demand_meta_pilot_events
+          WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 AND step=$3`,[scope.tenantId,policyKey,step]);
+        const rows=prior.rows.map(row),done=rows.find(e=>e.kind==='confirmed');
+        if(done){if(result(done.result).id!==objectId)throw new PilotReconciliationRequired();return result(done.result);}
+        if(rows.length!==1||rows[0].kind!=='intent')throw new PilotReconciliationRequired();
+        // Independent authenticated Meta GETs only. Never repeat the uncertain POST,
+        // remove the original intent, or accept a caller-supplied provider ID.
+        await verifyProvider();
+        const inserted=await query(`INSERT INTO bci_dev.demand_meta_pilot_events
+          (tenant_id,product,principal_id,policy_key,step,kind,result)
+          VALUES($1::uuid,'demand',$2::uuid,$3,$4,'confirmed',$5::jsonb) RETURNING id`,
+          [scope.tenantId,scope.principalId,policyKey,step,JSON.stringify({id:objectId})]);
+        if(inserted.rows.length!==1)throw new PilotReconciliationRequired();
+        return {id:objectId};
+      });
+    },
     async snapshot(): Promise<Snapshot> {
       return scoped(async query => {
         const events = await readEvents(query); const snapshot: Snapshot = {};

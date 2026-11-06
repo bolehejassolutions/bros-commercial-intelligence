@@ -14,7 +14,7 @@ const identities={universal_beneficiary:'99999999000001',universal_payer:'999999
 function fixture(disabled=false){
   const env={META_APP_ID:'1315572270590189',META_APP_SECRET:'synthetic-app-secret-value',META_ADS_MANAGEMENT_TOKEN:'synthetic-management-token-value',
     BROS_DEMAND_META_PAUSED_CREATE:disabled?undefined:'operator-approved-v1',BROS_DEMAND_META_CREATOR_LEDGER:'reviewed-v1'};
-  const calls=[],objects=new Map(),ledgers=new Map();let counter=0,corrupt=false;
+  const calls=[],objects=new Map(),ledgers=new Map();let counter=0,corrupt=false,failCreativeReadback=false;
   const account={id:PILOT.account,account_id:PILOT.account.slice(4),account_status:1,currency:'MYR',timezone_name:'Asia/Kuala_Lumpur',
     business:{id:'2091328444802994'},user_tasks:['ADVERTISE']};
   const transport=async(input,init={})=>{
@@ -37,18 +37,23 @@ function fixture(disabled=false){
     else if(path[0]===PILOT.account&&path[1]==='adimages')data={data:[{hash:'a'.repeat(32),name:'Synthetic existing account image'}]};
     else if(path[0]==='120251321765170697')data={id:path[0],account_id:account.account_id,campaign_id:PILOT.campaign,
       regional_regulated_categories:['MALAYSIA_UNIVERSAL'],regional_regulation_identities:identities};
-    else if(objects.has(path[0]))data=objects.get(path[0]);else throw Error('Unexpected fixture request');
+    else if(path[1]==='adcreatives')data={data:[...objects.values()].filter(x=>x.object_story_spec)};
+    else if(path[1]==='ads')data={data:[...objects.values()].filter(x=>x.adset_id===path[0])};
+    else if(objects.has(path[0])){data=objects.get(path[0]);if(failCreativeReadback&&data.object_story_spec){failCreativeReadback=false;throw Error('Synthetic readback interruption after accepted POST');}}
+    else throw Error('Unexpected fixture request');
     return Response.json(data);
   };
   const ledger=(_scope,sha)=>{
     if(!ledgers.has(sha)){const snapshot={},pending=new Set();ledgers.set(sha,{snapshot:async()=>{
-      if(pending.size)throw new PilotReconciliationRequired();return structuredClone(snapshot);},perform:async(step,fn)=>{
+      if(pending.size)throw new PilotReconciliationRequired();return structuredClone(snapshot);},
+      recoveryState:async()=>({confirmed:structuredClone(snapshot),pending:[...pending]}),
+      confirmRecovered:async(step,id,verify)=>{assert.ok(pending.has(step));await verify();snapshot[step]={id};pending.delete(step);return {id};},perform:async(step,fn)=>{
         if(snapshot[step])return snapshot[step];if(pending.has(step))throw new PilotReconciliationRequired();pending.add(step);
         try{const r=await fn();snapshot[step]=r;pending.delete(step);return r;}catch(cause){const error=new PilotReconciliationRequired();error.cause=cause;throw error;}}});}
     return ledgers.get(sha);
   };
   const service=createPausedCampaignService({environment:env,ledger,reauthorize:async()=>{},now:()=>now,transport});
-  return {service,env,calls,objects,ledger,transport,corrupt:()=>{corrupt=true;}};
+  return {service,env,calls,objects,ledger,transport,corrupt:()=>{corrupt=true;},interruptCreative:()=>{failCreativeReadback=true;}};
 }
 test('plan binds exact input and scope; budget, host and caller authority injection deny',()=>{
   const p=preparePausedCampaignPlan(scope,draft(),14000,now);
@@ -104,4 +109,39 @@ test('real journal adapter isolates new plan namespace and denies activation ste
   assert.ok(calls.some(x=>x.p.includes('bros-demand-paused-v1:'+'c'.repeat(64))));
   const count=calls.length;await assert.rejects(ledger.perform('activate_campaign',async()=>assert.fail()));assert.equal(calls.length,count);
   await assert.rejects(ledger.revoke());
+});
+async function interruptedCreative(){
+  const f=fixture(),p=preparePausedCampaignPlan(scope,draft(),14000,now);
+  await f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY');
+  await f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY');f.interruptCreative();
+  await assert.rejects(f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY'),PilotReconciliationRequired);
+  return {f,p};
+}
+test('interrupted creative POST reconciles exact provider object with GETs only, preserves intent and finishes without duplicate creation (MOCK)',async()=>{
+  const {f,p}=await interruptedCreative();assert.equal(f.calls.filter(x=>x.init.method==='POST').length,3);
+  const recovered=await f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY');
+  assert.equal(recovered.status,'RECOVERED_PAUSED');assert.equal(recovered.canContinue,true);
+  assert.equal(f.calls.filter(x=>x.init.method==='POST').length,3);
+  const done=await f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY');assert.equal(done.status,'CREATED_PAUSED_VERIFIED');
+  assert.equal((await f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY')).status,'CREATED_PAUSED_VERIFIED');
+  assert.equal(f.calls.filter(x=>x.init.method==='POST').length,4);
+});
+test('missing, mismatched or duplicate recovery candidates leave intent blocked and issue no Meta POST (MOCK)',async()=>{
+  for(const kind of ['missing','mismatch','duplicate']){
+    const {f,p}=await interruptedCreative(),entry=[...f.objects.entries()].find(([,v])=>v.object_story_spec);
+    if(kind==='missing')f.objects.delete(entry[0]);
+    if(kind==='mismatch')entry[1].object_story_spec.link_data.link='https://foreign.example/';
+    if(kind==='duplicate')f.objects.set('90000000009999',{...structuredClone(entry[1]),id:'90000000009999'});
+    const r=await f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY');
+    assert.equal(r.status,'RECOVERY_HELD');assert.equal(r.canContinue,false);
+    assert.equal(r.discovery.status,{missing:'NO_MATCH',mismatch:'READBACK_MISMATCH',duplicate:'AMBIGUOUS'}[kind]);
+    await assert.rejects(f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY'),PilotReconciliationRequired);
+    assert.equal(f.calls.filter(x=>x.init.method==='POST').length,3);
+  }
+});
+test('recovery requires exact scope-bound hash and separate explicit authority before any provider request',async()=>{
+  const f=fixture(),p=preparePausedCampaignPlan(scope,draft(),14000,now);
+  await assert.rejects(f.service.reconcile(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY'));
+  await assert.rejects(f.service.reconcile({...scope,principalId:scope.tenantId},draft(),p.planSha256,'RECONCILE_PAUSED_ONLY'));
+  assert.equal(f.calls.length,0);
 });

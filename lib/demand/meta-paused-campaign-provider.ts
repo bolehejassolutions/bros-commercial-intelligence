@@ -9,6 +9,14 @@ const object=(v:unknown):Record<string,unknown>=>{
   if(!v||typeof v!=='object'||Array.isArray(v))throw Error('META_CREATOR_READBACK_INVALID');return v as Record<string,unknown>;};
 const id=(v:unknown)=>{if(typeof v!=='string'||!/^\d{6,30}$/.test(v))throw Error('META_CREATOR_ID_INVALID');return v;};
 export type CreatorIdentities={universal_beneficiary:string;universal_payer:string};
+function creativeChecks(plan:PausedCampaignPlan,c:Record<string,unknown>){
+  const s=c.object_story_spec as Record<string,unknown>|undefined,l=s?.link_data as Record<string,unknown>|undefined;
+  const cta=l?.call_to_action as Record<string,unknown>|undefined,v=cta?.value as Record<string,unknown>|undefined;
+  return {account:c.account_id===PILOT.account.slice(4),page:s?.page_id===plan.pageId,
+    destination:l?.link===plan.landingUrl,image:l?.image_hash===plan.imageHash,message:l?.message===plan.primaryText,
+    headline:l?.name===plan.headline,description:(l?.description??'')===plan.description,
+    action:cta?.type==='LEARN_MORE',actionDestination:v?.link===plan.landingUrl};
+}
 export function createPausedCampaignProvider(token:string,secret:string,rawTransport:typeof fetch=fetch){
   const transport:typeof fetch=(input,init)=>{
     const url=new URL(String(input));if(url.origin!=='https://graph.facebook.com')throw Error('META_DESTINATION_DENIED');
@@ -70,16 +78,40 @@ export function createPausedCampaignProvider(token:string,secret:string,rawTrans
     }
     if(snapshot.creative_a?.id){
       const c=await get(id(snapshot.creative_a.id),'id,account_id,object_story_spec');
-      const s=object(c.object_story_spec),l=object(s.link_data),cta=object(l.call_to_action);
-      if(c.id!==snapshot.creative_a.id||c.account_id!==PILOT.account.slice(4)||s.page_id!==plan.pageId||l.link!==plan.landingUrl||
-         l.image_hash!==plan.imageHash||l.message!==plan.primaryText||l.name!==plan.headline||
-         (l.description??'')!==plan.description||cta.type!=='LEARN_MORE'||object(cta.value).link!==plan.landingUrl)throw Error('CREATED_CREATIVE_READBACK_MISMATCH');
+      if(c.id!==snapshot.creative_a.id||!Object.values(creativeChecks(plan,c)).every(Boolean))throw Error('CREATED_CREATIVE_READBACK_MISMATCH');
     }
     if(snapshot.ad_a?.id){
       const a=await get(id(snapshot.ad_a.id),'id,account_id,campaign_id,adset_id,status,creative');
       if(a.id!==snapshot.ad_a.id||a.account_id!==PILOT.account.slice(4)||a.campaign_id!==snapshot.campaign?.id||
          a.adset_id!==snapshot.adset?.id||a.status!=='PAUSED'||object(a.creative).id!==snapshot.creative_a?.id)throw Error('CREATED_AD_READBACK_MISMATCH');
     }
+  }
+  async function discoverPending(plan:PausedCampaignPlan,snapshot:Snapshot,step:'creative_a'|'ad_a'){
+    const path=step==='creative_a'?PILOT.account+'/adcreatives':id(snapshot.adset?.id)+'/ads';
+    const fields=step==='creative_a'?'id,name,account_id,object_story_spec':'id,name,account_id,campaign_id,adset_id,status,creative';
+    const expectedName=plan.name+(step==='creative_a'?' | Creative':' | Ad');
+    const candidates:{objectId:string;checks:Record<string,boolean>}[]=[];
+    let after:string|undefined;
+    for(let page=0;page<3;page++){
+      const data=await get(path,fields,{limit:'50',...(after?{after}:{})});
+      if(!Array.isArray(data.data)||data.data.length>50)throw Error('META_RECOVERY_INVENTORY_INVALID');
+      for(const value of data.data){const c=object(value);if(c.name!==expectedName)continue;
+        const objectId=id(c.id);if([PILOT.campaign,'120251321765170697','120251321765180697','120251323975550697'].includes(objectId))throw Error('EXISTING_V5_OBJECT_IS_READ_ONLY');
+        const checks=step==='creative_a'?creativeChecks(plan,c):{account:c.account_id===PILOT.account.slice(4),
+          campaign:c.campaign_id===snapshot.campaign?.id,adset:c.adset_id===snapshot.adset?.id,
+          paused:c.status==='PAUSED',creative:object(c.creative).id===snapshot.creative_a?.id};
+        candidates.push({objectId,checks});if(candidates.length>8)return {status:'AMBIGUOUS',candidates:candidates.slice(0,8)};
+      }
+      if(!data.paging||!object(data.paging).next){
+        if(candidates.length===0)return {status:'NO_MATCH',candidates};
+        if(candidates.length!==1)return {status:'AMBIGUOUS',candidates};
+        return {status:Object.values(candidates[0].checks).every(Boolean)?'EXACT_MATCH':'READBACK_MISMATCH',candidates};
+      }
+      const cursor=object(object(data.paging).cursors).after;
+      if(typeof cursor!=='string'||cursor.length<1||cursor.length>2048)throw Error('META_RECOVERY_CURSOR_INVALID');
+      after=cursor;
+    }
+    return {status:'INCOMPLETE_INVENTORY',candidates};
   }
   async function create(kind:'campaign'|'adset'|'creative_a'|'ad_a',plan:PausedCampaignPlan,snapshot:Snapshot,identities:CreatorIdentities){
     const b=pausedCampaignBodies(plan,identities);
@@ -91,5 +123,5 @@ export function createPausedCampaignProvider(token:string,secret:string,rawTrans
     await verify(plan,{...snapshot,[kind]:{id:created}},identities);
     return {id:created};
   }
-  return {images,inputReadback,verify,create};
+  return {images,inputReadback,verify,create,discoverPending};
 }

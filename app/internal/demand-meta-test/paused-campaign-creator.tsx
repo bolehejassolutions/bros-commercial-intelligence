@@ -17,6 +17,7 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
   const [busy,setBusy]=useState(false),[approved,setApproved]=useState(false),[preview,setPreview]=useState<Preview|null>(null);
   const [notice,setNotice]=useState('Prepare a new campaign, review its exact settings, then create it in PAUSED status.');
   const [setup,setSetup]=useState<string[]>([]),[result,setResult]=useState<Record<string,string>|null>(null),[uncertain,setUncertain]=useState(false);
+  const [recovery,setRecovery]=useState<unknown>(null);
   async function request(payload?:unknown){
     const jwt=await getToken();const r=await fetch(endpoint,{method:payload?'POST':'GET',cache:'no-store',credentials:'same-origin',redirect:'error',
       headers:{Authorization:'Bearer '+jwt,...(payload?{'Content-Type':'application/json'}:{})},
@@ -63,6 +64,16 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
     }catch(e){setUncertain(true);setNotice(e instanceof Error?e.message:'Result unconfirmed. Reconcile before retrying.');}
     finally{setBusy(false);}
   }
+  async function reconcile(){if(!preview||busy)return;setBusy(true);setRecovery(null);
+    try{const data=await request({action:'reconcile',draft:draft(),planSha256:preview.plan.planSha256,authorization:'RECONCILE_PAUSED_ONLY'});
+      if(data.source!=='BROS_DEMAND_PAUSED_CREATOR'||data.planSha256!==preview.plan.planSha256||data.activationAvailable!==false||data.spendAuthorized!==false)throw Error('Recovery response unverified.');
+      setRecovery(data.discovery||null);
+      if(data.status==='RECOVERY_HELD'){setUncertain(true);setNotice('Recovery held: '+data.discovery.status+'. No provider write or confirmation was performed.');return;}
+      if(!data.providerReadbackVerified||!data.committedReadback)throw Error('Recovery readback unverified.');
+      setResult(data.objects);setUncertain(!data.canContinue);setPreview({...preview,canCreate:data.canContinue,blockers:[]});setApproved(false);
+      localStorage.setItem('bros-demand-paused:'+preview.plan.planSha256,JSON.stringify(data));
+      setNotice(data.canContinue?'Existing PAUSED objects reconciled. Review the same plan to continue the remaining stages.':'All four existing objects verified PAUSED. No new provider write was made.');
+    }catch(e){setUncertain(true);setNotice(e instanceof Error?e.message:'Recovery unverified.');}finally{setBusy(false);}}
   return <section className='auth-form' aria-labelledby='paused-creator-title' style={{border:'1px solid #52647a',padding:'1.2rem',borderRadius:12,marginBottom:'2rem'}}>
     <h3 id='paused-creator-title'>Create a Meta campaign</h3><p>Malaysia · ages 21–45 · Facebook and Instagram feeds · Website Purchase · maximum RM140 lifetime · PAUSED creation.</p>
     <p role='status'>{notice}</p><button type='button' disabled={!signedIn||busy} onClick={connect}>Check connection and load images</button>
@@ -82,6 +93,8 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
       <p>Start: {new Date(preview.plan.startTime).toLocaleString('en-MY',{timeZone:'Asia/Kuala_Lumpur'})} MYT</p><p>Destination: {preview.plan.landingUrl}</p>
       {preview.blockers.length>0&&<ul>{preview.blockers.map(x=><li key={x}>{blockers[x]||'A setup requirement remains unverified.'}</li>)}</ul>}
       {uncertain&&<p>A submission already exists for this plan. Reconcile its recorded objects before submitting another operation.</p>}
+      <button type='button' disabled={busy||!signedIn} onClick={reconcile}>Reconcile existing PAUSED objects</button>
+      {recovery!==null&&<details open><summary>Recovery readback checks</summary><pre>{JSON.stringify(recovery,null,2)}</pre></details>}
       <label><input type='checkbox' checked={approved} disabled={busy||uncertain} onChange={e=>setApproved(e.target.checked)}/>I approve creating this reviewed campaign in PAUSED status.</label>
       <button type='button' disabled={!preview.canCreate||!approved||busy||uncertain} onClick={create}>Create reviewed campaign — PAUSED</button>
       <details><summary>Plan and operation references</summary><p>Plan: <code>{preview.plan.planSha256}</code></p>{result&&Object.entries(result).map(([kind,id])=><p key={kind}>{kind}: {id}</p>)}</details>

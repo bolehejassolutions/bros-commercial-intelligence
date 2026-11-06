@@ -20,6 +20,32 @@ export function createPausedCampaignService(deps:Deps){
     return createPausedCampaignProvider(env.META_ADS_MANAGEMENT_TOKEN,env.META_APP_SECRET,deps.transport);
   }
   return {
+    reconcile:async(scope:PilotScope,draft:unknown,expectedHash:string,authorization:string)=>{
+      const f=flags();if(!f.enabled||!f.ledger||authorization!=='RECONCILE_PAUSED_ONLY')throw Error('PAUSED_RECOVERY_NOT_AUTHORIZED');
+      const plan=preparePausedCampaignPlan(scope,draft,cap(),deps.now());
+      if(plan.planSha256!==expectedHash)throw Error('PLAN_CHANGED_REVIEW_AGAIN');
+      await deps.reauthorize();const p=await provider(),identities=await p.inputReadback(plan);
+      const ledger=deps.ledger(scope,plan.planSha256),state=await ledger.recoveryState();
+      await p.verify(plan,state.confirmed,identities);
+      let discovery:Awaited<ReturnType<typeof p.discoverPending>>|undefined;
+      if(state.pending.length){
+        const step=state.pending[0];
+        if(state.pending.length!==1||!['creative_a','ad_a'].includes(step)||
+          steps.find(k=>!state.confirmed[k]?.id)!==step)throw Error('PAUSED_RECOVERY_ORDER_INVALID');
+        discovery=await p.discoverPending(plan,state.confirmed,step as 'creative_a'|'ad_a');
+        if(discovery.status!=='EXACT_MATCH')return {source:'BROS_DEMAND_PAUSED_CREATOR',status:'RECOVERY_HELD',
+          planSha256:plan.planSha256,discovery,canContinue:false,activationAvailable:false,spendAuthorized:false};
+        const objectId=discovery.candidates[0].objectId;
+        await ledger.confirmRecovered(step,objectId,async()=>{
+          await deps.reauthorize();await p.verify(plan,{...state.confirmed,[step]:{id:objectId}},identities);
+        });
+      }
+      await deps.reauthorize();const confirmed=await ledger.snapshot();await p.verify(plan,confirmed,identities);
+      const complete=steps.every(k=>!!confirmed[k]?.id);
+      return {source:'BROS_DEMAND_PAUSED_CREATOR',status:complete?'CREATED_PAUSED_VERIFIED':'RECOVERED_PAUSED',
+        planSha256:plan.planSha256,objects:Object.fromEntries(steps.filter(k=>confirmed[k]?.id).map(k=>[k,confirmed[k]!.id])),
+        providerReadbackVerified:true,committedReadback:true,canContinue:!complete,activationAvailable:false,spendAuthorized:false};
+    },
     verifyLedger:async(scope:PilotScope)=>{
       if(!deps.verifyLedger)throw Error('CREATOR_LEDGER_VERIFICATION_UNAVAILABLE');
       await deps.reauthorize();const result=await deps.verifyLedger(scope);await deps.reauthorize();return result;
