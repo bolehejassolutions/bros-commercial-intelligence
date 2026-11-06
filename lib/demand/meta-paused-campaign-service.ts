@@ -1,7 +1,7 @@
 import {inspectMetaConnection} from '../marketing-operator/meta-connection.ts';
 import {pilotMetaConfiguration} from './meta-pilot-environment.ts';
 import {createPausedCampaignProvider} from './meta-paused-campaign-provider.ts';
-import {preparePausedCampaignPlan} from './meta-paused-campaign-plan.ts';
+import {preparePausedCampaignPlan,restorePausedCampaignPlan} from './meta-paused-campaign-plan.ts';
 import type {PilotScope} from './meta-pilot-ledger.ts';
 import {createPilotLedger} from './meta-pilot-ledger.ts';
 import {creativeRetryNamespace,sealCreativeRecovery,verifyCreativeRecovery} from './meta-paused-recovery-receipt.ts';
@@ -14,6 +14,18 @@ export function createPausedCampaignService(deps:Deps){
     if(!Number.isSafeInteger(x)||x<1||x>14000)throw Error('CREATOR_CAP_INVALID');return x;};
   const flags=()=>({enabled:env.BROS_DEMAND_META_PAUSED_CREATE==='operator-approved-v1',
     ledger:env.BROS_DEMAND_META_CREATOR_LEDGER==='reviewed-v1'});
+  async function planFor(scope:PilotScope,draft:unknown){
+    const at=deps.now();
+    try{return preparePausedCampaignPlan(scope,draft,cap(),at);}catch{
+      const plan=restorePausedCampaignPlan(scope,draft,cap(),at);
+      if(!flags().ledger)throw Error('STARTED_PLAN_PARENTS_UNVERIFIED');
+      await deps.reauthorize();
+      const state=await deps.ledger(scope,plan.planSha256).recoveryState();
+      if(!state.confirmed.campaign?.id||!state.confirmed.adset?.id||
+         state.pending.some(k=>!['creative_a','ad_a'].includes(k)))throw Error('STARTED_PLAN_PARENTS_UNVERIFIED');
+      return plan;
+    }
+  }
   async function provider(){
     if(config.managementCredentialConflict)throw Error('MANAGEMENT_CREDENTIAL_CONFLICT');
     const status=await inspectMetaConnection('write',env,deps.transport,deps.now());
@@ -23,7 +35,7 @@ export function createPausedCampaignService(deps:Deps){
   return {
     reconcile:async(scope:PilotScope,draft:unknown,expectedHash:string,authorization:string)=>{
       const f=flags();if(!f.enabled||!f.ledger||authorization!=='RECONCILE_PAUSED_ONLY')throw Error('PAUSED_RECOVERY_NOT_AUTHORIZED');
-      const plan=preparePausedCampaignPlan(scope,draft,cap(),deps.now());
+      const plan=await planFor(scope,draft);
       if(plan.planSha256!==expectedHash)throw Error('PLAN_CHANGED_REVIEW_AGAIN');
       await deps.reauthorize();const p=await provider(),identities=await p.inputReadback(plan);
       const ledger=deps.ledger(scope,plan.planSha256),state=await ledger.recoveryState();
@@ -36,8 +48,10 @@ export function createPausedCampaignService(deps:Deps){
         discovery=await p.discoverPending(plan,state.confirmed,step as 'creative_a'|'ad_a');
         if(discovery.status!=='EXACT_MATCH'){
           const validation=step==='creative_a'&&discovery.status==='NO_MATCH'?await p.validateCreative(plan,identities):undefined;
-          const recoveryReceipt=validation?.accepted===false&&validation.code===100&&validation.subcode===1885183?
-            sealCreativeRecovery(scope,plan.planSha256,env.META_APP_SECRET||'',deps.now()):undefined;
+          const recoveryReceipt=validation?.accepted===true?
+            sealCreativeRecovery(scope,plan.planSha256,env.META_APP_SECRET||'',deps.now(),'ABSENT_AND_META_VALIDATION_PASSED'):
+            validation?.accepted===false&&validation.code===100&&validation.subcode===1885183?
+              sealCreativeRecovery(scope,plan.planSha256,env.META_APP_SECRET||'',deps.now()):undefined;
           return {source:'BROS_DEMAND_PAUSED_CREATOR',status:'RECOVERY_HELD',
             planSha256:plan.planSha256,discovery:{...discovery,...(validation?{validation}:{})},recoveryReceipt,
             canContinue:false,activationAvailable:false,spendAuthorized:false};
@@ -61,7 +75,7 @@ export function createPausedCampaignService(deps:Deps){
     },
     retryCreative:async(scope:PilotScope,draft:unknown,expectedHash:string,receipt:string,authorization:string)=>{
       const f=flags();if(!f.enabled||!f.ledger||authorization!=='RETRY_RECONCILED_PAUSED_CREATIVE')throw Error('PAUSED_RETRY_NOT_AUTHORIZED');
-      const plan=preparePausedCampaignPlan(scope,draft,cap(),deps.now());if(plan.planSha256!==expectedHash)throw Error('PLAN_CHANGED_REVIEW_AGAIN');
+      const plan=await planFor(scope,draft);if(plan.planSha256!==expectedHash)throw Error('PLAN_CHANGED_REVIEW_AGAIN');
       verifyCreativeRecovery(scope,plan.planSha256,receipt,env.META_APP_SECRET||'',deps.now());
       await deps.reauthorize();const p=await provider(),identities=await p.inputReadback(plan),ledger=deps.ledger(scope,plan.planSha256);
       const state=await ledger.recoveryState();await p.verify(plan,state.confirmed,identities);
@@ -101,7 +115,7 @@ export function createPausedCampaignService(deps:Deps){
         images,connectionVerified,activationAvailable:false};
     },
     preview:async(scope:PilotScope,draft:unknown)=>{
-      const plan=preparePausedCampaignPlan(scope,draft,cap(),deps.now()),f=flags();
+      const plan=await planFor(scope,draft),f=flags();
       const blockers=[...(!f.enabled?['PAUSED_CREATION_NOT_ENABLED']:[]),...(!f.ledger?['CREATOR_LEDGER_NOT_REVIEWED']:[])];
       let snapshot={},providerVerified=false;
       try{const p=await provider();await p.inputReadback(plan);providerVerified=true;}catch{blockers.push('META_ACCOUNT_IMAGE_OR_IDENTITIES_UNVERIFIED');}
@@ -111,7 +125,7 @@ export function createPausedCampaignService(deps:Deps){
     },
     stage:async(scope:PilotScope,draft:unknown,expectedHash:string,authorization:string)=>{
       const f=flags();if(!f.enabled||!f.ledger||authorization!=='CREATE_PAUSED_ONLY')throw Error('PAUSED_CREATION_NOT_AUTHORIZED');
-      const plan=preparePausedCampaignPlan(scope,draft,cap(),deps.now());
+      const plan=await planFor(scope,draft);
       if(plan.planSha256!==expectedHash)throw Error('PLAN_CHANGED_REVIEW_AGAIN');
       await deps.reauthorize();const p=await provider(),identities=await p.inputReadback(plan);
       const ledger=deps.ledger(scope,plan.planSha256),snapshot=await ledger.snapshot();

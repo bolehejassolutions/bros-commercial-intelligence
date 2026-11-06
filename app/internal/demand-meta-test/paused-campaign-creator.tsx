@@ -107,7 +107,7 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
       {uncertain&&<p>A submission already exists for this plan. Reconcile its recorded objects before submitting another operation.</p>}
       <button type='button' disabled={busy||!signedIn} onClick={reconcile}>Reconcile existing PAUSED objects</button>
       {recovery!==null&&<details open><summary>Recovery readback checks</summary><pre>{JSON.stringify(recovery,null,2)}</pre></details>}
-      {retryReceipt&&<div><p>Meta rejected the creative while its app was in Development mode. Resolve the app setting first. One guarded retry is available only after fresh Meta validation passes and the account still contains no matching creative.</p>
+      {retryReceipt&&<div><p>No exact matching creative was found. One guarded retry is available only after fresh Meta validation passes. It reuses this campaign and ad set and remains PAUSED.</p>
         <label><input type='checkbox' checked={retryApproved} disabled={busy} onChange={e=>setRetryApproved(e.target.checked)}/>I approve one reconciled creative retry in PAUSED status.</label>
         <button type='button' disabled={busy||!retryApproved||!signedIn} onClick={retryCreative}>Retry reconciled creative — PAUSED</button></div>}
       <label><input type='checkbox' checked={approved} disabled={busy||uncertain} onChange={e=>setApproved(e.target.checked)}/>I approve creating this reviewed campaign in PAUSED status.</label>

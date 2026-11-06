@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {preparePausedCampaignPlan,pausedCampaignBodies} from '../lib/demand/meta-paused-campaign-plan.ts';
+import {preparePausedCampaignPlan,restorePausedCampaignPlan,pausedCampaignBodies} from '../lib/demand/meta-paused-campaign-plan.ts';
 import {createPausedCampaignService} from '../lib/demand/meta-paused-campaign-service.ts';
 import {createPausedCampaignHttpHandler} from '../lib/demand/meta-paused-campaign-http.ts';
 import {createPilotLedger,PilotReconciliationRequired} from '../lib/demand/meta-pilot-ledger.ts';
@@ -15,7 +15,7 @@ const identities={universal_beneficiary:'99999999000001',universal_payer:'999999
 function fixture(disabled=false){
   const env={META_APP_ID:'1315572270590189',META_APP_SECRET:'synthetic-app-secret-value',META_ADS_MANAGEMENT_TOKEN:'synthetic-management-token-value',
     BROS_DEMAND_META_PAUSED_CREATE:disabled?undefined:'operator-approved-v1',BROS_DEMAND_META_CREATOR_LEDGER:'reviewed-v1'};
-  const calls=[],objects=new Map(),ledgers=new Map();let counter=0,corrupt=false,failCreativeReadback=false,validationAllowed=false,denyCreativePost=false;
+  const calls=[],objects=new Map(),ledgers=new Map();let counter=0,corrupt=false,failCreativeReadback=false,validationAllowed=false,denyCreativePost=false,clock=now;
   const account={id:PILOT.account,account_id:PILOT.account.slice(4),account_status:1,currency:'MYR',timezone_name:'Asia/Kuala_Lumpur',
     business:{id:'2091328444802994'},user_tasks:['ADVERTISE']};
   const transport=async(input,init={})=>{
@@ -58,9 +58,9 @@ function fixture(disabled=false){
         try{const r=await fn();snapshot[step]=r;pending.delete(step);return r;}catch(cause){const error=new PilotReconciliationRequired();error.cause=cause;throw error;}}});}
     return ledgers.get(sha);
   };
-  const service=createPausedCampaignService({environment:env,ledger,reauthorize:async()=>{},now:()=>now,transport});
+  const service=createPausedCampaignService({environment:env,ledger,reauthorize:async()=>{},now:()=>clock,transport});
   return {service,env,calls,objects,ledger,transport,corrupt:()=>{corrupt=true;},interruptCreative:()=>{failCreativeReadback=true;},
-    rejectCreative:()=>{denyCreativePost=true;},allowValidation:()=>{validationAllowed=true;denyCreativePost=false;}};
+    rejectCreative:()=>{denyCreativePost=true;},allowValidation:()=>{validationAllowed=true;denyCreativePost=false;},advance:ms=>{clock+=ms;}};
 }
 test('plan binds exact input and scope; budget, host and caller authority injection deny',()=>{
   const p=preparePausedCampaignPlan(scope,draft(),14000,now);
@@ -188,5 +188,62 @@ test('uncertain recovery POST blocks another retry and can reconcile the one exa
   await assert.rejects(f.service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE'),PilotReconciliationRequired);
   assert.equal(creationPosts(f),before+1);
   const r=await f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY');assert.equal(r.status,'RECOVERED_PAUSED');
+  assert.equal(creationPosts(f),before+1);
+});
+test('restoring a started plan preserves its exact digest without admitting a new past-start campaign',()=>{
+  const p=preparePausedCampaignPlan(scope,draft(),14000,now),later=now+3*3600000;
+  assert.throws(()=>preparePausedCampaignPlan(scope,draft(),14000,later));
+  const restored=restorePausedCampaignPlan(scope,draft(),14000,later);
+  assert.deepEqual(restored,p);
+  assert.throws(()=>restorePausedCampaignPlan(scope,draft(),14000,now+8*86400000));
+});
+test('untracked or campaign-only past-start plans cannot reach Meta or create another parent (MOCK)',async()=>{
+  for(const partial of [false,true]){
+    const f=fixture(),p=preparePausedCampaignPlan(scope,draft(),14000,now);
+    if(partial)await f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY');
+    f.advance(3*3600000);const before=f.calls.length;
+    await assert.rejects(f.service.preview(scope,draft()));
+    await assert.rejects(f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY'));
+    await assert.rejects(f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY'));
+    assert.equal(f.calls.length,before);
+  }
+});
+test('after app publication and receipt expiry, the same started PAUSED plan can renew proof and finish without new parents (MOCK)',async()=>{
+  const {f,p,receipt}=await rejectedCreative(),before=creationPosts(f);f.advance(3*3600000);
+  await assert.rejects(f.service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE'));
+  f.allowValidation();const review=await f.service.preview(scope,draft());
+  assert.equal(review.plan.planSha256,p.planSha256);assert.equal(review.providerVerified,true);
+  const renewed=await f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY');
+  assert.equal(renewed.discovery.status,'NO_MATCH');assert.equal(renewed.discovery.validation.accepted,true);
+  assert.ok(renewed.recoveryReceipt);assert.notEqual(renewed.recoveryReceipt,receipt);
+  assert.equal(creationPosts(f),before);
+  verifyCreativeRecovery(scope,p.planSha256,renewed.recoveryReceipt,f.env.META_APP_SECRET,now+3*3600000);
+  const recovered=await f.service.retryCreative(scope,draft(),p.planSha256,renewed.recoveryReceipt,'RETRY_RECONCILED_PAUSED_CREATIVE');
+  const done=await f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY');
+  assert.equal(done.status,'CREATED_PAUSED_VERIFIED');assert.equal(creationPosts(f),before+2);
+  assert.equal(done.objects.campaign,recovered.objects.campaign);assert.equal(done.objects.adset,recovered.objects.adset);
+  assert.equal(f.objects.size,4);
+  for(const path of ['campaigns','adsets'])assert.equal(f.calls.filter(x=>x.init.method==='POST'&&x.url.pathname.endsWith('/'+path)).length,1);
+});
+test('a modified plan or non-PAUSED recorded parent cannot use started-plan recovery (MOCK)',async()=>{
+  const {f,p}=await rejectedCreative();f.advance(3*3600000);f.allowValidation();const count=f.calls.length;
+  await assert.rejects(f.service.preview(scope,{...draft(),budgetMinor:13999}));assert.equal(f.calls.length,count);
+  const campaign=[...f.objects.values()].find(x=>x.objective==='OUTCOME_SALES');campaign.status='ACTIVE';
+  const before=creationPosts(f);
+  await assert.rejects(f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY'));
+  assert.equal(creationPosts(f),before);
+});
+test('ended parent window cannot renew proof or submit another creative (MOCK)',async()=>{
+  const {f,p}=await rejectedCreative();f.advance(8*86400000);const before=f.calls.length;
+  await assert.rejects(f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY'));
+  await assert.rejects(f.service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY'));
+  assert.equal(f.calls.length,before);
+});
+test('renewed proof cannot bypass an already-uncertain single recovery attempt (MOCK)',async()=>{
+  const {f,p,receipt}=await rejectedCreative();f.allowValidation();f.rejectCreative();const before=creationPosts(f);
+  await assert.rejects(f.service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE'),PilotReconciliationRequired);
+  f.advance(1000);const renewed=await f.service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY');
+  assert.equal(renewed.discovery.validation.accepted,true);assert.ok(renewed.recoveryReceipt);
+  await assert.rejects(f.service.retryCreative(scope,draft(),p.planSha256,renewed.recoveryReceipt,'RETRY_RECONCILED_PAUSED_CREATIVE'),PilotReconciliationRequired);
   assert.equal(creationPosts(f),before+1);
 });

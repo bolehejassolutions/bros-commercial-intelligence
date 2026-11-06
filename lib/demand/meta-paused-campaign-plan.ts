@@ -11,25 +11,35 @@ const clean=(v:unknown,min:number,max:number)=>typeof v==='string'&&v===v.trim()
 /** Internal V1 retains the existing account, Page, pixel and MY 21–45 feeds.
  * A new immutable plan gets its own ledger namespace, never the live V5 one.
  */
-export function preparePausedCampaignPlan(scope:PilotScope,draft:unknown,maximumBudgetMinor:number,at=Date.now()):PausedCampaignPlan {
+function checkedPausedCampaignPlan(scope:PilotScope,draft:unknown,maximumBudgetMinor:number,at:number,resuming:boolean):PausedCampaignPlan {
   if(!draft||typeof draft!=='object'||Array.isArray(draft)||Reflect.ownKeys(draft).length!==fields.length||
-     !fields.every(k=>Object.hasOwn(draft,k))||!Number.isSafeInteger(maximumBudgetMinor)||maximumBudgetMinor<1||maximumBudgetMinor>14000)fail();
+     !fields.every(k=>Object.hasOwn(draft,k))||!Number.isFinite(at)||!Number.isSafeInteger(maximumBudgetMinor)||maximumBudgetMinor<1||maximumBudgetMinor>14000)fail();
   const p=structuredClone(draft) as PausedCampaignDraft;
   if(!clean(p.name,3,100)||!clean(p.primaryText,3,4000)||!clean(p.headline,3,120)||!clean(p.description,0,200)||
      !Number.isSafeInteger(p.budgetMinor)||p.budgetMinor<1||p.budgetMinor>maximumBudgetMinor||
      !Number.isInteger(p.durationDays)||p.durationDays<1||p.durationDays>7||
      !/^[a-f0-9]{32}$/.test(p.imageHash)||typeof p.startTime!=='string'||
      !Number.isFinite(Date.parse(p.startTime))||new Date(p.startTime).toISOString()!==p.startTime||
-     Date.parse(p.startTime)<at+15*60000||Date.parse(p.startTime)>at+30*86400000)fail();
+     (!resuming&&Date.parse(p.startTime)<at+15*60000)||Date.parse(p.startTime)>at+30*86400000)fail();
   let url:URL;try{url=new URL(p.landingUrl);}catch{return fail();}
   if(url.protocol!=='https:'||url.origin!=='https://bros.bolehejas.com'||url.username||url.password||url.hash||url.href.length>2048)fail();
   const endTime=new Date(Date.parse(p.startTime)+p.durationDays*86400000).toISOString();
+  if(resuming&&Date.parse(endTime)<=at)fail();
   const normalized={name:p.name,budgetMinor:p.budgetMinor,durationDays:p.durationDays,startTime:p.startTime,
     landingUrl:url.href,primaryText:p.primaryText,headline:p.headline,description:p.description,imageHash:p.imageHash};
   const planSha256=createHash('sha256').update(JSON.stringify([1,scope.tenantId,scope.principalId,
     PILOT.account,PILOT.page,PILOT.pixel,...fields.map(k=>normalized[k as keyof typeof normalized])])).digest('hex');
   return Object.freeze({...normalized,schemaVersion:1,planSha256,accountId:PILOT.account,pageId:PILOT.page,
     pixelId:PILOT.pixel,endTime,status:'PAUSED'});
+}
+export function preparePausedCampaignPlan(scope:PilotScope,draft:unknown,maximumBudgetMinor:number,at=Date.now()):PausedCampaignPlan {
+  return checkedPausedCampaignPlan(scope,draft,maximumBudgetMinor,at,false);
+}
+/** Rebuild an unchanged, unexpired plan. The service must additionally require
+ * its already-confirmed journal parents before using a started plan.
+ */
+export function restorePausedCampaignPlan(scope:PilotScope,draft:unknown,maximumBudgetMinor:number,at=Date.now()):PausedCampaignPlan {
+  return checkedPausedCampaignPlan(scope,draft,maximumBudgetMinor,at,true);
 }
 export function pausedCampaignBodies(plan:PausedCampaignPlan,identities:{universal_beneficiary:string;universal_payer:string}){
   return {
