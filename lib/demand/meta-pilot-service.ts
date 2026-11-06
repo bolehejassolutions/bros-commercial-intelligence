@@ -80,7 +80,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
           // current provider snapshot, never use recognition to authorize writes.
           const workSet = state.adsets[0];
           const workAds = Array.isArray((workSet?.ads as { data?: unknown } | undefined)?.data)
-            ? (workSet.ads as { data: Array<{ id?: unknown; status?: unknown; effective_status?: unknown }> }).data : [];
+            ? (workSet.ads as { data: Array<{ id?: unknown; adset_id?: unknown; status?: unknown; effective_status?: unknown }> }).data : [];
           // Recognizing exact IDs alone is insufficient: verify the observed
           // seven-day flight, audience and purchase optimization before labeling
           // externally created objects as the approved Work V5 campaign.
@@ -96,7 +96,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
             target?.age_min === 21 && target?.age_max === 45 &&
             Array.isArray(target?.publisher_platforms) &&
             target.publisher_platforms.length === 2 &&
-            ["facebook", "instagram"].every(p => target.publisher_platforms.includes(p)) &&
+            ["facebook", "instagram"].every(p => (target.publisher_platforms as string[]).includes(p)) &&
             workSet?.optimization_goal === "OFFSITE_CONVERSIONS" &&
             workSet?.destination_type === "WEBSITE" &&
             String(promoted?.pixel_id) === PILOT.pixel &&
