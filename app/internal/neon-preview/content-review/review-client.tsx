@@ -4,6 +4,7 @@ import {createAuthClient,type VanillaBetterAuthClient} from '@neondatabase/auth'
 import {BetterAuthVanillaAdapter,type BetterAuthVanillaAdapterInstance} from '@neondatabase/auth/vanilla/adapters';
 import {requestNeonPreviewToken,requestNeonPreviewSession} from '@/lib/bci/neon-preview-client-token';
 import {createContentReviewerKey,signContentReviewDecision,SCRIPT_REVIEW_CHECKS,type ContentReviewerKey} from '@/lib/portfolio/content-review-signing';
+import {prepareContentDemandBridgeUrl} from '@/lib/portfolio/content-demand-bridge-link';
 type Json=Record<string,unknown>;
 type Setup={ready:boolean;missing:string[];registeredKeyIds:string[]};
 type Pack={title:string;envelope:Json;handoff:Json;images:string[];reviewerSubject:string;setup:Setup};
@@ -46,6 +47,7 @@ export default function ContentReview(){
   const [setup,setSetup]=useState<Setup|null>(null),[checked,setChecked]=useState<string[]>([]);
   const [busy,setBusy]=useState(true),[attempted,setAttempted]=useState(false);
   const [message,setMessage]=useState('Menyemak sesi dan kandungan…');
+  const [publicKeyCopyMessage,setPublicKeyCopyMessage]=useState('');
   const [audit,setAudit]=useState<{approvalId?:string;dispatchIntentId?:string;reservationId?:string}>({});
   async function token(){if(!await requestNeonPreviewSession(auth(),email))throw Error();return requestNeonPreviewToken(auth());}
   async function get(path:string){const jwt=await token();const r=await fetch(path,{headers:{Authorization:'Bearer '+jwt},cache:'no-store',redirect:'error'});
@@ -68,6 +70,16 @@ export default function ContentReview(){
   async function makeKey(){setBusy(true);try{const created=await createContentReviewerKey();await keyStore('write',created);setKey(created);
     setMessage('Kunci penyemak disimpan dalam pelayar ini. Daftarkan kunci awam sebelum merekod kelulusan.');}
     catch{setMessage('Pelayar ini tidak dapat menyimpan kunci Ed25519. Gunakan pelayar yang menyokong Web Crypto dan IndexedDB.');}finally{setBusy(false);}}
+  async function copyPublicKeyConfig(){
+    if(!key)return;
+    try{
+      // Only this Ed25519 PUBLIC key is copied; the private key is never exported.
+      await navigator.clipboard.writeText(JSON.stringify({[key.keyId]:key.publicKeyPem}));
+      setPublicKeyCopyMessage('Konfigurasi kunci awam disalin. Tambahkan sebagai pemboleh ubah Preview untuk cabang BCI yang betul.');
+    }catch{
+      setPublicKeyCopyMessage('Salinan tidak dibenarkan oleh pelayar ini. Gunakan fail JSON kunci awam yang telah dimuat turun.');
+    }
+  }
   function downloadPublicKey(){if(!key)return;const blob=new Blob([JSON.stringify({keyId:key.keyId,publicKeyPem:key.publicKeyPem},null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='BROS_CONTENT_REVIEW_PUBLIC_KEY.json';a.click();URL.revokeObjectURL(url);}
   const required=pack?[...(pack.handoff.requiredHumanChecks as string[]),...SCRIPT_REVIEW_CHECKS]:[];
@@ -123,11 +135,34 @@ export default function ContentReview(){
           onChange={e=>setChecked(e.target.checked?[...checked,check]:checked.filter(x=>x!==check))}/>{labels[check]||check}</label>)}
         <button className='primary' onClick={approve} disabled={!canApprove}>Rekod kelulusan dan tempahan</button>
         <p className='muted'>Penghantaran ke platform memerlukan aliran penerbitan yang dibenarkan.</p></section></>}
+    {pack&&audit.reservationId&&(()=>{
+      let href:string|null=null;
+      try{
+        href=prepareContentDemandBridgeUrl({
+          planId:String(pack.envelope.planId),
+          creativeSha256:String(pack.envelope.copySha256),
+          channelService:String((pack.envelope.destination as Json).channelService),
+        });
+      }catch{href=null;}
+      return href?<section><h2>Teruskan ke BROS DEMAND</h2>
+        <p>Kelulusan dan tempahan BCI telah direkodkan. Ini hanya pemindahan rujukan pelan dan hash salinan.
+          Kandungan belum diterbitkan dan hasil jualan belum disahkan.</p>
+        <a href={href} target="_blank" rel="noopener noreferrer">Buka DEMAND dengan rujukan CONTENT</a></section>:null;
+    })()}
     <details><summary>Persediaan penyemak dan rujukan</summary>
       {setup&&!setup.ready&&<ul>{setup.missing.map(x=><li key={x}>{missingLabels[x]||x}</li>)}</ul>}
       {!key?<button onClick={makeKey} disabled={busy}>Sediakan kunci penyemak pada pelayar ini</button>:<><p>Kunci awam: <code>{key.keyId}</code></p>
         <p>Kunci peribadi kekal dalam pelayar ini. Kunci awam perlu didaftarkan oleh pentadbir.</p><button onClick={downloadPublicKey}>Muat turun kunci awam</button>
-        {!setup?.registeredKeyIds.includes(key.keyId)&&<p>Kunci ini belum didaftarkan untuk kelulusan.</p>}</>}
+        {!setup?.registeredKeyIds.includes(key.keyId)&&<>
+          <p>Kunci ini belum didaftarkan untuk kelulusan.</p>
+          <button type="button" disabled={busy} onClick={()=>void copyPublicKeyConfig()}>Salin JSON konfigurasi kunci awam</button>
+          <p className="muted">Nama pemboleh ubah Vercel: <code>BCI_NEON_DEV_CONTENT_REVIEW_PUBLIC_KEYS</code>.
+            Tetapkan pada Preview, cabang <code>feat/neon-bci-dev-ledger-20261025</code> sahaja.
+            Jangan salin, muat naik atau mendedahkan kunci peribadi.</p>
+          <a href="https://vercel.com/bolehejassolutions-8492/bros-commercial-intelligence/settings/environment-variables"
+            target="_blank" rel="noopener noreferrer">Tetapan persekitaran Vercel</a>
+          {publicKeyCopyMessage&&<p role="status">{publicKeyCopyMessage}</p>}
+        </>}</>}
       {pack&&<p>ID pek: <code>{String(pack.envelope.proofEnvelopeId)}</code></p>}
       {Object.entries(audit).map(([k,v])=><p key={k}>{k}: <code>{v}</code></p>)}</details>
     <style jsx>{` .review{max-width:1040px;margin:0 auto;padding:32px 20px 80px;font:16px/1.6 system-ui;color:#e7eaf1}header{margin:20px 0 28px}.eyebrow{letter-spacing:.18em;color:#e8c56a;font-size:13px}h1{font-size:clamp(30px,5vw,48px);line-height:1.2;margin:8px 0}h2{margin-top:0;font-size:24px}a{color:#e8c56a}section,details,.status{padding:24px;border:1px solid #34445d;border-radius:16px;background:#142035;margin:22px 0}.status{border-left:4px solid #e8c56a}.images{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}figure{margin:0}img{width:100%;height:auto;border-radius:12px}figcaption{font-size:14px;margin:8px 0 24px;color:#b4c0d2}dl>div{margin-bottom:18px}dt{color:#e8c56a;font-weight:600}dd{margin:3px 0 0}.caption{white-space:pre-wrap}.badge{display:inline-block;border:1px solid #8d7543;color:#eed293;border-radius:8px;padding:6px 10px;font-size:12px}button{font:inherit;background:#263951;color:#eef1f6;border:1px solid #57708c;border-radius:10px;padding:12px 18px;margin:5px 8px 5px 0;cursor:pointer}button:disabled{opacity:.45;cursor:default}.primary{background:#e8c56a;color:#101827;font-weight:700;margin-top:22px}label{display:flex;align-items:flex-start;gap:12px;margin:15px 0}input{margin-top:7px;accent-color:#e8c56a;flex:none}.muted{font-size:14px;color:#b4c0d2}code{overflow-wrap:anywhere}summary{cursor:pointer;color:#e8c56a}@media(max-width:650px){.images{grid-template-columns:1fr}section,details,.status{padding:18px}.review{padding:20px 15px 60px}} `}</style>
