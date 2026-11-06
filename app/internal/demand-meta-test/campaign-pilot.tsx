@@ -41,6 +41,25 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
     Number.isSafeInteger(budgetSen) && budgetSen > 0 && budgetSen <= 10000000 &&
     (() => { try { const u = new URL(draftUrl); return u.protocol === "https:" && Boolean(u.hostname) && !u.username && !u.password; } catch { return false; } })();
 
+  function exportDraft() {
+    if (!draftValid) return;
+    // Portable operator handoff only. Never interpreted as an approval or API write.
+    const draft = {
+      schema: "BROS_DEMAND_META_DRAFT_V1",
+      executionAuthorized: false,
+      campaign: { name: draftName.trim(), objective: "OUTCOME_SALES",
+        lifetimeBudgetMinor: budgetSen, currency: "MYR", status: "PAUSED" },
+      destination: { url: draftUrl, optimization: "WEBSITE_PURCHASE" },
+    };
+    const blob = new Blob([JSON.stringify(draft, null, 2) + "\\n"], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement("a");
+      link.href = url; link.download = "bros-demand-meta-draft.json";
+      document.body.appendChild(link); link.click(); link.remove();
+    } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  }
+
   async function request(form?: FormData) {
     const token = await getToken();
     const response = await fetch(endpoint, { method: form ? "POST" : "GET", body: form,
@@ -112,7 +131,7 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
       <p role="status">{draftValid
         ? `Draft valid: ${draftName.trim()} · MYR ${(budgetSen / 100).toFixed(2)} lifetime · Sales / Website Purchase · PAUSED only. Landing: ${draftUrl}. No Meta write performed.`
         : "Enter a campaign name (3–100 characters), positive MYR lifetime budget and HTTPS landing page to preview the proposal."}</p>
-      <p className="sub">Execution unavailable until a separate authenticated, ledger-backed campaign creator and provider readback are verified. The existing live V5 campaign is unaffected.</p>
+      <button type="button" disabled={!draftValid} onClick={exportDraft}>Export validated draft (JSON, no Meta write)</button>\n      <p className="sub">Execution unavailable until a separate authenticated, ledger-backed campaign creator and provider readback are verified. The existing live V5 campaign is unaffected.</p>
     </div>
     <p className="sub">Existing BROS SELL campaign · RM140 total · 7 days · Malaysia, ages 21–45 · two approved V5 ads.</p>
     <p role="status" aria-label="Campaign execution status">{notice}</p>
