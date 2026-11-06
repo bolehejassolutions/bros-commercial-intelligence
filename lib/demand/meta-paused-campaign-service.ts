@@ -33,8 +33,11 @@ export function createPausedCampaignService(deps:Deps){
         if(state.pending.length!==1||!['creative_a','ad_a'].includes(step)||
           steps.find(k=>!state.confirmed[k]?.id)!==step)throw Error('PAUSED_RECOVERY_ORDER_INVALID');
         discovery=await p.discoverPending(plan,state.confirmed,step as 'creative_a'|'ad_a');
-        if(discovery.status!=='EXACT_MATCH')return {source:'BROS_DEMAND_PAUSED_CREATOR',status:'RECOVERY_HELD',
-          planSha256:plan.planSha256,discovery,canContinue:false,activationAvailable:false,spendAuthorized:false};
+        if(discovery.status!=='EXACT_MATCH'){
+          const validation=step==='creative_a'&&discovery.status==='NO_MATCH'?await p.validateCreative(plan,identities):undefined;
+          return {source:'BROS_DEMAND_PAUSED_CREATOR',status:'RECOVERY_HELD',
+            planSha256:plan.planSha256,discovery:{...discovery,...(validation?{validation}:{})},canContinue:false,activationAvailable:false,spendAuthorized:false};
+        }
         const objectId=discovery.candidates[0].objectId;
         await ledger.confirmRecovered(step,objectId,async()=>{
           await deps.reauthorize();await p.verify(plan,{...state.confirmed,[step]:{id:objectId}},identities);
