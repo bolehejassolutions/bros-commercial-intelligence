@@ -59,7 +59,14 @@ export function createPilotProvider(token: string, rawTransport: typeof fetch = 
         (campaign.spend_cap !== undefined && number(campaign.spend_cap) !== 0 &&
           !(number(campaign.spend_cap) > 0 && number(campaign.spend_cap) <= PILOT.budgetMinor)))
       throw Error("EXISTING_CAMPAIGN_AUTHORITY_MISMATCH");
-    return { account, campaign, adsets: list(children) };
+    const adsets = list(children);
+    // Nested ads are paginated independently of campaign adsets. Never treat
+    // a truncated nested collection as a complete externally managed flight:
+    // that could hide extra ads while the operator reports a verified V5 set.
+    for (const set of adsets) {
+      if (set.ads !== undefined) list(set.ads);
+    }
+    return { account, campaign, adsets };
   }
   function assertPaused(state: PilotProviderState) {
     if (state.campaign.status !== "PAUSED" || number(state.campaign.budget_remaining) !== PILOT.budgetMinor)
