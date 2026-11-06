@@ -77,6 +77,14 @@ function fixture() {
 function service(f, overrides = {}) { return createPilotService({ environment: f.config, readToken: () => "synthetic-read-token",
   ledger: () => f.ledger, now: () => now, reauthorize: async () => {}, transport: f.transport, ...overrides }); }
 
+test("nested Meta ad pagination blocks incomplete readback before any write", async () => {
+  const f = fixture();
+  f.set.ads.paging = { next: "https://graph.facebook.com/v24.0/private-next-page" };
+  const api = createPilotProvider("synthetic-read-token", f.transport);
+  await assert.rejects(api.read(), /META_COLLECTION_NOT_COMPLETE/);
+  assert.equal(f.calls.filter(c => c.init.method === "POST").length, 0);
+});
+
 test("approved existing campaign, CBO cap, age, placements, UTM and V5 copy are fixed", () => {
   const b = adsetBody(verifiedIdentities(env()), now);
   assert.equal(b.campaign_id, PILOT.campaign); assert.equal(b.status, "PAUSED");
