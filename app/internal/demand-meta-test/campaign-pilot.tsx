@@ -30,6 +30,17 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
   const [notice, setNotice] = useState("Check the existing campaign before preparing or launching ads.");
   const [busy, setBusy] = useState(false);
   const [a, setA] = useState<File | null>(null), [b, setB] = useState<File | null>(null);
+  // This is a local planning surface, not an authorization to issue Meta writes.
+  // The existing V5 execution API remains fixed to its approved campaign.
+  const [draftName, setDraftName] = useState("");
+  const [draftBudget, setDraftBudget] = useState("");
+  const [draftUrl, setDraftUrl] = useState("");
+  const budgetSen = /^\\d+(?:\\.\\d{1,2})?$/.test(draftBudget.trim())
+    ? Math.round(Number(draftBudget) * 100) : NaN;
+  const draftValid = draftName.trim().length >= 3 && draftName.trim().length <= 100 &&
+    Number.isSafeInteger(budgetSen) && budgetSen > 0 && budgetSen <= 10000000 &&
+    (() => { try { const u = new URL(draftUrl); return u.protocol === "https:" && Boolean(u.hostname) && !u.username && !u.password; } catch { return false; } })();
+
   async function request(form?: FormData) {
     const token = await getToken();
     const response = await fetch(endpoint, { method: form ? "POST" : "GET", body: form,
@@ -89,6 +100,20 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
   }
   return <section aria-labelledby="campaign-pilot-heading" className="auth-form" style={{ marginTop: "2rem", borderTop: "1px solid #333", paddingTop: "1.5rem" }}>
     <h2 id="campaign-pilot-heading">Run the approved Meta pilot</h2>
+    <div aria-labelledby="future-campaign-heading" style={{ border: "1px solid #555", padding: "1rem", marginBottom: "1rem" }}>
+      <h3 id="future-campaign-heading">Future Meta campaign — planning only</h3>
+      <p className="sub">Prepare a proposed Sales campaign without changing Meta. This is not a campaign creation or approval control.</p>
+      <label htmlFor="future-campaign-name">Campaign name</label>
+      <input id="future-campaign-name" value={draftName} maxLength={100} onChange={e => setDraftName(e.target.value)} />
+      <label htmlFor="future-campaign-budget">Proposed lifetime budget (MYR)</label>
+      <input id="future-campaign-budget" inputMode="decimal" value={draftBudget} onChange={e => setDraftBudget(e.target.value)} placeholder="140.00" />
+      <label htmlFor="future-campaign-url">Landing page (HTTPS)</label>
+      <input id="future-campaign-url" type="url" value={draftUrl} onChange={e => setDraftUrl(e.target.value)} />
+      <p role="status">{draftValid
+        ? `Draft valid: ${draftName.trim()} · MYR ${(budgetSen / 100).toFixed(2)} lifetime · Sales / Website Purchase · PAUSED only. Landing: ${draftUrl}. No Meta write performed.`
+        : "Enter a campaign name (3–100 characters), positive MYR lifetime budget and HTTPS landing page to preview the proposal."}</p>
+      <p className="sub">Execution unavailable until a separate authenticated, ledger-backed campaign creator and provider readback are verified. The existing live V5 campaign is unaffected.</p>
+    </div>
     <p className="sub">Existing BROS SELL campaign · RM140 total · 7 days · Malaysia, ages 21–45 · two approved V5 ads.</p>
     <p role="status" aria-label="Campaign execution status">{notice}</p>
     <button type="button" disabled={busy || !signedIn} onClick={refresh}>Check campaign readiness</button>
