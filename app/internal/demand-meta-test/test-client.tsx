@@ -5,6 +5,7 @@ import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/au
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
 import { requestNeonPreviewToken, requestNeonPreviewSession, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
 import CampaignPilot from "./campaign-pilot";
+import PortfolioLineagePanel from "./portfolio-lineage-panel";
 import { demandMetaBrowserDiagnostic, type DemandMetaBrowserPhase } from "@/lib/demand/meta-browser-diagnostic";
 
 const operatorEmail = "rasymokh@gmail.com";
@@ -374,6 +375,10 @@ export default function DemandMetaTestClient() {
           if (!(await verifiedSession())) { setStage("start"); throw new Error("Sign in again to check campaign access."); }
           return requestNeonPreviewToken(auth());
         }} onSessionExpired={() => { setStage("start"); setNotice("Your session needs a fresh sign-in. No campaign action is certified."); }} />
+        <PortfolioLineagePanel signedIn={stage === "ready"} getToken={async () => {
+          if (!(await verifiedSession())) { setStage("start"); throw new Error("Sign in again to prepare an attribution link."); }
+          return requestNeonPreviewToken(auth());
+        }} onSessionExpired={() => { setStage("start"); setNotice("The DEMAND session expired. Reauthenticate to continue."); }} />
         <p className="sub">No JWT, code, access token, tenant ID or database password is shown or written to storage. All provider reads require a manual click and are confined to the pinned ACQ-V2 window or one server-locked historical PAUSED BROS SELL control window. No arbitrary campaign selection.</p>
       </section>
     </main>
