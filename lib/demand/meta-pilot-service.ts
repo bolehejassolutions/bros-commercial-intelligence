@@ -1,7 +1,7 @@
 import { inspectMetaConnection } from "../marketing-operator/meta-connection.ts";
 import { pilotMetaConfiguration } from "./meta-pilot-environment.ts";
 import { createPilotProvider } from "./meta-pilot-provider.ts";
-import { PILOT, STAGE_STEPS, policyDigest, verifiedIdentities, launchAttestation, validateAsset,
+import { PILOT, ASSETS, STAGE_STEPS, policyDigest, verifiedIdentities, launchAttestation, validateAsset,
   type Snapshot, type Step } from "./meta-pilot-policy.ts";
 import { createPilotLedger, PilotReconciliationRequired, type PilotScope } from "./meta-pilot-ledger.ts";
 
@@ -101,6 +101,21 @@ export function createPilotService(deps: PilotServiceDependencies) {
             workSet?.destination_type === "WEBSITE" &&
             String(promoted?.pixel_id) === PILOT.pixel &&
             promoted?.custom_event_type === "PURCHASE";
+          // Exact IDs and active delivery are insufficient: independently
+          // confirm the owned Page and approved destinations for both ads.
+          // Recognition is observational and never imports execution authority.
+          const workCreativeValid = workAds.every(ad => {
+            const creative = ad.creative as Record<string, unknown> | undefined;
+            const story = creative?.object_story_spec as Record<string, unknown> | undefined;
+            const link = story?.link_data as Record<string, unknown> | undefined;
+            const cta = link?.call_to_action as Record<string, unknown> | undefined;
+            const ctaValue = cta?.value as Record<string, unknown> | undefined;
+            const expected = ad.id === expectedWorkAdIds[0] ? ASSETS.a :
+              ad.id === expectedWorkAdIds[1] ? ASSETS.b : null;
+            return expected !== null && story?.page_id === PILOT.page &&
+              link?.link === expected.url && cta?.type === "LEARN_MORE" &&
+              ctaValue?.link === expected.url;
+          });
           workV5Recognized = state.campaign.status === "ACTIVE" &&
             state.campaign.effective_status === "ACTIVE" &&
             state.adsets.length === 1 &&
@@ -108,7 +123,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
             workSet.campaign_id === PILOT.campaign &&
             workSet.account_id === PILOT.account.slice(4) &&
             workSet.status === "ACTIVE" && workSet.effective_status === "ACTIVE" &&
-            workFlightValid && workTargetValid &&
+            workFlightValid && workTargetValid && workCreativeValid &&
             workAds.every(ad => ad.adset_id === workSet.id) &&
             workAds.length === 2 && observedWorkAdIds.length === 2 &&
             expectedWorkAdIds.every(id => workAds.some(ad => ad.id === id &&
