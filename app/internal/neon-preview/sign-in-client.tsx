@@ -460,6 +460,7 @@ export default function NeonPreviewSignIn() {
         ) : null}
         {step === "ready" ? (
           <div className="auth-form">
+            <a href="/internal/neon-preview/content-review">Open BROS CONTENT original-media review</a>
             <label>
               Product
               <select value={product} disabled={busy} onChange={event => setProduct(event.target.value === "demand" ? "demand" : "content")}>

@@ -5,7 +5,10 @@ const neonPreviewPaths = new Set([
   "/api/internal/neon-lineage-receipt",
   "/api/internal/neon-demand-proposal",
   "/api/internal/neon-content-reservation",
+  "/api/internal/neon-content-review",
+  "/api/internal/neon-content-approval",
   "/internal/neon-preview",
+  "/internal/neon-preview/content-review",
 ]);
 
 export function usesNeonPreviewAuthentication(pathname: string): boolean {
