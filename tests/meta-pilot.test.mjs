@@ -386,6 +386,11 @@ test("external Work V5 recognition requires exact flight, purchase optimization 
     () => { const link = f.set.ads.data[0].creative.object_story_spec.link_data;
       const original = link.link; link.link = "https://unapproved.example/";
       return () => { link.link = original; }; },
+    ...["message", "name", "description"].map(field => () => {
+      const link = f.set.ads.data[0].creative.object_story_spec.link_data;
+      const original = link[field]; link[field] = "UNAPPROVED COPY";
+      return () => { link[field] = original; };
+    }),
     () => { const link = f.set.ads.data[1].creative.object_story_spec.link_data;
       const original = link.call_to_action.value.link; link.call_to_action.value.link = "https://unapproved.example/";
       return () => { link.call_to_action.value.link = original; }; },
