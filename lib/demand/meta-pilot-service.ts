@@ -81,13 +81,35 @@ export function createPilotService(deps: PilotServiceDependencies) {
           const workSet = state.adsets[0];
           const workAds = Array.isArray((workSet?.ads as { data?: unknown } | undefined)?.data)
             ? (workSet.ads as { data: Array<{ id?: unknown; status?: unknown; effective_status?: unknown }> }).data : [];
+          // Recognizing exact IDs alone is insufficient: verify the observed
+          // seven-day flight, audience and purchase optimization before labeling
+          // externally created objects as the approved Work V5 campaign.
+          const target = workSet?.targeting as Record<string, unknown> | undefined;
+          const geo = target?.geo_locations as Record<string, unknown> | undefined;
+          const promoted = workSet?.promoted_object as Record<string, unknown> | undefined;
+          const workFlightValid = typeof workSet?.start_time === "string" &&
+            typeof workSet?.end_time === "string" &&
+            Date.parse(workSet.start_time) === Date.parse("2026-11-06T08:00:00+08:00") &&
+            Date.parse(workSet.end_time) === Date.parse("2026-11-13T08:00:00+08:00");
+          const workTargetValid = Array.isArray(geo?.countries) &&
+            geo.countries.length === 1 && geo.countries[0] === "MY" &&
+            target?.age_min === 21 && target?.age_max === 45 &&
+            Array.isArray(target?.publisher_platforms) &&
+            target.publisher_platforms.length === 2 &&
+            ["facebook", "instagram"].every(p => target.publisher_platforms.includes(p)) &&
+            workSet?.optimization_goal === "OFFSITE_CONVERSIONS" &&
+            workSet?.destination_type === "WEBSITE" &&
+            String(promoted?.pixel_id) === PILOT.pixel &&
+            promoted?.custom_event_type === "PURCHASE";
           workV5Recognized = state.campaign.status === "ACTIVE" &&
             state.campaign.effective_status === "ACTIVE" &&
             state.adsets.length === 1 &&
             workSet.id === "120251321765170697" &&
             workSet.campaign_id === PILOT.campaign &&
             workSet.account_id === PILOT.account.slice(4) &&
-            workSet.status === "ACTIVE" &&
+            workSet.status === "ACTIVE" && workSet.effective_status === "ACTIVE" &&
+            workFlightValid && workTargetValid &&
+            workAds.every(ad => ad.adset_id === workSet.id) &&
             workAds.length === 2 && observedWorkAdIds.length === 2 &&
             expectedWorkAdIds.every(id => workAds.some(ad => ad.id === id &&
               ad.status === "ACTIVE" && ad.effective_status === "ACTIVE"));
