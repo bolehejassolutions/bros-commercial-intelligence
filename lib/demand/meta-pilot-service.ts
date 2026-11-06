@@ -56,6 +56,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
       let providerVerified = false, objectsVerified = false, identityReadbackVerified = false,
         launchReadbackVerified = false, pausedUnspentVerified = false,
         campaignStatus: string | null = null, adsets: number | null = null;
+      let observedAdsets: { id: string; status: string; effectiveStatus: string; startTime: string | null; endTime: string | null }[] = [];
       let observedAds: { id: string; adsetId: string; status: string; effectiveStatus: string }[] = [];
       let externallyManaged = false;
       let workV5Recognized = false;
@@ -130,6 +131,12 @@ export function createPilotService(deps: PilotServiceDependencies) {
               ad.status === "ACTIVE" && ad.effective_status === "ACTIVE"));
           if (externallyManaged && !workV5Recognized)
             blockers.push("EXTERNAL_CAMPAIGN_OBJECTS_UNRECONCILED");
+          observedAdsets = state.adsets.map(set => ({
+            id: String(set.id ?? ""), status: String(set.status ?? "UNKNOWN"),
+            effectiveStatus: String(set.effective_status ?? "UNKNOWN"),
+            startTime: typeof set.start_time === "string" ? set.start_time : null,
+            endTime: typeof set.end_time === "string" ? set.end_time : null,
+          }));
           observedAds = state.adsets.flatMap(set => Array.isArray((set.ads as { data?: unknown } | undefined)?.data) ?
             ((set.ads as { data: unknown[] }).data).filter((ad): ad is Record<string, unknown> =>
               !!ad && typeof ad === "object" && !Array.isArray(ad)).map(ad => ({
@@ -168,7 +175,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
       const staged = STAGE_STEPS.filter(s => snapshot[s]).length;
       return { source: "BROS_DEMAND_META_PILOT" as const, campaignId: PILOT.campaign,
         budgetMinor: PILOT.budgetMinor, currency: "MYR", durationDays: 7,
-        providerVerified, campaignStatus, adsets, observedAds, externallyManaged, workV5Recognized, spend,
+        providerVerified, campaignStatus, adsets, observedAdsets, observedAds, externallyManaged, workV5Recognized, spend,
         stagedSteps: staged, totalStageSteps: STAGE_STEPS.length,
         managementVerified, ledgerVerified, blockers,
         // These indicate admission to an action; they are not E2E completion claims.
