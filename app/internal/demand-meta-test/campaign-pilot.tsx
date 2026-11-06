@@ -51,7 +51,7 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
         lifetimeBudgetMinor: budgetSen, currency: "MYR", status: "PAUSED" },
       destination: { url: draftUrl, optimization: "WEBSITE_PURCHASE" },
     };
-    const blob = new Blob([JSON.stringify(draft, null, 2) + "\\n"], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(draft, null, 2) + "\n"], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     try {
       const link = document.createElement("a");
@@ -131,7 +131,8 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
       <p role="status">{draftValid
         ? `Draft valid: ${draftName.trim()} · MYR ${(budgetSen / 100).toFixed(2)} lifetime · Sales / Website Purchase · PAUSED only. Landing: ${draftUrl}. No Meta write performed.`
         : "Enter a campaign name (3–100 characters), positive MYR lifetime budget and HTTPS landing page to preview the proposal."}</p>
-      <button type="button" disabled={!draftValid} onClick={exportDraft}>Export validated draft (JSON, no Meta write)</button>\n      <p className="sub">Execution unavailable until a separate authenticated, ledger-backed campaign creator and provider readback are verified. The existing live V5 campaign is unaffected.</p>
+      <button type="button" disabled={!draftValid} onClick={exportDraft}>Export validated draft (JSON, no Meta write)</button>
+      <p className="sub">Execution unavailable until a separate authenticated, ledger-backed campaign creator and provider readback are verified. The existing live V5 campaign is unaffected.</p>
     </div>
     <p className="sub">Existing BROS SELL campaign · RM140 total · 7 days · Malaysia, ages 21–45 · two approved V5 ads.</p>
     <p role="status" aria-label="Campaign execution status">{notice}</p>
