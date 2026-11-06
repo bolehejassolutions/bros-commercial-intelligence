@@ -48,6 +48,7 @@ export default function ContentReview(){
   const [busy,setBusy]=useState(true),[attempted,setAttempted]=useState(false);
   const [message,setMessage]=useState('Menyemak sesi dan kandungan…');
   const [publicKeyCopyMessage,setPublicKeyCopyMessage]=useState('');
+  const [activeFrame,setActiveFrame]=useState(0);
   const [audit,setAudit]=useState<{approvalId?:string;dispatchIntentId?:string;reservationId?:string}>({});
   async function token(){if(!await requestNeonPreviewSession(auth(),email))throw Error();return requestNeonPreviewToken(auth());}
   async function get(path:string){const jwt=await token();const r=await fetch(path,{headers:{Authorization:'Bearer '+jwt},cache:'no-store',redirect:'error'});
@@ -60,7 +61,7 @@ export default function ContentReview(){
     }).catch(()=>{if(active)setMessage('Log masuk ke akaun BROS anda untuk membuka kandungan.');})
       .finally(()=>{if(active)setBusy(false);});return ()=>{active=false;};
   },[]);
-  async function select(id:string){setBusy(true);setPack(null);setChecked([]);setAttempted(false);setAudit({});
+  async function select(id:string){setBusy(true);setPack(null);setActiveFrame(0);setChecked([]);setAttempted(false);setAudit({});
     try{const data=await get('/api/internal/neon-content-review?proof='+encodeURIComponent(id));setPack(data);setSetup(data.setup);
       const previous=localStorage.getItem('bros-content-operation:'+id);
       if(previous){setAudit(JSON.parse(previous));setAttempted(true);
@@ -115,56 +116,156 @@ export default function ContentReview(){
     }catch{setMessage('Keputusan belum dapat disahkan. Elakkan menghantar semula; semak rujukan operasi di bawah dahulu.');}
     finally{setBusy(false);}
   }
-  const script=pack?.envelope.script as Json|undefined,copy=pack?.envelope.copy as Json|undefined;
-  return <main className='review'><header><a href='/internal/neon-preview'>← Ruang kerja BROS</a><p className='eyebrow'>BROS CONTENT</p>
-    <h1>Semak sebelum terbit</h1><p>Skrip, salinan dan imej asal dalam satu pek.</p></header>
-    <p role='status' className='status'>{message}</p>
-    <nav aria-label='Pek kandungan'>{sources.map(x=><button key={x.proofEnvelopeId} onClick={()=>select(x.proofEnvelopeId)} disabled={busy}>{x.title}</button>)}</nav>
-    {!sources.length&&<a href='/internal/neon-preview'>Log masuk ke BROS</a>}
-    {pack&&<><h2>{pack.title}</h2><span className='badge'>DRAF · BELUM DILULUSKAN UNTUK TERBIT</span>
-      <section><h2>Skrip penuh</h2><dl>{Object.entries(script||{}).filter(([k])=>!['scriptId','revisionId','shots'].includes(k)).map(([k,v])=>
-        <div key={k}><dt>{scriptLabels[k]||k}</dt><dd>{String(v)}</dd></div>)}</dl></section>
-      <div className='images'>{pack.images.map((src,i)=><figure key={i}><img src={src} alt={String((copy?.altTexts as string[])?.[i]||'Imej asal '+(i+1))}/>
-        <figcaption>Imej {i+1} · {String((script?.shots as string[])?.[i])}</figcaption></figure>)}</div>
-      <section><h2>Kapsyen</h2><p className='caption'>{String(copy?.caption)}</p><h3>Janji dan tindakan pembelajaran</h3>
-        <dl>{Object.entries(pack.envelope.resourceMapping as Json).filter(([k])=>k!=='resourceId').map(([k,v])=><div key={k}>
-          <dt>{resourceLabels[k]||k}</dt><dd>{String(v)}</dd></div>)}</dl>
-        <h3>Destinasi</h3><p>{String((pack.envelope.destination as Json).channelService)} · {String((pack.envelope.destination as Json).channelId)}</p></section>
-      <section><h2>Keputusan penyemak</h2><p>Tandakan hanya perkara yang anda sendiri telah periksa.</p>
-        {required.map(check=><label className='review-choice' key={check}><input type='checkbox' disabled={attempted||busy} checked={checked.includes(check)}
-          onChange={e=>setChecked(e.target.checked?[...checked,check]:checked.filter(x=>x!==check))}/><span>{labels[check]||check}</span></label>)}
-        <button className='primary' onClick={approve} disabled={!canApprove}>Rekod kelulusan dan tempahan</button>
-        <p className='muted'>Penghantaran ke platform memerlukan aliran penerbitan yang dibenarkan.</p></section></>}
-    {pack&&audit.reservationId&&(()=>{
-      let href:string|null=null;
-      try{
-        href=prepareContentDemandBridgeUrl({
-          planId:String(pack.envelope.planId),
-          proofEnvelopeId:String(pack.envelope.proofEnvelopeId),
-          channelService:String((pack.envelope.destination as Json).channelService),
-        });
-      }catch{href=null;}
-      return href?<section><h2>Teruskan ke BROS DEMAND</h2>
-        <p>Kelulusan dan tempahan BCI telah direkodkan. Ini hanya pemindahan rujukan pelan dan cap jari bukti kreatif lengkap (visual, skrip, kapsyen).
-          Kandungan belum diterbitkan dan hasil jualan belum disahkan.</p>
-        <a href={href} target="_blank" rel="noopener noreferrer">Buka DEMAND dengan rujukan CONTENT</a></section>:null;
-    })()}
-    <details><summary>Persediaan penyemak dan rujukan</summary>
-      {setup&&!setup.ready&&<ul>{setup.missing.map(x=><li key={x}>{missingLabels[x]||x}</li>)}</ul>}
-      {!key?<button onClick={makeKey} disabled={busy}>Sediakan kunci penyemak pada pelayar ini</button>:<><p>Kunci awam: <code>{key.keyId}</code></p>
-        <p>Kunci peribadi kekal dalam pelayar ini. Kunci awam perlu didaftarkan oleh pentadbir.</p><button onClick={downloadPublicKey}>Muat turun kunci awam</button>
-        {!setup?.registeredKeyIds.includes(key.keyId)&&<>
-          <p>Kunci ini belum didaftarkan untuk kelulusan.</p>
-          <button type="button" disabled={busy} onClick={()=>void copyPublicKeyConfig()}>Salin JSON konfigurasi kunci awam</button>
-          <p className="muted">Nama pemboleh ubah Vercel: <code>BCI_NEON_DEV_CONTENT_REVIEW_PUBLIC_KEYS</code>.
-            Tetapkan pada Preview, cabang <code>feat/neon-bci-dev-ledger-20261025</code> sahaja.
-            Jangan salin, muat naik atau mendedahkan kunci peribadi.</p>
-          <a href="https://vercel.com/bolehejassolutions-8492/bros-commercial-intelligence/settings/environment-variables"
-            target="_blank" rel="noopener noreferrer">Tetapan persekitaran Vercel</a>
-          {publicKeyCopyMessage&&<p role="status">{publicKeyCopyMessage}</p>}
-        </>}</>}
-      {pack&&<p>ID pek: <code>{String(pack.envelope.proofEnvelopeId)}</code></p>}
-      {Object.entries(audit).map(([k,v])=><p key={k}>{k}: <code>{v}</code></p>)}</details>
-    <style jsx>{` .review{max-width:1040px;margin:0 auto;padding:32px 20px 80px;font:16px/1.6 system-ui;color:#e7eaf1}header{margin:20px 0 28px}.eyebrow{letter-spacing:.18em;color:#e8c56a;font-size:13px}h1{font-size:clamp(30px,5vw,48px);line-height:1.2;margin:8px 0}h2{margin-top:0;font-size:24px}a{color:#e8c56a}section,details,.status{padding:24px;border:1px solid #34445d;border-radius:16px;background:#142035;margin:22px 0}.status{border-left:4px solid #e8c56a}.images{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}figure{margin:0}img{width:100%;height:auto;border-radius:12px}figcaption{font-size:14px;margin:8px 0 24px;color:#b4c0d2}dl>div{margin-bottom:18px}dt{color:#e8c56a;font-weight:600}dd{margin:3px 0 0}.caption{white-space:pre-wrap}.badge{display:inline-block;border:1px solid #8d7543;color:#eed293;border-radius:8px;padding:6px 10px;font-size:12px}button{font:inherit;background:#263951;color:#eef1f6;border:1px solid #57708c;border-radius:10px;padding:12px 18px;margin:5px 8px 5px 0;cursor:pointer}button:disabled{opacity:.45;cursor:default}.primary{background:#e8c56a;color:#101827;font-weight:700;margin-top:22px}label.review-choice{display:grid;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:12px;margin:10px 0;padding:12px;border:1px solid #34445d;border-radius:10px;background:#101b2c;line-height:1.5;cursor:pointer}label.review-choice:has(input:disabled){cursor:default}label.review-choice input[type=checkbox]{box-sizing:border-box;display:block;appearance:auto;width:18px;min-width:18px;max-width:18px;height:18px;min-height:18px;max-height:18px;flex:none;margin:2px 0 0;padding:0;border:0;border-radius:3px;accent-color:#e8c56a;justify-self:start}label.review-choice span{display:block;min-width:0;overflow-wrap:anywhere}label.review-choice:focus-within{outline:2px solid #e8c56a;outline-offset:2px}.muted{font-size:14px;color:#b4c0d2}code{overflow-wrap:anywhere}summary{cursor:pointer;color:#e8c56a}@media(max-width:650px){.images{grid-template-columns:1fr}section,details,.status{padding:18px}.review{padding:20px 15px 60px}} `}</style>
+
+  const script=pack?.envelope.script as Json|undefined;
+  const copy=pack?.envelope.copy as Json|undefined;
+  const resource=pack?.envelope.resourceMapping as Json|undefined;
+  const destination=pack?.envelope.destination as Json|undefined;
+  const selectedFrame=pack?Math.min(activeFrame,Math.max(0,pack.images.length-1)):0;
+  const completedChecks=required.filter(x=>checked.includes(x)).length;
+  const handoffUrl=(()=>{
+    if(!pack||!audit.reservationId)return null;
+    try{return prepareContentDemandBridgeUrl({
+      planId:String(pack.envelope.planId),
+      proofEnvelopeId:String(pack.envelope.proofEnvelopeId),
+      channelService:String(destination?.channelService),
+    });}catch{return null;}
+  })();
+  return <main className="content-studio">
+    <div className="studio-layout">
+      <aside className="studio-rail" aria-label="Navigasi BROS CONTENT">
+        <a className="brand" href="/internal/neon-preview" aria-label="Ruang kerja BROS">
+          <span className="brand-mark" aria-hidden="true">B</span>
+          <span><span className="brand-name">BROS CONTENT</span><span className="brand-sub">INTERNAL WORKSPACE</span></span>
+        </a>
+        <div><p className="rail-label">RUANG KERJA</p>
+          <nav className="rail-nav" aria-label="Bahagian semakan">
+            <a className="current" href="#queue">Pek kandungan</a>
+            {pack&&<><a href="#preview">Pratonton visual</a><a href="#review">Semakan &amp; kelulusan</a></>}
+            <a href="#technical">Rujukan teknikal</a>
+          </nav>
+        </div>
+        <p className="rail-foot"><span className="status-dot" aria-hidden="true"/>Ruang kerja dalaman<br/>Akses terhad dan disahkan</p>
+      </aside>
+      <div className="studio-body">
+        <div className="top-row">
+          <div className="breadcrumb">BROS / CONTENT / <strong>Creative Review</strong></div>
+          <span className="top-pill">INTERNAL PREVIEW · TIDAK DITERBITKAN</span>
+        </div>
+        <header className="heading-block">
+          <p className="eyebrow">CREATIVE REVIEW / 01</p>
+          <h1>Kandungan yang jelas.<br/>Semakan yang teratur.</h1>
+          <p className="lede">Semak visual, skrip, kapsyen dan destinasi dalam satu ruang. Ini aliran semakan editorial dalaman, bukan sistem penjanaan visual AI komersial yang telah disahkan.</p>
+        </header>
+        <p role="status" aria-live="polite" className="notice">{message}</p>
+        <section id="queue" aria-labelledby="queue-heading">
+          <div className="queue-header">
+            <div><p className="eyebrow">REVIEW QUEUE</p><h2 id="queue-heading">Pek kandungan</h2></div>
+            <span className="mini-note">{sources.length} pek tersedia</span>
+          </div>
+          {sources.length?<nav className="queue-list" aria-label="Pilih pek kandungan">
+            {sources.map(item=><button type="button" key={item.proofEnvelopeId}
+              className={'queue-item '+(pack?.envelope.proofEnvelopeId===item.proofEnvelopeId?'selected':'')}
+              onClick={()=>void select(item.proofEnvelopeId)} disabled={busy}>
+              <span className="queue-icon" aria-hidden="true">▤</span><span>{item.title}</span>
+            </button>)}
+          </nav>:<div className="queue-empty">{busy?'Memuatkan pek…':'Tiada pek dapat dipaparkan untuk sesi ini.'} <a href="/internal/neon-preview">Kembali ke ruang kerja BROS</a>.</div>}
+        </section>
+        {pack&&<section id="preview" aria-labelledby="project-heading">
+          <div className="project-head">
+            <div><p className="eyebrow">CREATIVE PACKAGE / 02</p><h2 id="project-heading">{pack.title}</h2>
+              <p className="project-sub">{String(destination?.channelService??'Saluran')} · {pack.images.length} visual · fail asal</p>
+            </div>
+            <div className="tag-stack"><span className="badge neutral">VISUAL TEMPLAT</span>
+              <span className="badge">{audit.reservationId?'RESERVASI DIREKODKAN':attempted?'PERLU SEMAK STATUS':'BELUM DITERBITKAN'}</span></div>
+          </div>
+          <div className="review-grid">
+            <article className="card">
+              <div className="card-pad"><div className="card-heading"><h3>Pratonton visual</h3>
+                <span className="mini-note">Visual asal · bukan mockup AI</span></div></div>
+              <div className="preview-stage">
+                <span className="preview-index">{selectedFrame+1} / {pack.images.length}</span>
+                <img src={pack.images[selectedFrame]}
+                  alt={String((copy?.altTexts as string[]|undefined)?.[selectedFrame]??'Visual asal '+(selectedFrame+1))}/>
+              </div>
+              <p className="preview-caption">{String((script?.shots as string[]|undefined)?.[selectedFrame]??'Fail kandungan asal')}</p>
+              <div className="thumb-list" aria-label="Pilih visual">
+                {pack.images.map((src,index)=><button type="button" className={'thumb '+(selectedFrame===index?'active':'')}
+                  onClick={()=>setActiveFrame(index)} key={index} aria-pressed={selectedFrame===index} aria-label={'Imej '+(index+1)}>
+                  <img src={src} alt=""/><span>{index+1}</span>
+                </button>)}
+              </div>
+            </article>
+            <div className="detail-stack">
+              <article className="card card-pad">
+                <div className="card-heading"><h3>Skrip &amp; mesej</h3><span className="mini-note">BROS SELL</span></div>
+                <dl>{Object.entries(script??{}).filter(([k])=>!['scriptId','revisionId','shots'].includes(k)).map(([k,v])=>
+                  <div key={k} className="script-row"><dt>{scriptLabels[k]??k}</dt><dd>{String(v)}</dd></div>)}</dl>
+              </article>
+              <article className="card card-pad">
+                <div className="card-heading"><h3>Kapsyen</h3><span className="mini-note">Draf asal</span></div>
+                <p className="copy-text">{String(copy?.caption??'Tiada kapsyen')}</p>
+                <div className="content-divider"/>
+                <div className="note-row"><span>Pendedahan AI</span><span>{String(copy?.aiDisclosure??'—')}</span></div>
+              </article>
+              <article className="card card-pad">
+                <div className="card-heading"><h3>Nilai kepada audiens</h3><span className="mini-note">Satu prinsip</span></div>
+                <dl>{Object.entries(resource??{}).filter(([k])=>k!=='resourceId').map(([k,v])=>
+                  <div key={k} className="script-row"><dt>{resourceLabels[k]??k}</dt><dd>{String(v)}</dd></div>)}</dl>
+                <div className="content-divider"/>
+                <p className="mini-note">Destinasi: {String(destination?.channelService??'—')} · {String(destination?.channelId??'—')}</p>
+              </article>
+            </div>
+          </div>
+          <section id="review" className="approval-card" aria-labelledby="approval-heading">
+            <div className="approval-header">
+              <div><p className="eyebrow">EDITORIAL GATE / 03</p><h2 id="approval-heading">Semakan &amp; kelulusan</h2></div>
+              <span className="badge neutral">{completedChecks} / {required.length} syarat</span>
+            </div>
+            <p className="approval-sub">Tandakan hanya perkara yang telah anda periksa sendiri. Keputusan ditandatangani oleh kunci peribadi di pelayar anda. Jangan hantar semula keputusan yang telah direkodkan.</p>
+            <div className="review-list">
+              {required.map(check=><label className="review-choice" key={check}>
+                <input type="checkbox" disabled={attempted||busy} checked={checked.includes(check)}
+                  onChange={e=>setChecked(e.target.checked?[...checked,check]:checked.filter(x=>x!==check))}/>
+                <span>{labels[check]??check}</span>
+              </label>)}
+            </div>
+            <div className="approval-actions">
+              <button type="button" className="button-primary" onClick={()=>void approve()} disabled={!canApprove}>
+                Rekod kelulusan dan tempahan
+              </button>
+              <p>Kelulusan bukan penerbitan. Tiada hantaran akan dihantar oleh butang ini.</p>
+            </div>
+          </section>
+        </section>}
+        {pack&&handoffUrl&&<section className="demand-next" aria-labelledby="demand-heading">
+          <div><p className="eyebrow">NEXT / DEMAND</p><h2 id="demand-heading">Sambung ke BROS DEMAND</h2>
+            <p>Rujukan pelan dan cap jari kreatif lengkap akan disertakan. Ini belum mengesahkan hantaran atau hasil jualan.</p>
+          </div>
+          <a className="button-primary" href={handoffUrl} target="_blank" rel="noopener noreferrer">Buka BROS DEMAND ↗</a>
+        </section>}
+        <details id="technical" className="technical">
+          <summary>Persediaan penyemak dan rujukan operasi</summary>
+          <div className="technical-inner">
+            {setup&&!setup.ready&&<ul>{setup.missing.map(x=><li key={x}>{missingLabels[x]??x}</li>)}</ul>}
+            {!key?<button className="outline-button" type="button" onClick={()=>void makeKey()} disabled={busy}>Sediakan kunci penyemak</button>
+              :<><p>Kunci awam: <code>{key.keyId}</code>. Kunci peribadi kekal di pelayar.</p>
+                <button className="outline-button" type="button" onClick={downloadPublicKey}>Muat turun kunci awam</button>
+                {!setup?.registeredKeyIds.includes(key.keyId)&&<>
+                  <p className="danger-note">Kunci belum didaftarkan pada Preview ini.</p>
+                  <button className="outline-button" type="button" onClick={()=>void copyPublicKeyConfig()} disabled={busy}>Salin JSON kunci awam</button>
+                  <p>Tetapan Vercel Preview: <code>BCI_NEON_DEV_CONTENT_REVIEW_PUBLIC_KEYS</code> · <code>feat/neon-bci-dev-ledger-20261025</code></p>
+                  <a href="https://vercel.com/bolehejassolutions-8492/bros-commercial-intelligence/settings/environment-variables" target="_blank" rel="noopener noreferrer">Buka tetapan Vercel</a>
+                  {publicKeyCopyMessage&&<p role="status">{publicKeyCopyMessage}</p>}
+                </>}
+              </>}
+            {pack&&<p>ID pek: <code>{String(pack.envelope.proofEnvelopeId)}</code></p>}
+            {Object.keys(audit).length>0&&<div className="reference-list">{Object.entries(audit).map(([k,v])=>
+              <p key={k}>{k}: <code>{v}</code></p>)}</div>}
+            <p>Rujukan ini tidak mengesahkan jualan, pembayaran atau penerbitan.</p>
+          </div>
+        </details>
+      </div>
+    </div>
   </main>;
 }
