@@ -140,7 +140,7 @@ export default function ContentReview(){
       try{
         href=prepareContentDemandBridgeUrl({
           planId:String(pack.envelope.planId),
-          creativeSha256:String(pack.envelope.copySha256),
+          proofEnvelopeId:String(pack.envelope.proofEnvelopeId),
           channelService:String((pack.envelope.destination as Json).channelService),
         });
       }catch{href=null;}
