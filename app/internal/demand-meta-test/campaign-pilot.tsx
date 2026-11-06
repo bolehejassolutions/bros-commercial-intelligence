@@ -5,7 +5,7 @@ type Readiness = { source: "BROS_DEMAND_META_PILOT"; campaignId: string; provide
   campaignStatus: string | null; adsets: number | null; stagedSteps: number; totalStageSteps: number;
   blockers: string[]; canStage: boolean; canActivate: boolean; canPause: boolean;
   spend: { source: "META_GRAPH_INSIGHTS"; spendMinor: number | null; window: string; status: "REPORTED" | "NO_ROWS" } | null;
-  externallyManaged: boolean; workV5Recognized: boolean; observedAds: { id: string; adsetId: string; status: string; effectiveStatus: string }[] };
+  externallyManaged: boolean; workV5Recognized: boolean; observedAdsets: { id: string; status: string; effectiveStatus: string; startTime: string | null; endTime: string | null }[]; observedAds: { id: string; adsetId: string; status: string; effectiveStatus: string }[] };
 const endpoint = "/api/internal/demand-meta-pilot";
 const blockerText: Record<string, string> = {
   META_MANAGEMENT_TOKEN_MISSING: "Add the business-owned Meta management credential in the protected server settings.",
@@ -97,6 +97,7 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
       <p>Meta readback: {readiness.providerVerified ? "VERIFIED" : "UNVERIFIED"}. Campaign: {readiness.campaignStatus ?? "unknown"}. Paused staging: {readiness.stagedSteps}/{readiness.totalStageSteps} steps.</p>
       <p>Meta spending (maximum available reporting window): {readiness.spend?.status === "REPORTED" && readiness.spend.spendMinor !== null ? `RM ${(readiness.spend.spendMinor / 100).toFixed(2)} — Meta Graph Insights` : "Unavailable / no delivery rows; not verified as RM0"}.</p>
       {readiness.externallyManaged ? <p role="status">{readiness.workV5Recognized ? "The exact two Work-created V5 ad IDs were recognized from Meta readback." : "External Meta objects detected; exact V5 IDs are not confirmed."} This pilot will not recreate or adopt them into its execution ledger. Read-only observation only; independent reconciliation is required before any write.</p> : null}
+      {readiness.observedAdsets?.length ? <div><h3>Meta provider ad-set readback</h3><ul>{readiness.observedAdsets.map(set => <li key={set.id}>Ad set {set.id} · {set.status} / {set.effectiveStatus} · Flight: {set.startTime ?? "unavailable"} to {set.endTime ?? "unavailable"}</li>)}</ul></div> : null}
       {readiness.observedAds.length ? <div><h3>Meta provider ad readback</h3><ul>{readiness.observedAds.map(ad => <li key={ad.id}>Ad {ad.id} · Ad set {ad.adsetId} · {ad.status} / {ad.effectiveStatus}</li>)}</ul></div> : null}
       {readiness.externallyManaged ? <p role="note"><strong>External campaign — observation only.</strong> This application did not create these ads. The staging, activation and pause controls below are not authorized to change them. To manage a future campaign from BROS DEMAND, a separately reviewed execution workflow is required.</p> : null}
       {readiness.blockers.length ? <ul>{readiness.blockers.map(reason => <li key={reason}>{blockerText[reason] ?? "An execution requirement remains unverified."}</li>)}</ul> : null}
