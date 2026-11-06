@@ -1,0 +1,12 @@
+import {handleDemandPausedCampaign} from '@/lib/demand/meta-paused-campaign-runtime';
+export const runtime='nodejs';
+export const dynamic='force-dynamic';
+export const revalidate=0;
+export const maxDuration=60;
+export const GET=handleDemandPausedCampaign;
+export const POST=handleDemandPausedCampaign;
+export const PUT=handleDemandPausedCampaign;
+export const PATCH=handleDemandPausedCampaign;
+export const DELETE=handleDemandPausedCampaign;
+export const OPTIONS=handleDemandPausedCampaign;
+export const HEAD=handleDemandPausedCampaign;

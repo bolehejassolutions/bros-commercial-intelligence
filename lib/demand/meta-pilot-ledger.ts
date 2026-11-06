@@ -24,8 +24,12 @@ function result(v: unknown): StepResult {
 }
 
 /** Uses the existing restricted LOGIN and existing Neon DEV backend. No role creation. */
-export function createPilotLedger(transaction: PilotTransaction, scope: PilotScope) {
+export function createPilotLedger(transaction: PilotTransaction, scope: PilotScope,
+  options?: Readonly<{pausedCampaignPlanSha256:string}>) {
   if (!UUID.test(scope.tenantId) || !UUID.test(scope.principalId)) throw Error("PILOT_SCOPE_DENIED");
+  if(options&&!/^[a-f0-9]{64}$/.test(options.pausedCampaignPlanSha256))throw Error("PILOT_SCOPE_DENIED");
+  const policyKey=options?"bros-demand-paused-v1:"+options.pausedCampaignPlanSha256:PILOT.key;
+  const pausedSteps=["campaign","adset","creative_a","ad_a"];
   const scoped = async <T>(fn: (query: Query) => Promise<T>, lock = true) => transaction(async query => {
     const identity = await query(`SELECT current_user AS role_name, session_user AS session_role,
       current_database() AS database_name, rolsuper, rolbypassrls, rolcanlogin, rolcreaterole, rolcreatedb,
@@ -50,7 +54,7 @@ export function createPilotLedger(transaction: PilotTransaction, scope: PilotSco
       [scope.tenantId, scope.principalId]);
     // Serialize writes and stop requests for this existing campaign. An intent
     // is still committed separately so a killed process cannot silently retry.
-    if (lock) await query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [scope.tenantId + ":" + PILOT.campaign]);
+    if (lock) await query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [scope.tenantId + ":" + (options?policyKey:PILOT.campaign)]);
     const grants = await query(`SELECT principal_id FROM bci_dev.tenant_memberships WHERE
       principal_id=$1::uuid AND tenant_id=$2::uuid AND product='demand' AND active=true AND revoked_at IS NULL`,
       [scope.principalId, scope.tenantId]);
@@ -63,7 +67,7 @@ export function createPilotLedger(transaction: PilotTransaction, scope: PilotSco
     return answer;
   });
   const readEvents = (query: Query) => query(`SELECT step, kind, result FROM bci_dev.demand_meta_pilot_events
-    WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 ORDER BY created_at, id`, [scope.tenantId, PILOT.key]);
+    WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 ORDER BY created_at, id`, [scope.tenantId, policyKey]);
   return {
     async snapshot(): Promise<Snapshot> {
       return scoped(async query => {
@@ -71,6 +75,7 @@ export function createPilotLedger(transaction: PilotTransaction, scope: PilotSco
         const intents = new Set<string>(); const confirmed = new Set<string>();
         for (const value of events.rows) {
           const e = row(value), step = String(e.step) as Step;
+          if(options&&!pausedSteps.includes(step))throw Error("PILOT_LEDGER_INVALID");
           if (e.kind === "revoked") throw Error("PILOT_STOP_REVIEW_REQUIRED");
           if (e.kind === "intent") intents.add(step);
           else if (e.kind === "confirmed") { snapshot[step] = result(e.result); confirmed.add(step); }
@@ -81,12 +86,13 @@ export function createPilotLedger(transaction: PilotTransaction, scope: PilotSco
       });
     },
     async perform(step: Step, externalWrite: () => Promise<StepResult>): Promise<StepResult> {
+      if(options?!pausedSteps.includes(step):step==="campaign")throw Error("PILOT_LEDGER_INVALID");
       const claim = await scoped(async query => {
         const stopped = await query(`SELECT id FROM bci_dev.demand_meta_pilot_events
-          WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 AND kind='revoked'`, [scope.tenantId, PILOT.key]);
+          WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 AND kind='revoked'`, [scope.tenantId, policyKey]);
         if (stopped.rows.length) throw Error("PILOT_STOP_REVIEW_REQUIRED");
         const previous = await query(`SELECT kind,result FROM bci_dev.demand_meta_pilot_events
-          WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 AND step=$3`, [scope.tenantId, PILOT.key, step]);
+          WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 AND step=$3`, [scope.tenantId, policyKey, step]);
         const confirmation = previous.rows.map(row).find(e => e.kind === "confirmed");
         if (confirmation) return { replay: result(confirmation.result) };
         if (previous.rows.length) throw new PilotReconciliationRequired();
@@ -94,7 +100,7 @@ export function createPilotLedger(transaction: PilotTransaction, scope: PilotSco
           (tenant_id,product,principal_id,policy_key,step,kind,result)
           VALUES($1::uuid,'demand',$2::uuid,$3,$4,'intent','{}'::jsonb)
           ON CONFLICT(tenant_id,product,policy_key,step,kind) DO NOTHING RETURNING id`,
-          [scope.tenantId, scope.principalId, PILOT.key, step]);
+          [scope.tenantId, scope.principalId, policyKey, step]);
         if (inserted.rows.length !== 1) throw new PilotReconciliationRequired();
         return { replay: null };
       });
@@ -104,22 +110,23 @@ export function createPilotLedger(transaction: PilotTransaction, scope: PilotSco
       try {
         return await scoped(async query => {
           const stopped = await query(`SELECT id FROM bci_dev.demand_meta_pilot_events
-            WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 AND kind='revoked'`, [scope.tenantId, PILOT.key]);
+            WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 AND kind='revoked'`, [scope.tenantId, policyKey]);
           if (stopped.rows.length) throw Error("PILOT_STOP_REVIEW_REQUIRED");
           const confirmed = result(await externalWrite());
           const stoppedAfter = await query(`SELECT id FROM bci_dev.demand_meta_pilot_events
-            WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 AND kind='revoked'`, [scope.tenantId, PILOT.key]);
+            WHERE tenant_id=$1::uuid AND product='demand' AND policy_key=$2 AND kind='revoked'`, [scope.tenantId, policyKey]);
           if (stoppedAfter.rows.length) throw Error("PILOT_STOP_REVIEW_REQUIRED");
           const inserted = await query(`INSERT INTO bci_dev.demand_meta_pilot_events
             (tenant_id,product,principal_id,policy_key,step,kind,result)
             VALUES($1::uuid,'demand',$2::uuid,$3,$4,'confirmed',$5::jsonb)
-            RETURNING id`, [scope.tenantId, scope.principalId, PILOT.key, step, JSON.stringify(confirmed)]);
+            RETURNING id`, [scope.tenantId, scope.principalId, policyKey, step, JSON.stringify(confirmed)]);
           if (inserted.rows.length !== 1) throw Error();
           return confirmed;
         });
       } catch { throw new PilotReconciliationRequired(); }
     },
     async revoke() {
+      if(options)throw Error("PAUSED_CREATOR_HAS_NO_ACTIVATION_OR_STOP");
       await scoped(async query => {
         await query(`INSERT INTO bci_dev.demand_meta_pilot_events
           (tenant_id,product,principal_id,policy_key,step,kind,result)

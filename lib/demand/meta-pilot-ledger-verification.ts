@@ -20,9 +20,12 @@ const asRow = (v: unknown): Row => {
  * The probe row is always ROLLED BACK. No Meta request, durable evidence seed,
  * JWT claim, operator sign-in assertion or launch attestation is manufactured.
  */
-export async function verifyPilotLedger(pool: PilotPool, scope: PilotScope) {
+export async function verifyPilotLedger(pool: PilotPool, scope: PilotScope,
+  options?:Readonly<{pausedCampaignPlanSha256:string}>) {
   let phase: LedgerVerificationPhase = "snapshot";
-  const ledger = createPilotLedger(createPgPilotTransaction(pool), scope);
+  const ledger = createPilotLedger(createPgPilotTransaction(pool), scope,options);
+  const policyKey=options?"bros-demand-paused-v1:"+options.pausedCampaignPlanSha256:PILOT.key;
+  const probeStep=options?"campaign":"image_a";
   try {
     // Includes current_user===session_user, exact role/database, role posture,
     // forced RLS, SELECT/INSERT only, fresh positive membership and advisory lock.
@@ -46,9 +49,9 @@ export async function verifyPilotLedger(pool: PilotPool, scope: PilotScope) {
       const probeId = randomUUID();
       const insert = `INSERT INTO bci_dev.demand_meta_pilot_events
         (id,tenant_id,product,principal_id,policy_key,step,kind,result)
-        VALUES($1::uuid,$2::uuid,$3,$4::uuid,$5,'image_a','intent','{}'::jsonb)
+        VALUES($1::uuid,$2::uuid,$3,$4::uuid,$5,'${probeStep}','intent','{}'::jsonb)
         ON CONFLICT(tenant_id,product,policy_key,step,kind) DO NOTHING RETURNING id`;
-      const params = [probeId, scope.tenantId, "demand", scope.principalId, PILOT.key];
+      const params = [probeId, scope.tenantId, "demand", scope.principalId, policyKey];
       phase = "append";
       const added = await client.query(insert, params);
       if (added.rows.length !== 1 || asRow(added.rows[0]).id !== probeId) throw Error();
@@ -63,7 +66,7 @@ export async function verifyPilotLedger(pool: PilotPool, scope: PilotScope) {
         if (hidden.rows.length !== 0) throw Error();
         await client.query("SAVEPOINT denied_append");
         let rlsDenied = false;
-        try { await client.query(insert, [randomUUID(), scope.tenantId, "demand", scope.principalId, PILOT.key]); }
+        try { await client.query(insert, [randomUUID(), scope.tenantId, "demand", scope.principalId, policyKey]); }
         catch (e) { rlsDenied = !!e && typeof e === "object" && "code" in e && e.code === "42501"; }
         await client.query("ROLLBACK TO SAVEPOINT denied_append");
         await client.query("RELEASE SAVEPOINT denied_append");

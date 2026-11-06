@@ -26,7 +26,7 @@ export const ASSETS = Object.freeze({
 });
 export const STAGE_STEPS = ["image_a", "image_b", "adset", "creative_a", "ad_a", "creative_b", "ad_b"] as const;
 export type StageStep = typeof STAGE_STEPS[number];
-export type Step = StageStep | "refresh_flight" | "activate_ad_a" | "activate_ad_b" | "activate_adset" | "activate_campaign";
+export type Step = StageStep | "campaign" | "refresh_flight" | "activate_ad_a" | "activate_ad_b" | "activate_adset" | "activate_campaign";
 export type StepResult = Readonly<{ id?: string; hash?: string; start?: string; end?: string; status?: string }>;
 export type Snapshot = Partial<Record<Step, StepResult>>;
 export const policyDigest = createHash("sha256").update(JSON.stringify({ PILOT, ASSETS })).digest("hex");

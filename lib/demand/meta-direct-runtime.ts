@@ -9,6 +9,8 @@ import { createPgDemandEvidenceAppendTransaction } from "../bci/neon-demand-evid
 import { createDemandMetaPersistedDiagnosisHandler, createDemandMetaReceiptReader } from "./meta-persisted-diagnosis.ts";
 import type { PilotTransaction } from "./meta-pilot-ledger.ts";
 import { createPgPilotTransaction } from "./meta-pilot-pg.ts";
+import {verifyPilotLedger} from "./meta-pilot-ledger-verification.ts";
+import {randomBytes} from "node:crypto";
 
 /**
  * Existing BCI app, DEVELOPMENT Preview branch ONLY. Default OFF.
@@ -230,4 +232,12 @@ export const demandMetaPilotRuntime = {
     return { tenantId: grants[0].tenantId.toLowerCase(), principalId: principal.userId };
   },
   transaction: pilotTransaction,
+  campaignTransaction: (async fn=>{
+    if(!enabled()||process.env.BROS_DEMAND_META_CREATOR_LEDGER!=="reviewed-v1")throw Error();
+    return createPgPilotTransaction(getEvidenceWriterPool())(fn);
+  }) satisfies PilotTransaction,
+  async verifyCampaignLedger(scope:import("./meta-pilot-ledger.ts").PilotScope){
+    if(!enabled())throw Error();
+    return verifyPilotLedger(getEvidenceWriterPool(),scope,{pausedCampaignPlanSha256:randomBytes(32).toString("hex")});
+  },
 };
