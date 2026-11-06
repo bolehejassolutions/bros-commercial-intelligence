@@ -380,6 +380,16 @@ test("external Work V5 recognition requires exact flight, purchase optimization 
     () => { f.set.targeting.age_max = 55; return () => { f.set.targeting.age_max = 45; }; },
     () => { f.set.promoted_object.custom_event_type = "LEAD"; return () => { f.set.promoted_object.custom_event_type = "PURCHASE"; }; },
     () => { f.set.ads.data[0].adset_id = "999999999999"; return () => { f.set.ads.data[0].adset_id = f.set.id; }; },
+    () => { const story = f.set.ads.data[0].creative.object_story_spec;
+      const original = story.page_id; story.page_id = "999999999999";
+      return () => { story.page_id = original; }; },
+    () => { const link = f.set.ads.data[0].creative.object_story_spec.link_data;
+      const original = link.link; link.link = "https://unapproved.example/";
+      return () => { link.link = original; }; },
+    () => { const link = f.set.ads.data[1].creative.object_story_spec.link_data;
+      const original = link.call_to_action.value.link; link.call_to_action.value.link = "https://unapproved.example/";
+      return () => { link.call_to_action.value.link = original; }; },
+
   ]) {
     const undo = change();
     const rejected = await service(f).readiness(scope);
