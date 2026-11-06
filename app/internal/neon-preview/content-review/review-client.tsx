@@ -145,7 +145,7 @@ export default function ContentReview(){
         });
       }catch{href=null;}
       return href?<section><h2>Teruskan ke BROS DEMAND</h2>
-        <p>Kelulusan dan tempahan BCI telah direkodkan. Ini hanya pemindahan rujukan pelan dan hash salinan.
+        <p>Kelulusan dan tempahan BCI telah direkodkan. Ini hanya pemindahan rujukan pelan dan cap jari bukti kreatif lengkap (visual, skrip, kapsyen).
           Kandungan belum diterbitkan dan hasil jualan belum disahkan.</p>
         <a href={href} target="_blank" rel="noopener noreferrer">Buka DEMAND dengan rujukan CONTENT</a></section>:null;
     })()}
