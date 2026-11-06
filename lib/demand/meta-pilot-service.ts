@@ -80,7 +80,7 @@ export function createPilotService(deps: PilotServiceDependencies) {
           // current provider snapshot, never use recognition to authorize writes.
           const workSet = state.adsets[0];
           const workAds = Array.isArray((workSet?.ads as { data?: unknown } | undefined)?.data)
-            ? (workSet.ads as { data: Array<{ id?: unknown; adset_id?: unknown; status?: unknown; effective_status?: unknown }> }).data : [];
+            ? (workSet.ads as { data: Array<{ id?: unknown; adset_id?: unknown; status?: unknown; effective_status?: unknown; creative?: unknown }> }).data : [];
           // Recognizing exact IDs alone is insufficient: verify the observed
           // seven-day flight, audience and purchase optimization before labeling
           // externally created objects as the approved Work V5 campaign.
