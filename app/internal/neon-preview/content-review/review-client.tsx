@@ -135,7 +135,7 @@ export default function ContentReview(){
     <div className="studio-layout">
       <aside className="studio-rail" aria-label="Navigasi BROS CONTENT">
         <a className="brand" href="/internal/neon-preview" aria-label="Ruang kerja BROS">
-          <span className="brand-mark" aria-hidden="true">B</span>
+          <span className="brand-mark" aria-hidden="true">▤</span>
           <span><span className="brand-name">BROS CONTENT</span><span className="brand-sub">INTERNAL WORKSPACE</span></span>
         </a>
         <div><p className="rail-label">RUANG KERJA</p>
@@ -220,22 +220,25 @@ export default function ContentReview(){
           <section id="review" className="approval-card" aria-labelledby="approval-heading">
             <div className="approval-header">
               <div><p className="eyebrow">EDITORIAL GATE / 03</p><h2 id="approval-heading">Semakan &amp; kelulusan</h2></div>
-              <span className="badge neutral">{completedChecks} / {required.length} syarat</span>
+              <span className="badge neutral">{attempted?'RUJUKAN KEPUTUSAN TERDAHULU':completedChecks+' / '+required.length+' syarat'}</span>
             </div>
-            <p className="approval-sub">Tandakan hanya perkara yang telah anda periksa sendiri. Keputusan ditandatangani oleh kunci peribadi di pelayar anda. Jangan hantar semula keputusan yang telah direkodkan.</p>
-            <div className="review-list">
-              {required.map(check=><label className="review-choice" key={check}>
-                <input type="checkbox" disabled={attempted||busy} checked={checked.includes(check)}
-                  onChange={e=>setChecked(e.target.checked?[...checked,check]:checked.filter(x=>x!==check))}/>
-                <span>{labels[check]??check}</span>
-              </label>)}
-            </div>
-            <div className="approval-actions">
-              <button type="button" className="button-primary" onClick={()=>void approve()} disabled={!canApprove}>
-                Rekod kelulusan dan tempahan
-              </button>
-              <p>Kelulusan bukan penerbitan. Tiada hantaran akan dihantar oleh butang ini.</p>
-            </div>
+            {attempted?<>
+              <p className="approval-sub">Keputusan pernah dihantar daripada pelayar ini. Semak rujukan operasi di bawah; jangan tandatangani atau hantar sekali lagi. Kandungan belum diterbitkan.</p>
+              <p className="notice">{audit.reservationId?'Rujukan tempahan tersimpan pada pelayar. Semak rekod pelayan jika perlu.':'Status komit belum dapat dipastikan daripada pelayar. Sahkan rekod sebelum mengambil sebarang tindakan.'}</p>
+            </>:<>
+              <p className="approval-sub">Tandakan hanya perkara yang telah anda periksa sendiri. Keputusan ditandatangani oleh kunci peribadi di pelayar anda.</p>
+              <div className="review-list">
+                {required.map(check=><label className="review-choice" key={check}>
+                  <input type="checkbox" disabled={attempted||busy} checked={checked.includes(check)}
+                    onChange={e=>setChecked(e.target.checked?[...checked,check]:checked.filter(x=>x!==check))}/>
+                  <span>{labels[check]??check}</span>
+                </label>)}
+              </div>
+              <div className="approval-actions">
+                <button type="button" className="button-primary" onClick={()=>void approve()} disabled={!canApprove}>Rekod kelulusan dan tempahan</button>
+                <p>Kelulusan bukan penerbitan. Tiada hantaran dihantar oleh butang ini.</p>
+              </div>
+            </>}
           </section>
         </section>}
         {pack&&handoffUrl&&<section className="demand-next" aria-labelledby="demand-heading">
