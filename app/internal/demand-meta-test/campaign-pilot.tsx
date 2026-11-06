@@ -98,14 +98,15 @@ export default function CampaignPilot({ getToken, signedIn, onSessionExpired }:
       <p>Meta spending (maximum available reporting window): {readiness.spend?.status === "REPORTED" && readiness.spend.spendMinor !== null ? `RM ${(readiness.spend.spendMinor / 100).toFixed(2)} — Meta Graph Insights` : "Unavailable / no delivery rows; not verified as RM0"}.</p>
       {readiness.externallyManaged ? <p role="status">{readiness.workV5Recognized ? "The exact two Work-created V5 ad IDs were recognized from Meta readback." : "External Meta objects detected; exact V5 IDs are not confirmed."} This pilot will not recreate or adopt them into its execution ledger. Read-only observation only; independent reconciliation is required before any write.</p> : null}
       {readiness.observedAds.length ? <div><h3>Meta provider ad readback</h3><ul>{readiness.observedAds.map(ad => <li key={ad.id}>Ad {ad.id} · Ad set {ad.adsetId} · {ad.status} / {ad.effectiveStatus}</li>)}</ul></div> : null}
+      {readiness.externallyManaged ? <p role="note"><strong>External campaign — observation only.</strong> This application did not create these ads. The staging, activation and pause controls below are not authorized to change them. To manage a future campaign from BROS DEMAND, a separately reviewed execution workflow is required.</p> : null}
       {readiness.blockers.length ? <ul>{readiness.blockers.map(reason => <li key={reason}>{blockerText[reason] ?? "An execution requirement remains unverified."}</li>)}</ul> : null}
       {readiness.canStage && readiness.stagedSteps < 2 ? <>
         <label htmlFor="pilot-asset-a">Approved V5 image A</label><input id="pilot-asset-a" type="file" accept="image/jpeg" disabled={busy} onChange={e => setA(e.target.files?.[0] ?? null)} />
         <label htmlFor="pilot-asset-b">Approved V5 image B</label><input id="pilot-asset-b" type="file" accept="image/jpeg" disabled={busy} onChange={e => setB(e.target.files?.[0] ?? null)} />
       </> : null}
-      <button type="button" disabled={busy || !readiness.canStage || (readiness.stagedSteps === 0 && (!a || !b)) || (readiness.stagedSteps === 1 && !b)} onClick={() => act("stage")}>Prepare approved ads — PAUSED</button>
-      <button type="button" disabled={busy || !readiness.canActivate} onClick={() => act("activate")}>Launch approved RM140 campaign</button>
-      <button type="button" disabled={busy || !readiness.canPause} onClick={() => act("pause")}>Pause existing campaign</button>
+      <button type="button" disabled={busy || readiness.externallyManaged || !readiness.canStage || (readiness.stagedSteps === 0 && (!a || !b)) || (readiness.stagedSteps === 1 && !b)} onClick={() => act("stage")}>Prepare approved ads — PAUSED</button>
+      <button type="button" disabled={busy || readiness.externallyManaged || !readiness.canActivate} onClick={() => act("activate")}>Launch approved RM140 campaign</button>
+      <button type="button" disabled={busy || readiness.externallyManaged || !readiness.canPause} onClick={() => act("pause")}>Pause existing campaign</button>
     </> : null}
   </section>;
 }
