@@ -9,9 +9,14 @@ const neonPreviewPaths = new Set([
   "/api/internal/neon-content-approval",
   "/internal/neon-preview",
   "/internal/neon-preview/content-review",
+  "/internal/demand-meta-test",
+  "/api/internal/demand-meta",
+  "/api/internal/demand-meta-evidence",
+  "/api/internal/demand-meta-diagnosis",
+  "/api/internal/demand-meta-pilot",
+  "/api/internal/demand-meta-campaigns",
 ]);
 
 export function usesNeonPreviewAuthentication(pathname: string): boolean {
   return neonPreviewPaths.has(pathname);
 }
-
