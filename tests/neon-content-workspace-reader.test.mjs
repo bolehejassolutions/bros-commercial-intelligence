@@ -9,11 +9,11 @@ const C='55555555-5555-4555-8555-555555555555';
 const I='66666666-6666-4666-8666-666666666666';
 const role={name:'content_dev_reader',login:'content_dev_reader',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0};
 const posture={db:'bros_intelligence_dev',forced:4,staging:false,credits:false,writes:false,membership:true};
-function mock({owner=A,roleRow=role,postureRow=posture}={}) {
+function mock({owner=A,roleRow=role,postureRow=posture,contextPrincipal=A}={}) {
   const calls=[];
   const reader=createContentWorkspaceReader(async fn=>fn(async (sql,params)=>{
     calls.push({sql,params});
-    if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:params[0]}]};
+    if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:contextPrincipal}]};
     if(sql.includes('FROM pg_roles'))return {rows:[roleRow]};
     if(sql.includes('current_database()'))return {rows:[postureRow]};
     if(sql.includes('FROM content_dev.workspaces'))return {rows:params[0]===owner?[{id:W,tenant_id:T,name:'Legacy',business_dna:{}}]:[]};
@@ -63,4 +63,10 @@ test('verified principal is set transaction-locally before workspace membership 
  const membership=calls.findIndex(x=>x.sql.includes('FROM content_dev.workspaces'));
  assert.ok(context>=0&&membership>context);
  assert.deepEqual(calls[context].params,[A]);
+});
+
+test('identity context mismatch fails closed before workspace query',async()=>{
+ const {reader,calls}=mock({contextPrincipal:B});
+ await assert.rejects(reader({userId:A,authenticated:true},W),ContentReadDenied);
+ assert.equal(calls.some(x=>x.sql.includes('FROM content_dev.workspaces')),false);
 });
