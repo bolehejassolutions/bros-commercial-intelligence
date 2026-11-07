@@ -17,7 +17,7 @@ function mock({owner=A,roleRow=role,postureRow=posture,contextPrincipal=A}={}) {
     if(sql.includes('FROM pg_roles'))return {rows:[roleRow]};
     if(sql.includes('current_database()'))return {rows:[postureRow]};
     if(sql.includes('FROM content_dev.workspaces'))return {rows:params[0]===owner?[{id:W,tenant_id:T,name:'Legacy',business_dna:{}}]:[]};
-    if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:C}]};
+    if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:C,tenant_id:T,workspace_id:W,owner_principal_id:A}]};
     if(sql.includes('FROM content_dev.content_items'))return {rows:[{id:I,campaign_id:C}]};
     if(sql.includes('FROM content_dev.scenes'))return {rows:[{id:'77777777-7777-4777-8777-777777777777',content_item_id:I}]};
     throw Error('unexpected SQL');
@@ -79,10 +79,37 @@ test('malformed nested campaign ownership fails closed',async()=>{
   if(sql.includes('current_database()'))return {rows:[posture]};
   if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:A}]};
   if(sql.includes('FROM content_dev.workspaces'))return {rows:[{id:W,tenant_id:T}]};
-  if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:C}]};
+  if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:C,tenant_id:T,workspace_id:W,owner_principal_id:A}]};
   if(sql.includes('FROM content_dev.content_items'))return {rows:[{id:I,campaign_id:B}]};
   throw Error('unexpected query');
  }));
  await assert.rejects(reader({userId:A,authenticated:true},W),ContentReadDenied);
  assert.equal(calls.some(sql=>sql.includes('FROM content_dev.scenes')),false);
+});
+
+test('rejects campaign rows inconsistent with verified tenant, workspace or owner',async()=>{
+ for(const field of ['tenant_id','workspace_id','owner_principal_id']){
+  let nested=0;
+  const reader=createContentWorkspaceReader(async fn=>fn(async(sql)=>{
+   if(sql.includes('FROM pg_roles'))return {rows:[role]};
+   if(sql.includes('current_database()'))return {rows:[posture]};
+   if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:A}]};
+   if(sql.includes('FROM content_dev.workspaces'))return {rows:[{id:W,tenant_id:T}]};
+   if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:C,tenant_id:T,workspace_id:W,owner_principal_id:A,[field]:B}]};
+   nested++;return {rows:[]};
+  }));
+  await assert.rejects(reader({userId:A,authenticated:true},W),ContentReadDenied);
+  assert.equal(nested,0);
+ }
+});
+test('rejects silently truncated campaign history at the read cap',async()=>{
+ const reader=createContentWorkspaceReader(async fn=>fn(async(sql)=>{
+  if(sql.includes('FROM pg_roles'))return {rows:[role]};
+  if(sql.includes('current_database()'))return {rows:[posture]};
+  if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:A}]};
+  if(sql.includes('FROM content_dev.workspaces'))return {rows:[{id:W,tenant_id:T}]};
+  if(sql.includes('FROM content_dev.campaigns'))return {rows:Array.from({length:101},()=>({id:C,tenant_id:T,workspace_id:W,owner_principal_id:A}))};
+  throw Error('nested read must not occur');
+ }));
+ await assert.rejects(reader({userId:A,authenticated:true},W),ContentReadDenied);
 });
