@@ -131,7 +131,7 @@ export default function ContentReview(){
       channelService:String(destination?.channelService),
     });}catch{return null;}
   })();
-  return <main className="content-studio">
+  return <main className="content-studio bros-luminous">
     <div className="studio-layout">
       <aside className="studio-rail" aria-label="Navigasi BROS CONTENT">
         <a className="brand" href="/internal/neon-preview" aria-label="Ruang kerja BROS">
