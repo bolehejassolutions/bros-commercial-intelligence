@@ -152,6 +152,26 @@ export function reconcileDemandMetaAdReadback(
       purchaseAliasMismatch: mismatch, actionEvidenceDigest});
   }
   adObservations.sort((a,b) => a.adId.localeCompare(b.adId));
+  // The three Meta purchase labels are overlapping attribution signals, not
+  // separate paid orders. Absent action arrays are UNKNOWN, not zero. Never
+  // claim campaign/ad purchase reconciliation unless every ad reports a
+  // consistent alias set and the campaign comparison signal is available.
+  if (campaign.metaAttributedPurchases !== null &&
+      (!Number.isSafeInteger(campaign.metaAttributedPurchases) ||
+       campaign.metaAttributedPurchases < 0)) invalid();
+  const purchaseAliasConflict = adObservations.some(a => a.purchaseAliasMismatch);
+  const purchaseCoverageComplete = adObservations.every(a => a.metaPurchaseSignal !== null);
+  const reportedAdPurchaseSignalTotal = purchaseCoverageComplete
+    ? adObservations.reduce((sum, a) => sum + (a.metaPurchaseSignal ?? 0), 0)
+    : null;
+  if (reportedAdPurchaseSignalTotal !== null &&
+      !Number.isSafeInteger(reportedAdPurchaseSignalTotal)) invalid();
+  const purchaseSignalComparison = purchaseAliasConflict
+    ? "ALIAS_CONFLICT" as const
+    : !purchaseCoverageComplete ? "INCOMPLETE_AD_SIGNAL_COVERAGE" as const
+    : campaign.metaAttributedPurchases === null ? "CAMPAIGN_SIGNAL_UNAVAILABLE" as const
+    : reportedAdPurchaseSignalTotal === campaign.metaAttributedPurchases
+      ? "REPORTED_SIGNALS_MATCH" as const : "REPORTED_SIGNALS_DIFFER" as const;
   const totalsMatch = campaign.spendMinor !== null && campaign.impressions !== null &&
     campaign.inlineLinkClicks !== null && spendMinor === campaign.spendMinor &&
     impressions === campaign.impressions && inlineLinkClicks === campaign.inlineLinkClicks;
@@ -166,7 +186,9 @@ export function reconcileDemandMetaAdReadback(
     adCount: adObservations.length, adTotalsMatchCampaign: totalsMatch,
     adSpendMinor: spendMinor, adImpressions: impressions, adInlineLinkClicks: inlineLinkClicks,
     positiveSignalAds: Object.freeze(positiveSignalAds.map(a => Object.freeze(a))),
-    incompletePurchaseActionCoverage: adObservations.some(a => a.metaPurchaseSignal === null),
+    incompletePurchaseActionCoverage: !purchaseCoverageComplete,
+    // A matching provider-reported signal is still not an actual paid order.
+    purchaseSignalComparison, reportedAdPurchaseSignalTotal,
     attributionWindowIsNotClickPath: true as const,
     // Ad-specific spend / one Meta-attributed Purchase is not customer CPA.
     verifiedOrders: null, verifiedCpaMinor: null, verifiedCacMinor: null,

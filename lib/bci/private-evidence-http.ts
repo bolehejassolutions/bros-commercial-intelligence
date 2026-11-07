@@ -5,6 +5,7 @@
  * membership lookup and a separate restricted evidence DB reader. Never inject
  * an admin/BROS DB connection or derive principal/tenant from request headers.
  */
+import { isNeonPreviewEnabled } from "./neon-preview-handler.ts";
 import {
   createPrivateEvidenceReader,
   type BciProduct,
@@ -36,8 +37,7 @@ export function createPrivateEvidenceHttpHandler(deps: PrivateEvidenceHttpDepend
   }
   return async (request: Request): Promise<Response> => {
     // Fail closed even if a future developer accidentally mounts this handler.
-    if (process.env.VERCEL_ENV !== "preview" ||
-        process.env.BCI_NEON_DEV_PRIVATE_READS !== "enabled") return denied(404);
+    if (!isNeonPreviewEnabled(process.env)) return denied(404);
     if (request.method !== "GET") return denied(405);
     let url: URL;
     try { url = new URL(request.url); } catch { return denied(400); }

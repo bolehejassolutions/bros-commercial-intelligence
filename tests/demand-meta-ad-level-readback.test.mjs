@@ -151,3 +151,27 @@ test("ad evidence requires provider account and MYR currency binding",()=>{
  assert.equal(valid.verifiedOrders,null);
  assert.equal(valid.verifiedCpaMinor,null);
 });
+
+test("purchase signal comparison is fail-closed for absent aliases and never a paid-order join",()=>{
+ assert.equal(project().purchaseSignalComparison,"INCOMPLETE_AD_SIGNAL_COVERAGE");
+ assert.equal(project().reportedAdPurchaseSignalTotal,null);
+ const zero=[{action_type:"purchase",value:0},{action_type:"omni_purchase",value:0},
+   {action_type:"offsite_conversion.fb_pixel_purchase",value:0}];
+ const full={...response,rows:[response.rows[0],{...response.rows[1],actions:zero}]};
+ const matched=project(scope,query,full,campaign);
+ assert.equal(matched.purchaseSignalComparison,"REPORTED_SIGNALS_MATCH");
+ assert.equal(matched.reportedAdPurchaseSignalTotal,1);
+ assert.equal(matched.verifiedOrders,null);
+ assert.equal(matched.verifiedCpaMinor,null);
+ assert.equal(project(scope,query,full,{...campaign,metaAttributedPurchases:2}).purchaseSignalComparison,
+   "REPORTED_SIGNALS_DIFFER");
+ assert.equal(project(scope,query,full,{...campaign,metaAttributedPurchases:null}).purchaseSignalComparison,
+   "CAMPAIGN_SIGNAL_UNAVAILABLE");
+ const conflicted={...full,rows:[{...full.rows[0],actions:[
+   {action_type:"purchase",value:1},{action_type:"omni_purchase",value:2}]},full.rows[1]]};
+ assert.equal(project(scope,query,conflicted,campaign).purchaseSignalComparison,"ALIAS_CONFLICT");
+ assert.equal(project(scope,query,conflicted,campaign).reportedAdPurchaseSignalTotal,null);
+ for(const bad of ["1",-1,1.5,Number.MAX_SAFE_INTEGER+1])
+   assert.throws(()=>project(scope,query,full,{...campaign,metaAttributedPurchases:bad}),
+     /Invalid BROS DEMAND/);
+});

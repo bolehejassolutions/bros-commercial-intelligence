@@ -7,7 +7,7 @@ type Client = Readonly<{
   release: (destroy?: boolean) => void;
 }>;
 export type ReadOnlyPool = Readonly<{ connect: () => Promise<Client> }>;
-type RestrictedRole = "bci_dev_private_reader" | "bci_dev_membership_reader";
+type RestrictedRole = "bci_dev_private_reader" | "bci_dev_membership_reader" | "bci_dev_lineage_writer" | "bci_dev_content_reserver" | "bci_dev_evidence_writer_restricted";
 
 export class NeonPreviewDatabaseDenied extends Error {
   constructor() { super("Neon development database access denied."); this.name = "NeonPreviewDatabaseDenied"; }
@@ -22,7 +22,7 @@ const hosts = new Set([
 export function parseNeonDevConnection(value: unknown, role: RestrictedRole) {
   try {
     if (typeof value !== "string" || value.length > 4096 ||
-        (role !== "bci_dev_private_reader" && role !== "bci_dev_membership_reader")) throw new Error();
+        (role !== "bci_dev_private_reader" && role !== "bci_dev_membership_reader" && role !== "bci_dev_lineage_writer" && role !== "bci_dev_content_reserver" && role !== "bci_dev_evidence_writer_restricted")) throw new Error();
     const url = new URL(value);
     if ((url.protocol !== "postgres:" && url.protocol !== "postgresql:") ||
         !hosts.has(url.hostname) || (url.port && url.port !== "5432") ||
@@ -55,6 +55,9 @@ export function createPgReadOnlyTransaction(pool: ReadOnlyPool) {
     try {
       client = await pool.connect();
       await client.query("BEGIN READ ONLY");
+      // Pin built-in catalog resolution before any role/ACL checks. Explicit pg_temp
+      // placement prevents temporary relations shadowing pg_catalog objects.
+      await client.query("SET LOCAL search_path = pg_catalog, pg_temp");
       await client.query("SET LOCAL statement_timeout = '5000ms'");
       await client.query("SET LOCAL lock_timeout = '1000ms'");
       await client.query("SET LOCAL idle_in_transaction_session_timeout = '10000ms'");

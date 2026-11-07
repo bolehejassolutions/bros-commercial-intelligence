@@ -42,12 +42,25 @@ function database(kind, rows, calls, error) {
           role_name: kind === "membership" ? "bci_dev_membership_reader" : "bci_dev_private_reader",
           session_role_name: kind === "membership" ? "bci_dev_membership_reader" : "bci_dev_private_reader",
           bypass_rls: false, is_superuser: false, can_login: true,
+          can_create_database: false, can_manage_roles: false,
+          can_replicate: false, inherits_roles: false, parent_role_count: 0,
         }] };
         if (sql.includes("current_database() AS database_name")) return { rows: [{
           database_name: "bros_intelligence_dev", rls_enabled: true, rls_forced: true,
           can_read_memberships: kind === "membership", can_insert_memberships: false,
+          can_update_memberships: false, can_delete_memberships: false,
+          can_truncate_memberships: false,
+          can_reference_memberships: false, can_trigger_memberships: false,
+          can_maintain_memberships: false,
           can_read_evidence: kind === "evidence", can_insert_evidence: false,
+          can_update_evidence: false, can_delete_evidence: false,
+          can_truncate_evidence: false,
+          can_reference_evidence: false, can_trigger_evidence: false,
+          can_maintain_evidence: false,
+          lineage_tables_readonly: true,
           can_create_schema_objects: false, can_create_database_objects: false,
+          no_definer_exec: true, no_external_definer_exec: true, no_external_schema_create: true, no_external_table_access: true,
+          other_bci_tables_denied: true,
         }] };
         if (sql.includes("set_config")) return { rows: [] };
         return { rows };
@@ -62,7 +75,7 @@ function database(kind, rows, calls, error) {
 }
 
 function harness({ env = {}, grants = [grant], rows = [evidence],
-  membershipError, evidenceError, jwksError } = {}) {
+  membershipError, evidenceError, jwksError, afterEvidenceRead, directRows, probeWriter, probeLineage } = {}) {
   const calls = [];
   const verifierConfig = { issuer: ISSUER, audience: ISSUER,
     jwksUrl: `${ISSUER}/auth/.well-known/jwks.json`,
@@ -74,11 +87,20 @@ function harness({ env = {}, grants = [grant], rows = [evidence],
     },
   };
   const membershipsFor = createNeonDevMembershipLookup(database("membership", grants, calls, membershipError));
-  const readRows = createNeonDevReadRows(database("evidence", rows, calls, evidenceError));
+  const restrictedEvidenceRead = createNeonDevReadRows(database("evidence", rows, calls, evidenceError));
+  const readRows = async scope => {
+    // Synthetic direct adapter override exercises HTTP policy independently of
+    // the production DB row normalizer, which already strips extra fields.
+    const result = directRows === undefined ? await restrictedEvidenceRead(scope) : directRows;
+    // Synthetic interleaving: another transaction revokes/reassigns membership
+    // after the evidence transaction, before the HTTP response is serialized.
+    afterEvidenceRead?.();
+    return result;
+  };
   const handler = createNeonPreviewHandler({ env: () => ({
     VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: BRANCH,
     BCI_NEON_DEV_PRIVATE_READS: "enabled", ...env,
-  }), verifierConfig, membershipsFor, readRows });
+  }), verifierConfig, membershipsFor, readRows, probeWriter, probeLineage });
   const request = (query = "product=content", jwt = token(), options = {}) => new Request(
     `https://preview.example.test/api/internal/neon-evidence?${query}`, {
       ...options, headers: { ...(jwt === null ? {} : { authorization: `Bearer ${jwt}` }),
@@ -93,6 +115,9 @@ async function denied(response, status) {
   assert.match(response.headers.get("vary"), /Authorization/i);
   const raw = await response.text();
   assert.doesNotMatch(raw, /postgres|password|DATABASE_URL|rasymokh|11111111|secret-sentinel/i);
+  if (status === 403) assert.deepEqual(JSON.parse(raw), {
+    error: "BCI private evidence access denied.",
+  });
   return raw;
 }
 
@@ -186,7 +211,25 @@ test("HTTP refreshes membership on every read and denies after revocation withou
   grants.splice(0);
   await denied(await f.handler(f.request()), 403);
   assert.equal(f.calls.filter(c => c.kind === "evidence" && c.step === "begin").length, 1);
-  assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 2);
+  assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 3); // two for successful read, one for post-revocation rejection
+});
+
+test("HTTP denies in-flight revocation, reassignment and ambiguous membership after evidence SELECT", async () => {
+  const cases = [
+    grants => { grants.splice(0); },
+    grants => { grants[0] = { ...grant, tenantId: OTHER }; },
+    grants => { grants.push({ ...grant, tenantId: OTHER }); },
+    grants => { grants[0] = { ...grant, active: false, revokedAt: "2026-10-27T00:00:00Z" }; },
+  ];
+  for (const revokeOrReassign of cases) {
+    const grants = [{ ...grant }];
+    const f = harness({ grants, afterEvidenceRead: () => revokeOrReassign(grants) });
+    const response = await f.handler(f.request("product=content&limit=1"));
+    const body = await denied(response, 403);
+    assert.equal(body.includes("offline-synthetic-only"), false);
+    assert.equal(f.calls.filter(c => c.kind === "evidence" && c.step === "begin").length, 1);
+    assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 2);
+  }
 });
 
 test("HTTP masks provider, membership and evidence failures and never returns partial data", async () => {
@@ -210,4 +253,157 @@ test("HTTP direct handler reuse rejects wrong paths and encoded route lookalikes
     await denied(await f.handler(request), 400);
     assert.equal(f.calls.length, 0);
   }
+});
+
+test("HTTP 403 does not reveal whether identity, membership or evidence failed", async () => {
+  const cases = [
+    { options: {}, jwt: token({ exp: NOW }) },
+    { options: { grants: [] }, jwt: token() },
+    { options: { evidenceError: "secret-sentinel" }, jwt: token() },
+  ];
+  const envelopes = [];
+  for (const item of cases) {
+    const f = harness(item.options);
+    const response = await f.handler(f.request("product=content", item.jwt));
+    envelopes.push(await denied(response, 403));
+  }
+  assert.equal(new Set(envelopes).size, 1);
+  assert.equal(envelopes[0], JSON.stringify({
+    error: "BCI private evidence access denied.",
+  }));
+});
+
+
+test("HTTP rejects hidden and symbol DB metadata with generic 403 and no partial evidence", async () => {
+  const symbol = Symbol("secret");
+  const hidden = (value, key) => Object.defineProperty({ ...value }, key, {
+    value: "secret-sentinel", enumerable: false,
+  });
+  const second = { ...evidence, id: "55555555-5555-4555-8555-555555555555",
+    providerRecordKey: "offline-synthetic-second" };
+  for (const bad of [
+    hidden(second, "customerEmail"),
+    { ...second, [symbol]: "secret-sentinel" },
+    { ...second, metrics: hidden(second.metrics, "private_key") },
+    { ...second, metrics: { ...second.metrics, [symbol]: "secret-sentinel" } },
+  ]) {
+    const f = harness({ directRows: [evidence, bad] });
+    const response = await f.handler(f.request("product=content&limit=2"));
+    const body = await denied(response, 403);
+    assert.equal(body.includes("offline-synthetic-only"), false);
+    assert.equal(f.calls.filter(c => c.kind === "membership" && c.step === "begin").length, 1);
+  }
+});
+
+
+// BCI_ALT_HOST_NATIVE_ENV_FAIL_CLOSED_20261028_V1
+// Regression only: this does not certify Netlify/Cloudflare runtime compatibility,
+// prove host identity, or authorize spoofing VERCEL_* on an alternate host.
+test("native Netlify/Cloudflare Preview markers cannot open BCI without trusted Vercel attestation", async () => {
+  const alternateHosts = [
+    { VERCEL_ENV: undefined, VERCEL_GIT_COMMIT_REF: undefined,
+      NETLIFY: "true", CONTEXT: "deploy-preview", BRANCH },
+    { VERCEL_ENV: undefined, VERCEL_GIT_COMMIT_REF: undefined,
+      CF_PAGES: "1", CF_PAGES_BRANCH: BRANCH },
+    { VERCEL_ENV: undefined, VERCEL_GIT_COMMIT_REF: undefined,
+      GITHUB_ACTIONS: "true", GITHUB_REF_NAME: BRANCH },
+  ];
+  for (const env of alternateHosts) {
+    const f = harness({ env });
+    await denied(await f.handler(f.request()), 404);
+    assert.equal(f.calls.length, 0, "untrusted host must not fetch JWKS or query Neon");
+  }
+});
+
+
+test("writer probe requires DEV flag, DEMAND-only query, verified JWT and membership before connecting",async()=>{
+  const result={directRestrictedLoginVerified:true,forcedRlsAndPrivilegesVerified:true,
+    activeDemandMembershipVerified:true,readOnlyScopeSmokeVerified:true,
+    evidenceAppended:false,authenticatedProviderReceiptRecorded:false};
+  const calls=[];
+  const writer=async scope=>{calls.push(scope);return result;};
+  const grantDemand={...grant,product:"demand"};
+  for(const query of ["product=content&probe=writer",
+    "product=demand&probe=wrong","product=demand&probe=writer&limit=1",
+    "product=demand&probe=writer&probe=writer"]) {
+    const f=harness({grants:[grantDemand],probeWriter:writer,
+      env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+    await denied(await f.handler(f.request(query)),400);
+  }
+  const disabled=harness({grants:[grantDemand],probeWriter:writer});
+  await denied(await disabled.handler(disabled.request("product=demand&probe=writer")),404);
+  const noJwt=harness({grants:[grantDemand],probeWriter:writer,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await noJwt.handler(noJwt.request("product=demand&probe=writer",null)),401);
+  const forged=harness({grants:[grantDemand],probeWriter:writer,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await forged.handler(forged.request("product=demand&probe=writer",
+    token({exp:NOW}))),403);
+  assert.equal(calls.length,0);
+  const allowed=harness({grants:[grantDemand],probeWriter:writer,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  const response=await allowed.handler(allowed.request("product=demand&probe=writer"));
+  assert.equal(response.status,200);
+  assert.match(response.headers.get("cache-control"),/no-store/);
+  assert.deepEqual(await response.json(),{scope:"internal-development",
+    writerLoginProbe:"pass",evidenceAppended:false,providerReceiptRecorded:false});
+  assert.deepEqual(calls,[{principalId:USER,tenantId:TENANT,product:"demand"}]);
+});
+
+test("writer probe missing membership, non-boolean response and connector error all fail closed",async()=>{
+  const grantDemand={...grant,product:"demand"};
+  const invalid=[
+    {grants:[],probeWriter:async()=>{throw Error("unexpected probe");}},
+    {grants:[grant],probeWriter:async()=>{throw Error("unexpected probe");}},
+    {grants:[grantDemand],probeWriter:async()=>({directRestrictedLoginVerified:true})},
+    {grants:[grantDemand],probeWriter:async()=>{throw Error("secret-sentinel postgres://");}},
+  ];
+  for(const options of invalid) {
+    const h=harness({...options,env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+    const response=await h.handler(h.request("product=demand&probe=writer"));
+    const raw=await denied(response,403);
+    assert.equal(raw.includes("secret-sentinel"),false);
+  }
+});
+
+test("lineage direct LOGIN probe is signed, membership-scoped and read-only",async()=>{
+  const grantDemand={...grant,product:"demand"};
+  const calls=[];
+  const probeLineage=async scope=>{
+    calls.push(scope);
+    return {directLineageLoginVerified:true,leastPrivilegeAndForcedRlsVerified:true,
+      activeMembershipVerified:true,negativeTenantPrincipalProductVerified:true,
+      revokedFixturePrincipalDenied:true,lineageAppended:false};
+  };
+  const h=harness({grants:[grantDemand],probeLineage,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  const response=await h.handler(h.request("product=demand&probe=lineage"));
+  assert.equal(response.status,200);
+  assert.match(response.headers.get("cache-control"),/no-store/);
+  assert.deepEqual(await response.json(),{scope:"internal-development",
+    lineageLoginProbe:"pass",lineageAppended:false,providerReceiptRecorded:false});
+  assert.deepEqual(calls,[{principalId:USER,tenantId:TENANT,product:"demand"}]);
+  await denied(await h.handler(h.request("product=demand&probe=lineage",null)),401);
+  await denied(await h.handler(h.request("product=demand&probe=lineage",token({exp:NOW}))),403);
+  assert.equal(calls.length,1);
+});
+test("lineage probe rejects disabled flag, foreign product, revoked membership and forged result",async()=>{
+  const grantDemand={...grant,product:"demand"};
+  let invoked=0;
+  const probeLineage=async()=>{invoked++;return {directLineageLoginVerified:true,
+    leastPrivilegeAndForcedRlsVerified:true,activeMembershipVerified:true,
+    negativeTenantPrincipalProductVerified:true,revokedFixturePrincipalDenied:true,lineageAppended:false};};
+  const off=harness({grants:[grantDemand],probeLineage});
+  await denied(await off.handler(off.request("product=demand&probe=lineage")),404);
+  const h=harness({grants:[grantDemand],probeLineage,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await h.handler(h.request("product=content&probe=lineage")),400);
+  const revoked=harness({grants:[],probeLineage,
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await revoked.handler(revoked.request("product=demand&probe=lineage")),403);
+  assert.equal(invoked,0);
+  const forged=harness({grants:[grantDemand],
+    probeLineage:async()=>({directLineageLoginVerified:true,lineageAppended:true}),
+    env:{BCI_NEON_DEV_WRITER_LOGIN_PROBE:"enabled"}});
+  await denied(await forged.handler(forged.request("product=demand&probe=lineage")),403);
 });

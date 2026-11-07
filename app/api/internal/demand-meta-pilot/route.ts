@@ -1,0 +1,12 @@
+import { handleDemandMetaPilot } from "@/lib/demand/meta-pilot-runtime";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const maxDuration = 60;
+export const GET = handleDemandMetaPilot;
+export const POST = handleDemandMetaPilot;
+export const PUT = handleDemandMetaPilot;
+export const PATCH = handleDemandMetaPilot;
+export const DELETE = handleDemandMetaPilot;
+export const HEAD = handleDemandMetaPilot;
+export const OPTIONS = handleDemandMetaPilot;

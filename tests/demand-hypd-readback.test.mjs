@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const script = new URL("../scripts/demand-hypd-readback.mjs", import.meta.url).pathname;
+const script = fileURLToPath(new URL("../scripts/demand-hypd-readback.mjs", import.meta.url));
 const scope = {
   tenantId: "11111111-1111-4111-8111-111111111111",
   product: "demand", accountId: "act_1997776120879476",
