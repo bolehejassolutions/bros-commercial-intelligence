@@ -3,7 +3,6 @@
  * This module NEVER runs on import or in Preview by default. No secrets are logged.
  * Paid model calls require an explicitly enabled runner, separate from the UI flag.
  */
-import 'server-only';
 import {ContentGenerationRejected} from './neon-content-generation-contract.ts';
 type JsonSchema=Readonly<Record<string,unknown>>;
 type Fetcher=typeof fetch;
