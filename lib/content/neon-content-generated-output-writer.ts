@@ -9,6 +9,7 @@
  * The adapter does not call AI, charge/refund credits, enqueue jobs, publish,
  * or read legacy Supabase staging. All writes are new DEV-only draft records.
  */
+import {createHash} from 'node:crypto';
 import {ContentReadDenied} from './neon-content-workspace-reader.ts';
 import {compileContentPersistenceBundle} from './neon-content-persistence-bundle.ts';
 import type {
@@ -49,7 +50,11 @@ export function createContentGeneratedOutputWriter(transaction:Transaction) {
   // The caller cannot pass a forged "verifiedQc" flag or tenant ID.
   const bundle=compileContentPersistenceBundle(rawInput,rawPlan,rawReview);
   const principalId=principal.userId;
-  const fingerprint=bundle.fingerprint;
+  // Bind the idempotency fingerprint to BOTH the generated content and its
+  // quality-review evidence, so a changed review cannot replay as the same request.
+  const fingerprint=createHash('sha256')
+   .update(JSON.stringify({content:bundle.fingerprint,quality:rawReview}))
+   .digest('hex');
   const expectedItems=bundle.items.length;
   const expectedScenes=bundle.scenes.length;
 
