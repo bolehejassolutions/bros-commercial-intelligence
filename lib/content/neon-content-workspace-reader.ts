@@ -47,6 +47,7 @@ export function createContentWorkspaceReader(transaction: Transaction) {
         WHERE w.id=$2::uuid AND w.owner_principal_id=$1::uuid LIMIT 1`,
         [principal.userId,workspaceId])).rows;
       if (workspace.length !== 1 || !UUID.test(String(workspace[0].tenant_id))) deny();
+      if (workspace[0].id !== workspaceId) deny();
       const tenant = String(workspace[0].tenant_id);
       const campaigns = (await query(`SELECT id,product_service,description,audience,problem,objective,
         duration_days,platforms,status,strategy,angles,captions,publish_plan,created_at,updated_at
@@ -59,14 +60,17 @@ export function createContentWorkspaceReader(transaction: Transaction) {
         const rows = (await query(`SELECT id,campaign_id,type,title,body,sort_order,version
           FROM content_dev.content_items WHERE tenant_id=$1::uuid AND campaign_id=$2::uuid
           ORDER BY sort_order,id LIMIT 500`,[tenant,String(campaign.id)])).rows;
+        if (rows.some(row => row.campaign_id !== campaign.id || !UUID.test(String(row.id)))) deny();
         contentItems.push(...rows);
       }
       for (const item of contentItems) {
         if (!UUID.test(String(item.id))) deny();
-        scenes.push(...(await query(`SELECT id,content_item_id,scene_number,duration_seconds,
+        const itemScenes=(await query(`SELECT id,content_item_id,scene_number,duration_seconds,
           narration,dialogue,visual_prompt,motion_prompt,continuity_lock
           FROM content_dev.scenes WHERE tenant_id=$1::uuid AND content_item_id=$2::uuid
-          ORDER BY scene_number LIMIT 100`,[tenant,String(item.id)])).rows);
+          ORDER BY scene_number LIMIT 100`,[tenant,String(item.id)])).rows;
+        if (itemScenes.some(row => row.content_item_id !== item.id || !UUID.test(String(row.id)))) deny();
+        scenes.push(...itemScenes);
       }
       return {workspace:workspace[0],campaigns,contentItems,scenes};
     });
