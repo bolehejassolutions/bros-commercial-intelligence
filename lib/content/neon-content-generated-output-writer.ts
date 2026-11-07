@@ -31,7 +31,6 @@ function rowsOne(rows:readonly Row[]):Row{
  if(rows.length!==1)return deny();
  return rows[0];
 }
-const same=(a:unknown,b:unknown):boolean=>JSON.stringify(a)===JSON.stringify(b);
 
 /**
  * This exported function is intentionally **not** included in the production
@@ -82,7 +81,8 @@ export function createContentGeneratedOutputWriter(transaction:Transaction) {
       has_table_privilege(current_user,'content_dev.scenes','INSERT') AS scenes_insert,
       has_table_privilege(current_user,'content_dev.generated_output_requests','INSERT') AS request_insert,
       has_table_privilege(current_user,'content_dev.generated_output_requests','SELECT') AS request_read,
-      has_table_privilege(current_user,'content_dev.generated_output_requests','UPDATE') AS request_update,
+      has_column_privilege(current_user,'content_dev.generated_output_requests','campaign_id','UPDATE') AS request_update,
+      has_column_privilege(current_user,'content_dev.generated_output_requests','fingerprint','UPDATE') AS fingerprint_update,
       has_table_privilege(current_user,'content_dev.generation_jobs','INSERT') AS jobs_insert,
       has_table_privilege(current_user,'content_dev.credit_ledger','INSERT') AS credits_insert,
       has_schema_privilege(current_user,'content_import_dev','USAGE') AS staging`,[])).rows);
@@ -92,7 +92,8 @@ export function createContentGeneratedOutputWriter(transaction:Transaction) {
       posture.campaigns_insert!==true||posture.campaigns_update!==false||
       posture.items_insert!==true||posture.scenes_insert!==true||
       posture.request_insert!==true||posture.request_read!==true||
-      posture.request_update!==true||posture.jobs_insert!==false||
+      posture.request_update!==true||posture.fingerprint_update!==false||
+      posture.jobs_insert!==false||
       posture.credits_insert!==false||posture.staging!==false)deny();
 
    const bound=rowsOne((await query(
