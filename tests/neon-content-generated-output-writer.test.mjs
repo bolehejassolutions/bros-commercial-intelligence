@@ -48,7 +48,7 @@ function makeDb({role='content_dev_generated_writer_v1',postureOk=true,
      request_table:'content_dev.generated_output_requests',
      membership:true,workspace_read:true,campaigns_insert:true,campaigns_update:false,
      items_insert:true,scenes_insert:true,request_insert:true,
-     request_read:true,request_update:true,jobs_insert:false,credits_insert:false,staging:false
+     request_read:true,request_update:true,fingerprint_update:false,jobs_insert:false,credits_insert:false,staging:false
     }]};
     if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:params[0]}]};
     if(sql.includes('FROM content_dev.workspaces w'))return {rows:params[0]===owner?
