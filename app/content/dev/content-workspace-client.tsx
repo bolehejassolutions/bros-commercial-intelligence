@@ -14,6 +14,13 @@ const card:React.CSSProperties={background:'#14243a',border:'1px solid #34445c',
 const field:React.CSSProperties={width:'100%',padding:'11px 12px',border:'1px solid #526580',borderRadius:7,color:'#f4efe1',background:'#0c1828',font:'inherit'};
 const gold='#ecd29a';
 function safeText(value:unknown){return typeof value==='string'&&value.trim()?value:'—';}
+function readableBody(value:unknown){
+ if(typeof value==='string')return safeText(value);
+ if(value!==null&&typeof value==='object'){
+  try{return JSON.stringify(value,null,2);}catch{return 'Tidak dapat memaparkan kandungan.';}
+ }
+ return '—';
+}
 export default function ContentWorkspaceClient(){
  const[workspaces,setWorkspaces]=useState<Workspace[]>([]);
  const[selected,setSelected]=useState('');
@@ -106,7 +113,7 @@ export default function ContentWorkspaceClient(){
          const scenes=details.scenes?.filter(s=>s.content_item_id===item.id)??[];
          return <div key={item.id} style={{background:'#0d1c2e',padding:12,borderRadius:8}}>
           <p style={{fontSize:11,color:'#b6c1cf'}}>{safeText(item.type)}</p>
-          <strong>{safeText(item.title)}</strong><p style={{whiteSpace:'pre-wrap',fontSize:13}}>{safeText(item.body)}</p>
+          <strong>{safeText(item.title)}</strong><p style={{whiteSpace:'pre-wrap',fontSize:13}}>{readableBody(item.body)}</p>
           {scenes.length>0&&<details><summary style={{cursor:'pointer',fontSize:12,color:gold}}>{scenes.length} scene</summary>
            {scenes.map(scene=><p key={scene.id} style={{fontSize:12,borderTop:'1px solid #34445c',paddingTop:8}}>
             Scene {scene.scene_number??'—'}: {safeText(scene.narration||scene.dialogue||scene.visual_prompt)}</p>)}
