@@ -86,7 +86,7 @@ export function validateCampaignPlan(raw:unknown):CampaignPlan{
     s.duration_seconds>=0&&s.duration_seconds<=600&&
     ['visual_prompt','motion_prompt','narration','dialogue'].every(k=>str(s[k],10000,false))))
   throw new ContentGenerationRejected('Invalid scene layer');
- const numbers=scenes.map(s=>s.scene_number);
+ const numbers=(scenes as Record<string,unknown>[]).map(s=>s.scene_number);
  if(new Set(numbers).size!==numbers.length||numbers.some((n,i)=>n!==i+1))
   throw new ContentGenerationRejected('Scenes must be sequential');
  const plan=raw.publish_plan;
@@ -96,7 +96,7 @@ export function validateCampaignPlan(raw:unknown):CampaignPlan{
     str(p.platform,100)&&str(p.content_type,200)&&str(p.objective,2000)))
   throw new ContentGenerationRejected('Invalid publish plan');
  if((raw.captions as Record<string,unknown>[]).some(c=>!platforms.has(String(c.platform).toLowerCase()))||
-    plan.some(p=>!platforms.has(String(p.platform).toLowerCase())))
+    (plan as Record<string,unknown>[]).some(p=>!platforms.has(String(p.platform).toLowerCase())))
   throw new ContentGenerationRejected('Unknown content platform');
  return Object.freeze(raw as CampaignPlan);
 }
