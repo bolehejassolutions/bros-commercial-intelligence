@@ -13,15 +13,17 @@ const deny=():never=>{throw new ContentReadDenied();};
 const validText=(value:unknown,max:number,required=true)=>typeof value==='string'&&(!required||value.trim().length>0)&&value.length<=max;
 const allowedPlatforms=new Set(['facebook','instagram','tiktok','youtube','linkedin','whatsapp','threads','x']);
 function validDraft(value:unknown):value is Draft {
- if(!value||typeof value!=='object'||Array.isArray(value))return false;
+ if(value===null||typeof value!=='object'||Array.isArray(value))return false;
  const d=value as Partial<Draft>;
- return validText(d.product_service,200)&&validText(d.audience,2000)&&
-   validText(d.description,4000,false)&&validText(d.problem,2000,false)&&
-   validText(d.objective,2000,false)&&Number.isInteger(d.duration_days)&&
-   (d.duration_days as number)>=1&&(d.duration_days as number)<=90&&
-   Array.isArray(d.platforms)&&d.platforms.length>=1&&d.platforms.length<=8&&
-   d.platforms.every(p=>typeof p==='string'&&allowedPlatforms.has(p.toLowerCase()))&&
-   new Set(d.platforms.map(p=>p.toLowerCase())).size===d.platforms.length;
+ const fields:[unknown,number,boolean][]=[
+  [d.product_service,200,true],[d.audience,2000,true],
+  [d.description,4000,false],[d.problem,2000,false],[d.objective,2000,false]
+ ];
+ if(!fields.every(([v,max,required])=>validText(v,max,required)))return false;
+ if(!Number.isInteger(d.duration_days)||(d.duration_days as number)<1||(d.duration_days as number)>90)return false;
+ if(!Array.isArray(d.platforms)||d.platforms.length<1||d.platforms.length>8)return false;
+ const normalized=d.platforms.map(p=>typeof p==='string'?p.toLowerCase():'');
+ return normalized.every(p=>allowedPlatforms.has(p))&&new Set(normalized).size===normalized.length;
 }
 
 export function createContentCampaignDraftWriter(transaction:Transaction){
