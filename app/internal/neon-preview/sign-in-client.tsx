@@ -420,9 +420,13 @@ export default function NeonPreviewSignIn() {
   return (
     <main className="auth-shell neon-preview-shell bros-luminous bci-studio">
       <section className="auth-card" aria-labelledby="neon-preview-title">
-        <p className="eyebrow">BROS INTERNAL PREVIEW</p>
-        <h1 id="neon-preview-title">Secure development access</h1>
-        <p className="sub">Sign in with the approved operator email to check the private development connection.</p>
+        <div className="bci-hero">
+          <span className="luminous-product-pill">BROS COMMERCIAL INTELLIGENCE</span>
+          <p className="luminous-eyebrow" style={{marginTop:24}}>EVIDENCE / DIAGNOSIS / LEARNING</p>
+          <h1 id="neon-preview-title">Intelligence made<br/>actionable.</h1>
+          <p className="sub">One connected intelligence core. Keep source evidence, decisions and outcomes traceable across separate BROS products.</p>
+          <p className="luminous-note">Private development workspace. Sign in using the approved operator account to access scoped evidence and review controls.</p>
+        </div>
         <label className="auth-form">
           Approved email
           <input type="email" value={operatorEmail} readOnly autoComplete="email" />
@@ -460,7 +464,11 @@ export default function NeonPreviewSignIn() {
         ) : null}
         {step === "ready" ? (
           <div className="auth-form">
-            <a href="/internal/neon-preview/content-review">Open BROS CONTENT original-media review</a>
+            <div className="bci-workspace-links" aria-label="BROS product workspaces">
+              <a href="/internal/neon-preview/content-review">CONTENT / Creative review <span aria-hidden="true">↗</span></a>
+              <a href="https://brosdemand.bolehejas.com/" target="_blank" rel="noopener noreferrer">DEMAND / Campaign workspace <span aria-hidden="true">↗</span></a>
+            </div>
+            <p className="luminous-eyebrow">RESTRICTED OPERATOR OPERATIONS</p>
             <label>
               Product
               <select value={product} disabled={busy} onChange={event => setProduct(event.target.value === "demand" ? "demand" : "content")}>
