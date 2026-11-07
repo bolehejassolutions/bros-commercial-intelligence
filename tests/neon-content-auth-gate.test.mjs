@@ -10,8 +10,8 @@ test('Neon SDK bridge cannot run outside explicitly enabled Preview',()=>{
   {},{VERCEL_ENV:'preview'},{VERCEL_ENV:'production',CONTENT_DEV_API_ENABLED:'true'},
   {VERCEL_ENV:'development',CONTENT_DEV_API_ENABLED:'true'},
   {VERCEL_ENV:'preview',CONTENT_DEV_API_ENABLED:'TRUE'},
- ])assert.equal(isContentDevPreviewEnabled(env),false);
- assert.equal(isContentDevPreviewEnabled({VERCEL_ENV:'preview',CONTENT_DEV_API_ENABLED:'true'}),true);
+ ])assert.equal(isContentDevPreviewEnabled(env.VERCEL_ENV,env.CONTENT_DEV_API_ENABLED),false);
+ assert.equal(isContentDevPreviewEnabled('preview','true'),true);
 });
 
 test('same-origin bridge only recognizes exact auth-api paths and two CONTENT screens',()=>{
