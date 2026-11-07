@@ -38,9 +38,12 @@ export function parseContentWorkspaceDetail(payload:unknown,expectedWorkspaceId:
     d.workspace.name.length>200||
     !Array.isArray(d.campaigns)||!Array.isArray(d.contentItems)||!Array.isArray(d.scenes)||
     d.campaigns.length>100||d.contentItems.length>50000||d.scenes.length>500000)invalid();
- const campaignIds=uniqueIds(d.campaigns);
- const itemIds=uniqueIds(d.contentItems,'campaign_id',campaignIds);
- uniqueIds(d.scenes,'content_item_id',itemIds);
+ // Array.isArray checks above guarantee these are arrays at runtime.
+ // Explicit casts retain that invariant across the fail-closed invalid() guard
+ // without weakening the relationship and duplicate-ID validation.
+ const campaignIds=uniqueIds(d.campaigns as unknown[]);
+ const itemIds=uniqueIds(d.contentItems as unknown[],'campaign_id',campaignIds);
+ uniqueIds(d.scenes as unknown[],'content_item_id',itemIds);
  return {
   workspace:d.workspace as WorkspaceDetail['workspace'],
   campaigns:d.campaigns as WorkspaceDetailCampaign[],
