@@ -2,11 +2,15 @@
 /** BROS CONTENT Neon recovery cockpit: real reads and draft writes only.
  * No generative, credit, billing, campaign launch or publishing controls.
  */
-import {useEffect,useState,type FormEvent} from 'react';
+import {useEffect,useRef,useState,type FormEvent} from 'react';
+import {prepareContentDraftRetry,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
+import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
 type Workspace={id:string;name:string;updated_at?:string};
-type Campaign={id:string;product_service?:string;audience?:string;status?:string;description?:string;created_at?:string};
-type ContentItem={id:string;campaign_id:string;type?:string;title?:string;body?:string};
-type Scene={id:string;content_item_id:string;scene_number?:number;narration?:string;dialogue?:string;visual_prompt?:string};
+type Campaign={id:string;product_service?:string;audience?:string;status?:string;description?:string;created_at?:string;
+ strategy?:unknown;angles?:unknown;captions?:unknown;publish_plan?:unknown;};
+type ContentItem={id:string;campaign_id:string;type?:string;title?:string;body?:unknown};
+type Scene={id:string;content_item_id:string;scene_number?:number;narration?:string;dialogue?:string;visual_prompt?:string;
+ motion_prompt?:string;duration_seconds?:number|string;};
 type Details={workspace:Workspace;campaigns:Campaign[];contentItems:ContentItem[];scenes:Scene[]};
 type Draft={product_service:string;audience:string;description:string;problem:string;objective:string;duration_days:number;platforms:string[]};
 const initialDraft:Draft={product_service:'',audience:'',description:'',problem:'',objective:'',duration_days:7,platforms:['facebook']};
@@ -21,6 +25,59 @@ function readableBody(value:unknown){
  }
  return '—';
 }
+function CampaignLayers({campaign}:{campaign:Campaign}){
+ const view=buildContentCampaignView(campaign);
+ if(!view.hasGeneratedContent)return null;
+ return <details style={{border:'1px solid #34445c',padding:12,borderRadius:8,margin:'10px 0'}}>
+  <summary style={{cursor:'pointer',color:gold,fontWeight:600}}>Lihat strategi, sudut, kapsyen & pelan penerbitan</summary>
+  <div style={{display:'grid',gap:16,marginTop:12}}>
+   {(view.strategy.length>0||view.platformStrategy.length>0)&&<section>
+    <h4 style={{margin:'0 0 6px'}}>1. Strategi</h4>
+    {view.strategy.map(row=><p key={row.label} style={{fontSize:13,whiteSpace:'pre-wrap',margin:'7px 0'}}>
+     <strong>{row.label}: </strong>{row.value}</p>)}
+    {view.platformStrategy.map((value,i)=><p key={i} style={{fontSize:13,margin:'6px 0'}}>• {value}</p>)}
+   </section>}
+   {view.angles.length>0&&<section>
+    <h4 style={{margin:'0 0 6px'}}>2. Sudut kandungan</h4>
+    {view.angles.map((row,i)=><div key={i} style={{marginBottom:10,fontSize:13}}>
+     <strong>{row.title||'Sudut '+(i+1)}</strong>
+     {row.hook&&<p style={{margin:'3px 0'}}>Hook: {row.hook}</p>}
+     {row.reason&&<p style={{margin:'3px 0',color:'#b6c1cf'}}>Sebab: {row.reason}</p>}
+    </div>)}
+   </section>}
+   {view.captions.length>0&&<section>
+    <h4 style={{margin:'0 0 6px'}}>6. Kapsyen mengikut platform</h4>
+    {view.captions.map(row=><div key={row.platform} style={{marginBottom:10,fontSize:13}}>
+     <strong style={{textTransform:'capitalize'}}>{row.platform}</strong>
+     <p style={{margin:'3px 0',whiteSpace:'pre-wrap'}}>{row.caption}</p>
+    </div>)}
+   </section>}
+   {view.publishPlan.length>0&&<section>
+    <h4 style={{margin:'0 0 6px'}}>7. Pelan penerbitan (paparan sahaja)</h4>
+    {view.publishPlan.map((row,i)=><p key={i} style={{fontSize:13,margin:'7px 0'}}>
+     Hari {row.day} · {row.platform} · {row.contentType}
+     {row.objective&&<span style={{color:'#b6c1cf'}}> — {row.objective}</span>}
+    </p>)}
+   </section>}
+  </div>
+  <p style={{fontSize:11,color:'#b6c1cf'}}>Paparan bacaan sahaja. Tiada penjadualan atau penerbitan aktif.</p>
+ </details>;
+}
+function ItemBody({item}:{item:ContentItem}){
+ const body=item.body;
+ const obj=body!==null&&typeof body==='object'&&!Array.isArray(body)
+  ?body as Record<string,unknown>:null;
+ if(obj&&item.type==='script')return <div style={{fontSize:13,whiteSpace:'pre-wrap'}}>
+  <p><strong>Hook:</strong> {safeText(obj.hook)}</p>
+  <p><strong>Skrip:</strong> {safeText(obj.body)}</p>
+  <p><strong>CTA:</strong> {safeText(obj.cta)}</p>
+ </div>;
+ if(obj&&item.type==='visual_prompt')return <p style={{fontSize:13,whiteSpace:'pre-wrap'}}>
+  <strong>Prompt visual:</strong> {safeText(obj.prompt)}</p>;
+ if(obj&&item.type==='video_scenes')return <p style={{fontSize:13,color:'#b6c1cf'}}>
+  Koleksi scene: {typeof obj.count==='number'?obj.count:'—'}</p>;
+ return <pre style={{whiteSpace:'pre-wrap',fontSize:12,overflowWrap:'anywhere'}}>{readableBody(body)}</pre>;
+}
 export default function ContentWorkspaceClient(){
  const[workspaces,setWorkspaces]=useState<Workspace[]>([]);
  const[selected,setSelected]=useState('');
@@ -32,6 +89,7 @@ export default function ContentWorkspaceClient(){
  const[error,setError]=useState('');
  const[notice,setNotice]=useState('');
  const[refresh,setRefresh]=useState(0);
+ const pendingDraftAttempt=useRef<ContentDraftAttempt|null>(null);
  useEffect(()=>{
   let active=true;
   (async()=>{
@@ -69,14 +127,21 @@ export default function ContentWorkspaceClient(){
   event.preventDefault();if(saving||!selected||draft.platforms.length===0)return;
   setSaving(true);setNotice('');setError('');
   try{
+   // Preserve the server-side idempotency key if the prior POST committed but
+   // its response was lost. A changed draft or workspace gets a fresh key.
+   const submitted=JSON.stringify(draft);
+   const attempt=prepareContentDraftRetry(pendingDraftAttempt.current,selected,draft,()=>crypto.randomUUID());
+   pendingDraftAttempt.current=attempt;
    const response=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected)+'/campaign-drafts',{
-    method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','idempotency-key':crypto.randomUUID()},
-    body:JSON.stringify(draft)
+    method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','idempotency-key':attempt.key},
+    body:submitted
    });
    if(!response.ok)throw new Error(response.status===401?'Sesi tamat. Sila log masuk semula.':
     response.status===404?'Akses workspace tidak dibenarkan.':'Draf tidak dapat disimpan. Sila cuba lagi.');
    setNotice('Draf kempen berjaya disimpan dalam Neon DEV. Tiada kandungan dijana atau diterbitkan.');
-   setDraft(initialDraft);setRefresh(value=>value+1);
+   pendingDraftAttempt.current=null;
+   setDraft(current=>JSON.stringify(current)===submitted?initialDraft:current);
+   setRefresh(value=>value+1);
   }catch(e){setError(e instanceof Error?e.message:'Ralat menyimpan draf.');}
   finally{setSaving(false);}
  }
@@ -108,15 +173,21 @@ export default function ContentWorkspaceClient(){
        <p style={{fontSize:11,letterSpacing:1,color:gold,margin:'0 0 6px'}}>{safeText(c.status).toUpperCase()} · {items.length} KANDUNGAN</p>
        <h3 style={{fontSize:17,margin:'4px 0 8px'}}>{safeText(c.product_service)}</h3>
        <p style={{color:'#b6c1cf',fontSize:13}}>{safeText(c.description||c.audience)}</p>
-       {items.length>0&&<details><summary style={{cursor:'pointer',color:gold}}>Lihat kandungan</summary>
+       <CampaignLayers campaign={c}/>
+       {items.length>0&&<details><summary style={{cursor:'pointer',color:gold}}>Lihat skrip, visual dan scene</summary>
         <div style={{display:'grid',gap:10,marginTop:10}}>{items.map(item=>{
          const scenes=details.scenes?.filter(s=>s.content_item_id===item.id)??[];
          return <div key={item.id} style={{background:'#0d1c2e',padding:12,borderRadius:8}}>
           <p style={{fontSize:11,color:'#b6c1cf'}}>{safeText(item.type)}</p>
-          <strong>{safeText(item.title)}</strong><p style={{whiteSpace:'pre-wrap',fontSize:13}}>{readableBody(item.body)}</p>
+          <strong>{safeText(item.title)}</strong><ItemBody item={item}/>
           {scenes.length>0&&<details><summary style={{cursor:'pointer',fontSize:12,color:gold}}>{scenes.length} scene</summary>
            {scenes.map(scene=><p key={scene.id} style={{fontSize:12,borderTop:'1px solid #34445c',paddingTop:8}}>
-            Scene {scene.scene_number??'—'}: {safeText(scene.narration||scene.dialogue||scene.visual_prompt)}</p>)}
+            <strong>Scene {scene.scene_number??'—'} {scene.duration_seconds!==undefined?'· '+scene.duration_seconds+'s':''}</strong>
+            <span style={{display:'block'}}>Naratif: {safeText(scene.narration)}</span>
+            <span style={{display:'block'}}>Dialog: {safeText(scene.dialogue)}</span>
+            <span style={{display:'block'}}>Visual: {safeText(scene.visual_prompt)}</span>
+            <span style={{display:'block'}}>Gerakan: {safeText(scene.motion_prompt)}</span>
+           </p>)}
           </details>}
          </div>})}</div></details>}
       </article>})}</div>}
