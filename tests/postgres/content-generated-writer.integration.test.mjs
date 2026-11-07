@@ -128,6 +128,32 @@ test('real PostgreSQL 16: atomic authorization, persistence and rollback',async 
    ContentReadDenied);
   assert.deepEqual(await counts(),baseline);
  });
+ await t.test('revoked CONTENT membership immediately denies new writes and prior data access',async()=>{
+  const before=await counts();
+  try{
+   await admin.query(`UPDATE bci_dev.tenant_memberships SET active=false
+    WHERE tenant_id=$1 AND principal_id=$2 AND product='content'`,[TENANT,OWNER]);
+   const visible=await scopedSql(OWNER,'SELECT id FROM content_dev.workspaces WHERE id=$1',[WORKSPACE]);
+   assert.equal(visible.rows.length,0);
+   await assert.rejects(write(...args('ci-revoked-membership-20261107')),ContentReadDenied);
+   assert.deepEqual(await counts(),before);
+  }finally{
+   await admin.query(`UPDATE bci_dev.tenant_memberships SET active=true
+    WHERE tenant_id=$1 AND principal_id=$2 AND product='content'`,[TENANT,OWNER]);
+  }
+ });
+ await t.test('separate tenant can save its own draft but cannot access first tenant',async()=>{
+  const first=await counts();
+  const other=await write(...args('ci-foreign-own-workspace-20261107',foreignPrincipal,FOREIGN_WORKSPACE));
+  assert.equal(other.status,'draft');
+  assert.equal(other.replayed,false);
+  assert.deepEqual(await counts(),first,'Owner tenant rows remain identical');
+  const x=await admin.query('SELECT tenant_id,owner_principal_id FROM content_dev.campaigns WHERE id=$1',[other.id]);
+  assert.equal(x.rows[0].tenant_id,'66666666-6666-4666-8666-666666666666');
+  assert.equal(x.rows[0].owner_principal_id,FOREIGN);
+  const noRead=await scopedSql(OWNER,'SELECT id FROM content_dev.campaigns WHERE id=$1',[other.id]);
+  assert.equal(noRead.rows.length,0);
+ });
  await t.test('cross-tenant content item insert denied by RLS, even with known campaign ID',async()=>{
   const count=await admin.query('SELECT count(*)::int AS n FROM content_dev.content_items');
   await assert.rejects(
