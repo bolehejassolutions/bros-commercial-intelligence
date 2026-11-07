@@ -5,6 +5,8 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {prepareContentDraftRetry,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
+import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
+ type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
 type Campaign={id:string;product_service?:string;audience?:string;status?:string;description?:string;created_at?:string;
  strategy?:unknown;angles?:unknown;captions?:unknown;publish_plan?:unknown;};
@@ -81,10 +83,10 @@ function ItemBody({item}:{item:ContentItem}){
 export default function ContentWorkspaceClient(){
  const[workspaces,setWorkspaces]=useState<Workspace[]>([]);
  const[selected,setSelected]=useState('');
- const[details,setDetails]=useState<Details|null>(null);
+ const[detailLoad,setDetailLoad]=useState<WorkspaceLoadState<Details>>(initialWorkspaceLoad);
  const[draft,setDraft]=useState<Draft>(initialDraft);
  const[loading,setLoading]=useState(true);
- const[loadingDetail,setLoadingDetail]=useState(false);
+
  const[saving,setSaving]=useState(false);
  const[error,setError]=useState('');
  const[notice,setNotice]=useState('');
@@ -106,16 +108,20 @@ export default function ContentWorkspaceClient(){
   return()=>{active=false;};
  },[]);
  useEffect(()=>{
-  if(!selected){setDetails(null);return;}
-  let active=true;setLoadingDetail(true);
+  if(!selected){setDetailLoad(initialWorkspaceLoad());return;}
+  let active=true;setDetailLoad(loadingWorkspace());
   (async()=>{
    try{
     const res=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected),{cache:'no-store',credentials:'same-origin'});
     if(!res.ok)throw new Error(res.status===401?'Sesi tamat. Sila log masuk semula.':'Data kempen belum dapat dibaca.');
     const response=await res.json() as {data?:Details};
-    if(active){setDetails(response.data??null);setError('');}
-   }catch(e){if(active){setDetails(null);setError(e instanceof Error?e.message:'Ralat memuatkan data.');}}
-   finally{if(active)setLoadingDetail(false);}
+    if(!response.data||!Array.isArray(response.data.campaigns)||
+       !Array.isArray(response.data.contentItems)||!Array.isArray(response.data.scenes)||
+       response.data.workspace?.id!==selected)
+     throw new Error('Respons workspace tidak lengkap. Cuba muat semula.');
+    if(active)setDetailLoad(loadedWorkspace(response.data));
+   }catch(e){if(active)setDetailLoad(failedWorkspace(e instanceof Error?e.message:'Ralat memuatkan data.'));}
+  
   })();
   return()=>{active=false;};
  },[selected,refresh]);
@@ -158,7 +164,7 @@ export default function ContentWorkspaceClient(){
     <h2 style={{fontSize:19,marginTop:0}}>Workspace</h2>
     {loading?<p>Sedang memuatkan…</p>:workspaces.length===0?<p>Tiada workspace yang dipautkan kepada identiti Neon Auth ini. Semak keahlian CONTENT sebelum meneruskan.</p>:
     <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>{workspaces.map(workspace=><button key={workspace.id} type="button"
-     onClick={()=>{setSelected(workspace.id);setNotice('');}}
+     onClick={()=>{setDetailLoad(initialWorkspaceLoad());setSelected(workspace.id);setNotice('');}}
      aria-pressed={selected===workspace.id}
      style={{border:'1px solid '+(selected===workspace.id?gold:'#526580'),background:selected===workspace.id?'#39432e':'#1a2b43',color:'#f4efe1',padding:'10px 16px',borderRadius:8,cursor:'pointer'}}>
      {workspace.name}</button>)}</div>}
@@ -166,9 +172,16 @@ export default function ContentWorkspaceClient(){
    {selected&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,420px),1fr))',gap:20,alignItems:'start'}}>
     <section style={card}>
      <h2 style={{fontSize:20,marginTop:0}}>Kempen sedia ada</h2>
-     {loadingDetail?<p>Memuatkan kempen…</p>:!details?.campaigns?.length?<p>Belum ada kempen dalam workspace ini.</p>:
-     <div style={{display:'grid',gap:12}}>{details.campaigns.map(c=>{
-      const items=details.contentItems?.filter(i=>i.campaign_id===c.id)??[];
+     {detailLoad.status==='loading'||detailLoad.status==='idle'?<p role="status">Memuatkan kempen…</p>:
+      detailLoad.status==='error'?<div role="alert" style={{border:'1px solid #ad665d',padding:12,borderRadius:8}}>
+       <p style={{color:'#ffd0cb'}}>{detailLoad.error}</p>
+       <button type="button" onClick={()=>setRefresh(value=>value+1)}
+        style={{background:gold,color:'#111b29',padding:'9px 13px',border:0,borderRadius:7,cursor:'pointer'}}>
+        Cuba semula</button>
+      </div>:
+      detailLoad.data.campaigns.length===0?<p>Belum ada kempen dalam workspace ini.</p>:
+     <div style={{display:'grid',gap:12}}>{detailLoad.data.campaigns.map(c=>{
+      const items=detailLoad.data.contentItems.filter(i=>i.campaign_id===c.id);
       return <article key={c.id} style={{borderTop:'1px solid #34445c',paddingTop:12}}>
        <p style={{fontSize:11,letterSpacing:1,color:gold,margin:'0 0 6px'}}>{safeText(c.status).toUpperCase()} · {items.length} KANDUNGAN</p>
        <h3 style={{fontSize:17,margin:'4px 0 8px'}}>{safeText(c.product_service)}</h3>
@@ -176,7 +189,7 @@ export default function ContentWorkspaceClient(){
        <CampaignLayers campaign={c}/>
        {items.length>0&&<details><summary style={{cursor:'pointer',color:gold}}>Lihat skrip, visual dan scene</summary>
         <div style={{display:'grid',gap:10,marginTop:10}}>{items.map(item=>{
-         const scenes=details.scenes?.filter(s=>s.content_item_id===item.id)??[];
+         const scenes=detailLoad.data.scenes.filter(s=>s.content_item_id===item.id);
          return <div key={item.id} style={{background:'#0d1c2e',padding:12,borderRadius:8}}>
           <p style={{fontSize:11,color:'#b6c1cf'}}>{safeText(item.type)}</p>
           <strong>{safeText(item.title)}</strong><ItemBody item={item}/>
