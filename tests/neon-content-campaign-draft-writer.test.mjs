@@ -10,7 +10,7 @@ const C='44444444-4444-4444-8444-444444444444';
 const principal={userId:A,authenticated:true};
 const draft={product_service:'Example',audience:'Owners',description:'',problem:'',objective:'',duration_days:7,platforms:[]};
 const key='safe_retry_key_123';
-const role={name:'content_dev_draft_writer',login:'content_dev_draft_writer',can_login:true,inherits:false,bypass:false,superuser:false,parents:0};
+const role={name:'content_dev_draft_writer',login:'content_dev_draft_writer',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0};
 const posture={db:'bros_intelligence_dev',forced:2,staging:false,credits:false,jobs:false,writes:true,membership:true};
 function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existing=[]}={}){
  const calls=[];
@@ -49,7 +49,7 @@ test('mismatched replay or stale campaign link fails closed',async()=>{
  }
 });
 test('unsafe database privileges or inherited role deny writes',async()=>{
- for(const config of [{roleRow:{...role,inherits:true}},{postureRow:{...posture,credits:true}},{postureRow:{...posture,forced:1}}]){
+ for(const config of [{roleRow:{...role,inherits:true}},{roleRow:{...role,can_create_role:true}},{postureRow:{...posture,credits:true}},{postureRow:{...posture,forced:1}}]){
   const {writer,calls}=fixture(config);
   await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
   assert.equal(calls.some(x=>x.sql.includes('WITH reservation AS')),false);
