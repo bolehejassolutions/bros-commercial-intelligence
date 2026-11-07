@@ -4,6 +4,7 @@ import { isNeonPreviewEnabled } from "@/lib/bci/neon-preview-handler";
 import { neonPreviewCanonicalRedirect } from "@/lib/bci/neon-preview-canonical-origin";
 import NeonPreviewSignIn from "./sign-in-client";
 import "./preview.css";
+import "../bros-luminous.css";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
