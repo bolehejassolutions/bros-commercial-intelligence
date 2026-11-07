@@ -65,3 +65,17 @@ test('HTTP draft validation matches writer platform and text constraints',async(
  assert.equal((await handler(request({...valid,platforms:['FACEBOOK','Instagram']}),workspace)).status,201);
  assert.equal(calls,1);
 });
+
+test('rejects cross-origin draft requests before session verification or database access',async()=>{
+ let verified=0,written=0;
+ const handler=createContentCampaignDraftPost(async()=>{verified++;return {userId:user,authenticated:true};},async()=>{written++;return {};});
+ for(const headers of [
+  {origin:'https://attacker.invalid'},
+  {'sec-fetch-site':'cross-site'},
+  {'sec-fetch-site':'same-site'},
+  {origin:'https://example.invalid','sec-fetch-site':'cross-site'}
+ ])assert.equal((await handler(request(valid,headers),workspace)).status,403);
+ assert.equal(verified,0);assert.equal(written,0);
+ assert.equal((await handler(request(valid,{origin:'https://example.invalid','sec-fetch-site':'same-origin'}),workspace)).status,201);
+ assert.equal(written,1);
+});
