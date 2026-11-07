@@ -17,12 +17,12 @@ export function createContentCampaignDraftWriter(transaction:Transaction){
      !/^[a-zA-Z0-9_-]{12,180}$/.test(key))deny();
   return transaction(async query=>{
    const role=(await query(`SELECT current_user AS name,session_user AS login,rolcanlogin AS can_login,
-     rolinherit AS inherits,rolbypassrls AS bypass,rolsuper AS superuser,
+     rolinherit AS inherits,rolbypassrls AS bypass,rolsuper AS superuser,rolcreaterole AS can_create_role,
      (SELECT count(*)::int FROM pg_auth_members WHERE member=pg_roles.oid) AS parents
      FROM pg_roles WHERE rolname=current_user`,[])).rows[0];
    if(!role||role.name!=='content_dev_draft_writer'||role.login!==role.name||
       role.can_login!==true||role.inherits!==false||role.bypass!==false||
-      role.superuser!==false||role.parents!==0)deny();
+      role.superuser!==false||role.can_create_role!==false||role.parents!==0)deny();
    const posture=(await query(`SELECT current_database() AS db,
      (SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname='content_dev' AND c.relname IN ('workspaces','campaigns')
