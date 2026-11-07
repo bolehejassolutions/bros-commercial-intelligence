@@ -13,6 +13,7 @@ function mock({owner=A,roleRow=role,postureRow=posture}={}) {
   const calls=[];
   const reader=createContentWorkspaceReader(async fn=>fn(async (sql,params)=>{
     calls.push({sql,params});
+    if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:params[0]}]};
     if(sql.includes('FROM pg_roles'))return {rows:[roleRow]};
     if(sql.includes('current_database()'))return {rows:[postureRow]};
     if(sql.includes('FROM content_dev.workspaces'))return {rows:params[0]===owner?[{id:W,tenant_id:T,name:'Legacy',business_dna:{}}]:[]};
@@ -53,4 +54,13 @@ test('missing forced RLS, staging access or write privilege fails closed',async(
     await assert.rejects(reader({userId:A,authenticated:true},W),ContentReadDenied);
     assert.equal(calls.length,2);
   }
+});
+
+test('verified principal is set transaction-locally before workspace membership query',async()=>{
+ const {reader,calls}=mock();
+ await reader({userId:A,authenticated:true},W);
+ const context=calls.findIndex(x=>x.sql.includes("set_config('bci.principal_id'"));
+ const membership=calls.findIndex(x=>x.sql.includes('FROM content_dev.workspaces'));
+ assert.ok(context>=0&&membership>context);
+ assert.deepEqual(calls[context].params,[A]);
 });
