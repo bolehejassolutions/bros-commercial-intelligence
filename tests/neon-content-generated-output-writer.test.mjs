@@ -136,6 +136,14 @@ test('reused key with a changed payload is rejected and leaves committed campaig
  assert.equal(JSON.stringify(db.stat().committed),before);
  assert.equal(db.stat().rollbacks,1);
 });
+test('reused key with changed QC evidence is rejected despite identical plan',async()=>{
+ const db=makeDb();
+ await db.write(...args());
+ const before=JSON.stringify(db.stat().committed);
+ await assert.rejects(db.write({userId:OWNER,authenticated:true},WORKSPACE,KEY,
+  input,plan,{...qc,score:89}),ContentReadDenied);
+ assert.equal(JSON.stringify(db.stat().committed),before);
+});
 test('wrong login, missing RLS and foreign principal all deny BEFORE campaign inserts',async()=>{
  for(const opts of [{role:'neondb_owner'},{role:'content_dev_draft_writer_v2'},
                     {postureOk:false},{owner:FOREIGN}]){
