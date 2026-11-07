@@ -54,3 +54,11 @@ test('unrelated cookies are never forwarded to Neon Auth',async()=>{
  });
  assert.deepEqual(await verify(req('analytics=ignored; better-auth.session_token=abc')),{userId:ID,authenticated:true});
 });
+
+test('normal session tokens containing letter s remain valid',async()=>{
+ const verify=createContentNeonSessionVerifier(BASE,async(_url,init)=>{
+  assert.equal(init.headers.cookie,'better-auth.session_token=session-token-safe');
+  return Response.json(session);
+ });
+ assert.deepEqual(await verify(req('better-auth.session_token=session-token-safe')),{userId:ID,authenticated:true});
+});
