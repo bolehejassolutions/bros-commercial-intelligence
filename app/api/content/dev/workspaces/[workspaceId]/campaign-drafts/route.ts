@@ -1,7 +1,7 @@
 /** DEV-only authenticated CONTENT campaign draft API; no generation or credits. */
-import {createContentNeonSessionVerifier} from '../../../../../../lib/content/neon-content-session-verifier.ts';
-import {createRestrictedContentAdapters} from '../../../../../../lib/content/neon-content-restricted-adapters.ts';
-import {createContentCampaignDraftPost} from '../../../../../../lib/content/neon-content-campaign-draft-http.ts';
+import {createContentNeonSessionVerifier} from '@/lib/content/neon-content-session-verifier.ts';
+import {createRestrictedContentAdapters} from '@/lib/content/neon-content-restricted-adapters.ts';
+import {createContentCampaignDraftPost} from '@/lib/content/neon-content-campaign-draft-http.ts';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 export async function POST(request:Request,context:{params:Promise<{workspaceId:string}>}){
