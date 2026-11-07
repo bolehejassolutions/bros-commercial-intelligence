@@ -106,7 +106,7 @@ test('identity context mismatch denies before reservation or campaign mutation',
 
 test('malformed campaign input is rejected before any database connection',async()=>{
  for(const invalid of [
-  {...draft,description:''}, {...draft,platforms:[]},
+  {...draft,product_service:''}, {...draft,platforms:[]},
   {...draft,platforms:['facebook','facebook']},
   {...draft,platforms:['unknown']}, {...draft,duration_days:0},
   {...draft,duration_days:91}, {...draft,duration_days:1.5},
