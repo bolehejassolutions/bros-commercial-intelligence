@@ -10,11 +10,25 @@ type Principal=Readonly<{userId:string;authenticated:true}>;
 type Draft=Readonly<{product_service:string;audience:string;description:string;problem:string;objective:string;duration_days:number;platforms:string[]}>;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const deny=():never=>{throw new ContentReadDenied();};
+const validText=(value:unknown,max:number)=>typeof value==='string'&&value.trim().length>0&&value.length<=max;
+const allowedPlatforms=new Set(['facebook','instagram','tiktok','youtube','linkedin','whatsapp','threads','x']);
+function validDraft(value:unknown):value is Draft {
+ if(!value||typeof value!=='object'||Array.isArray(value))return false;
+ const d=value as Partial<Draft>;
+ return validText(d.product_service,200)&&validText(d.audience,2000)&&
+   validText(d.description,4000)&&validText(d.problem,2000)&&
+   validText(d.objective,2000)&&Number.isInteger(d.duration_days)&&
+   (d.duration_days as number)>=1&&(d.duration_days as number)<=90&&
+   Array.isArray(d.platforms)&&d.platforms.length>=1&&d.platforms.length<=8&&
+   d.platforms.every(p=>typeof p==='string'&&allowedPlatforms.has(p.toLowerCase()))&&
+   new Set(d.platforms.map(p=>p.toLowerCase())).size===d.platforms.length;
+}
+
 export function createContentCampaignDraftWriter(transaction:Transaction){
  if(typeof transaction!=='function')deny();
  return async(principal:Principal,workspaceId:string,draft:Draft,key:string)=>{
   if(principal?.authenticated!==true||!UUID.test(principal.userId)||!UUID.test(workspaceId)||
-     !/^[a-zA-Z0-9_-]{12,180}$/.test(key))deny();
+     !/^[a-zA-Z0-9_-]{12,180}$/.test(key)||!validDraft(draft))deny();
   return transaction(async query=>{
    const role=(await query(`SELECT current_user AS name,session_user AS login,rolcanlogin AS can_login,
      rolinherit AS inherits,rolbypassrls AS bypass,rolsuper AS superuser,rolcreaterole AS can_create_role,
