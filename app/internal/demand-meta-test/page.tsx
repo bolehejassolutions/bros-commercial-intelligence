@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import DemandMetaTestClient from "./test-client";
 import { isDemandMetaPreviewUiEnabled } from "@/lib/demand/meta-preview-ui-gate";
 import "../neon-preview/preview.css";
+import "../bros-luminous.css";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
