@@ -16,11 +16,21 @@ export function createContentNeonSessionVerifier(authBaseUrl:string, fetcher:Fet
  return async function verifyContentSession(request:Request):Promise<Principal|null>{
   const cookie=request.headers.get('cookie');
   if(!cookie||cookie.length>8192)return null;
-  // The application must supply only its own session cookies. Do not forward
-  // Authorization, client IP, arbitrary headers, or an asserted principal.
+  // Accept only the canonical Better Auth session cookie names. Reject
+  // duplicates and malformed values rather than forwarding arbitrary cookies.
+  // Cookies from the Neon Auth host are not automatically shared with a
+  // separate Vercel domain; a trusted same-origin auth bridge is required.
+  const allowed=new Set(['better-auth.session_token','__Secure-better-auth.session_token']);
+  const tokens=cookie.split(';').map(v=>v.trim()).filter(Boolean);
+  const selected=tokens.filter(v=>allowed.has(v.split('=')[0]));
+  if(selected.length!==1)return null;
+  const separator=selected[0].indexOf('=');
+  const value=selected[0].slice(separator+1);
+  if(separator<1||!value||value.length>4096||/[\\s;,]/.test(value))return null;
+  const scopedCookie=selected[0];
   let response:Response;
   try{response=await fetcher(endpoint.toString(),{
-   method:'GET',headers:{cookie,accept:'application/json'},
+   method:'GET',headers:{cookie:scopedCookie,accept:'application/json'},
    cache:'no-store',redirect:'error',signal:AbortSignal.timeout(5000)
   });}catch{return null;}
   if(!response.ok)return null;
