@@ -5,6 +5,7 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {prepareContentDraftRetry,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
+import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
@@ -86,6 +87,8 @@ export default function ContentWorkspaceClient(){
  const[detailLoad,setDetailLoad]=useState<WorkspaceLoadState<Details>>(initialWorkspaceLoad);
  const[draft,setDraft]=useState<Draft>(initialDraft);
  const[loading,setLoading]=useState(true);
+ const[indexError,setIndexError]=useState('');
+ const[indexRefresh,setIndexRefresh]=useState(0);
 
  const[saving,setSaving]=useState(false);
  const[error,setError]=useState('');
@@ -99,14 +102,13 @@ export default function ContentWorkspaceClient(){
     const res=await fetch('/api/content/dev/workspaces',{cache:'no-store',credentials:'same-origin'});
     if(res.status===401)throw new Error('Sesi tamat. Sila log masuk semula.');
     if(!res.ok)throw new Error('Senarai workspace belum dapat dibaca.');
-    const response=await res.json() as {data?:{workspaces?:Workspace[]}};
-    const next=Array.isArray(response.data?.workspaces)?response.data.workspaces:[];
-    if(active){setWorkspaces(next);setSelected(previous=>next.some(w=>w.id===previous)?previous:(next[0]?.id??''));setError('');}
-   }catch(e){if(active)setError(e instanceof Error?e.message:'Ralat memuatkan workspace.');}
+    const next=parseContentWorkspaceIndex(await res.json());
+    if(active){setWorkspaces(next);setSelected(previous=>next.some(w=>w.id===previous)?previous:(next[0]?.id??''));setIndexError('');}
+   }catch(e){if(active){setWorkspaces([]);setSelected('');setIndexError(e instanceof Error?e.message:'Ralat memuatkan workspace.');}}
    finally{if(active)setLoading(false);}
   })();
   return()=>{active=false;};
- },[]);
+ },[indexRefresh]);
  useEffect(()=>{
   if(!selected){setDetailLoad(initialWorkspaceLoad());return;}
   let active=true;setDetailLoad(loadingWorkspace());
@@ -162,7 +164,11 @@ export default function ContentWorkspaceClient(){
    {notice&&<div role="status" style={{...card,borderColor:'#679c88'}}>{notice}</div>}
    <section style={card} aria-label="Pilih workspace">
     <h2 style={{fontSize:19,marginTop:0}}>Workspace</h2>
-    {loading?<p>Sedang memuatkan…</p>:workspaces.length===0?<p>Tiada workspace yang dipautkan kepada identiti Neon Auth ini. Semak keahlian CONTENT sebelum meneruskan.</p>:
+    {loading?<p role="status">Sedang memuatkan…</p>:indexError?<div role="alert" style={{border:'1px solid #ad665d',padding:12,borderRadius:8}}>
+     <p style={{color:'#ffd0cb'}}>{indexError}</p>
+     <button type="button" onClick={()=>{setLoading(true);setIndexError('');setIndexRefresh(n=>n+1);}}
+      style={{background:gold,color:'#111b29',padding:'9px 13px',border:0,borderRadius:7,cursor:'pointer'}}>Cuba semula senarai workspace</button>
+    </div>:workspaces.length===0?<p>Tiada workspace yang dipautkan kepada identiti Neon Auth ini. Semak keahlian CONTENT sebelum meneruskan.</p>:
     <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>{workspaces.map(workspace=><button key={workspace.id} type="button"
      onClick={()=>{setDetailLoad(initialWorkspaceLoad());setSelected(workspace.id);setNotice('');}}
      aria-pressed={selected===workspace.id}
