@@ -39,6 +39,8 @@ CREATE TABLE content_dev.campaigns (
  platforms text[] NOT NULL DEFAULT '{}',
  status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','queued','running','completed','failed')),
  strategy jsonb,angles jsonb,captions jsonb,publish_plan jsonb,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
  legacy_supabase_id uuid UNIQUE,
  UNIQUE(tenant_id,id),
  FOREIGN KEY(tenant_id,workspace_id) REFERENCES content_dev.workspaces(tenant_id,id)
