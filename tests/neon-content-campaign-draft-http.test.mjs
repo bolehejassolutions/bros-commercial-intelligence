@@ -47,3 +47,21 @@ test('rejects unsupported media types and multibyte oversized JSON before writer
  assert.equal((await handler(request(oversized),workspace)).status,413);
  assert.equal(calls,0);
 });
+
+test('HTTP draft validation matches writer platform and text constraints',async()=>{
+ let calls=0;
+ const handler=createContentCampaignDraftPost(async()=>({userId:user,authenticated:true}),async(_p,_w,d)=>{
+  calls++;
+  assert.deepEqual(d.platforms,['facebook','instagram']);
+  return {id:'draft'};
+ });
+ for(const body of [
+  {...valid,platforms:[]},
+  {...valid,platforms:['unknown']},
+  {...valid,platforms:['facebook','FACEBOOK']},
+  {...valid,product_service:'x'.repeat(201)},
+  {...valid,problem:'x'.repeat(2001)}
+ ])assert.equal((await handler(request(body),workspace)).status,400);
+ assert.equal((await handler(request({...valid,platforms:['FACEBOOK','Instagram']}),workspace)).status,201);
+ assert.equal(calls,1);
+});
