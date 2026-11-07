@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: '24'
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm install --ignore-scripts --no-package-lock --no-save
       - name: Typecheck application and CONTENT adapters
         run: npx tsc --noEmit --incremental false
       - name: Run CONTENT security and idempotency unit tests
