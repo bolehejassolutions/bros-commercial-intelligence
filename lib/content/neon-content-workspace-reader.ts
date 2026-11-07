@@ -37,6 +37,9 @@ export function createContentWorkspaceReader(transaction: Transaction) {
           posture[0].forced !== 4 || posture[0].staging !== false ||
           posture[0].credits !== false || posture[0].writes !== false ||
           posture[0].membership !== true) deny();
+      // Bind the verified identity to this transaction before membership RLS evaluates.
+      const context=(await query(`SELECT set_config('bci.principal_id',$1,true) AS principal_id`,[principal.userId])).rows;
+      if(context.length!==1||context[0].principal_id!==principal.userId)deny();
       const workspace = (await query(`SELECT w.id,w.tenant_id,w.name,w.business_dna
         FROM content_dev.workspaces w JOIN bci_dev.tenant_memberships m
           ON m.tenant_id=w.tenant_id AND m.principal_id=$1::uuid
