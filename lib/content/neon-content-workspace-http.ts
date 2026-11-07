@@ -2,7 +2,7 @@
  * Wiring requires a real server-side identity verifier and restricted Neon transaction.
  * Never accept a principal, tenant, or role from request body/query/headers.
  */
-import { ContentReadDenied } from './neon-content-workspace-reader';
+import { ContentReadDenied } from './neon-content-workspace-reader.ts';
 type Principal = Readonly<{userId:string;authenticated:true}>;
 type Reader = (principal:Principal, workspaceId:string)=>Promise<unknown>;
 type VerifySession = (request:Request)=>Promise<Principal|null>;
