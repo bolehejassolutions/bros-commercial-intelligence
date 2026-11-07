@@ -9,7 +9,7 @@ export async function proxy(request: NextRequest) {
   // SDK middleware exchanges OAuth verifiers and manages same-origin cookies.
   // Never let the legacy BCI Supabase proxy consume CONTENT auth callbacks.
   if (requiresContentNeonMiddleware(request.nextUrl.pathname)) {
-    if (!isContentDevPreviewEnabled(process.env))
+    if (!isContentDevPreviewEnabled(process.env.VERCEL_ENV,process.env.CONTENT_DEV_API_ENABLED))
       return new NextResponse(null,{status:404,headers:{'cache-control':'no-store'}});
     try {
       return await getContentNeonAuth().middleware({loginUrl:'/content/dev/sign-in'})(request);
