@@ -20,6 +20,7 @@ function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existi
   if(sql.includes('current_database()'))return {rows:[postureRow]};
   if(sql.includes('FROM content_dev.workspaces'))return {rows:foreign?[]:[{tenant_id:T}]};
   if(sql.includes('to_regclass'))return {rows:[{table_name:'content_dev.campaign_draft_requests',can_insert:true}]};
+  if(sql.includes('pg_advisory_xact_lock'))return {rows:[{acquired:true}]};
   if(sql.includes('WITH reservation AS'))return {rows:insert};
   if(sql.includes('SELECT r.campaign_id'))return {rows:existing};
   throw Error('Unexpected SQL');
@@ -53,4 +54,14 @@ test('unsafe database privileges or inherited role deny writes',async()=>{
   await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
   assert.equal(calls.some(x=>x.sql.includes('WITH reservation AS')),false);
  }
+});
+
+test('idempotency lock is acquired before mutation using tenant, principal and key',async()=>{
+ const {writer,calls}=fixture({insert:[{id:C}]});
+ await writer(principal,W,draft,key);
+ const lockIndex=calls.findIndex(x=>x.sql.includes('pg_advisory_xact_lock'));
+ const insertIndex=calls.findIndex(x=>x.sql.includes('WITH reservation AS'));
+ assert.ok(lockIndex>=0&&insertIndex>lockIndex);
+ assert.deepEqual(calls[lockIndex].params,[T+':'+A+':'+key]);
+ assert.match(calls[lockIndex].sql,/pg_advisory_xact_lock/);
 });
