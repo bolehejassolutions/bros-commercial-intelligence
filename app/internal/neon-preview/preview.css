@@ -1,0 +1,11 @@
+.neon-preview-shell{min-height:100svh;display:grid;place-items:center;padding:32px 16px}
+.neon-preview-shell .auth-card{width:min(100%,520px);padding:clamp(22px,5vw,38px);border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+.neon-preview-shell h1{font-size:clamp(30px,5vw,42px);line-height:1.1}
+.neon-preview-shell .sub{margin-bottom:24px}
+.neon-preview-shell .auth-form,.neon-preview-shell label{display:grid;gap:10px}
+.neon-preview-shell label{color:var(--muted);font-size:13px}
+.neon-preview-shell input:focus-visible,.neon-preview-shell select:focus-visible,.neon-preview-shell button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.neon-preview-shell [role=status]{min-height:68px;margin:20px 0;padding:14px;border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:14px;line-height:1.5}
+.neon-preview-shell button{min-height:44px;font-size:14px}
+.neon-preview-shell button:disabled{cursor:default;opacity:.55}
+.neon-preview-shell .auth-form button+button{background:transparent;border:1px solid var(--line);color:var(--muted)}

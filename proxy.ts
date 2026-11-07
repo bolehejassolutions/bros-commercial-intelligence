@@ -1,7 +1,13 @@
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
+import { usesNeonPreviewAuthentication } from "@/lib/bci/neon-preview-route-policy";
 
 export async function proxy(request: NextRequest) {
+  // These exact paths enforce their own Preview-only Neon JWT + membership
+  // boundary. Do not redirect a Neon bearer request to the separate Supabase login.
+  if (usesNeonPreviewAuthentication(request.nextUrl.pathname)) {
+    return NextResponse.next({ request });
+  }
   return updateSession(request);
 }
 

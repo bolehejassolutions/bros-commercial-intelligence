@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "instanceConfig": {
+    "schemaVersion": 1,
+    "product": "content",
+    "tenantId": "c0d63101-218d-4b67-9efc-e27b45330963",
+    "instanceId": "bros-sell-internal",
+    "brand": {
+      "displayName": "BROS SELL",
+      "voice": "Bahasa Melayu yang jelas dan praktikal",
+      "locale": "ms-MY",
+      "claimCandidates": [],
+      "blockedClaims": [
+        "Jaminan jualan",
+        "Pendapatan terjamin"
+      ]
+    },
+    "audience": {
+      "segment": "Penjual dan pemilik perniagaan Malaysia",
+      "needs": [
+        "Memahami sebab pelanggan membandingkan harga"
+      ]
+    },
+    "goals": [
+      "Menerangkan satu langkah diagnosis pelanggan"
+    ],
+    "channels": [
+      {
+        "service": "instagram",
+        "channelId": "6ac9e9716a5c39ccb66e9544"
+      }
+    ],
+    "policy": {
+      "requiresContentApproval": true,
+      "requiresIndependentMediaQa": true,
+      "requiresEvidenceForClaims": true
+    }
+  },
+  "brief": {
+    "briefId": "sell-diagnosis-20261106",
+    "revisionId": "revision-1",
+    "channelService": "instagram",
+    "channelId": "6ac9e9716a5c39ccb66e9544",
+    "format": "carousel",
+    "assetCount": 2,
+    "topic": "Fahami perbandingan harga pelanggan",
+    "hook": "Pelanggan kata mahal. Mahal berbanding apa?",
+    "hypothesis": "Satu soalan yang jelas boleh membantu penjual memahami perbandingan pelanggan.",
+    "measurementQuestion": "Adakah data simpanan bagi hantaran ini tersedia selepas dihantar?"
+  },
+  "script": {
+    "scriptId": "sell-diagnosis-script-20261106",
+    "revisionId": "revision-1",
+    "openingHook": "Pelanggan kata mahal. Mahal berbanding apa?",
+    "situation": "Dalam situasi rekaan ini, pelanggan menyebut harga mahal tanpa menjelaskan perbandingannya.",
+    "audienceQuestion": "Mahal itu dibandingkan dengan pilihan yang mana?",
+    "explanation": "Perbandingan harga mungkin melibatkan skop, hasil yang diperlukan atau pilihan lain. Dapatkan maklumat sebelum menjelaskan nilai.",
+    "audienceAction": "Tanya satu soalan perbandingan, dengar jawapannya dan jelaskan perbezaan yang telah disahkan.",
+    "takeaway": "Menjelaskan, bukan Memujuk.",
+    "shots": [
+      "Paparkan soalan pelanggan tentang harga dan minta konteks perbandingan.",
+      "Paparkan soalan diagnosis, langkah mendengar dan penjelasan berdasarkan maklumat yang disahkan."
+    ]
+  },
+  "resourceMapping": {
+    "resourceId": "bros-sell-principle-explanation",
+    "hookPromise": "Pelanggan kata mahal. Mahal berbanding apa?",
+    "demonstratedInput": "Pelanggan dalam situasi rekaan berkata harga mahal.",
+    "demonstratedAction": "Penjual bertanya apakah pilihan yang digunakan sebagai perbandingan.",
+    "demonstratedOutput": "Penjual mengenal pasti perkara yang perlu dijelaskan tanpa membuat andaian.",
+    "answerLocation": "Kad kedua menerangkan soalan dan langkah selepas pelanggan menjawab."
+  },
+  "proposedCopy": {
+    "schemaVersion": 1,
+    "caption": "Pelanggan kata mahal. Mahal berbanding apa?\n\nSebelum menjelaskan nilai, fahami dahulu pilihan yang sedang dibandingkan. Tanya satu soalan, dengar jawapannya dan jelaskan perbezaan yang sudah disahkan.\n\nMenjelaskan, bukan Memujuk.\n\nSituasi rekaan untuk pembelajaran. Teks dibantu AI; visual templat. Draf dalaman BROS SELL.",
+    "altTexts": [
+      "Kad pertama bertanya apakah perbandingan di sebalik perkataan mahal.",
+      "Kad kedua menerangkan cara bertanya, mendengar dan menjelaskan perbezaan yang disahkan."
+    ],
+    "aiDisclosure": "DECLARED_AI",
+    "claimEvidenceRefs": []
+  },
+  "rendererManifest": {
+    "schemaVersion": 1,
+    "renderer": "content-local-card-pillow-v1",
+    "planId": "content-plan-1d212e16ddd55f2e808f20a90c8ac9f528c06c33fc304b6be7b8e9c24a97a4be",
+    "planIdAuthenticated": false,
+    "status": "LOCAL_TEMPLATE_RENDERED_EDITORIAL_PENDING",
+    "localMediaBytesDecoded": true,
+    "externalAiProviderGenerationVerified": false,
+    "providerReceiptAuthenticated": false,
+    "editorialApprovalVerified": false,
+    "bufferSentVerified": false,
+    "sharedBciAuditVerified": false,
+    "executionAllowed": false,
+    "customerSaasReady": false,
+    "images": [
+      {
+        "slot": 1,
+        "filename": "content_card_01.png",
+        "byteLength": 55941,
+        "sourceSha256": "d307ef9c9b23ea5074916911eee61f2f42025205853e4d613c46664f21c15e78",
+        "decodedRgbSha256": "7399763795b1b4fcfa2bd712b01bcb8cbeb6ca7a5e069ab105388d0cdf9fd27d"
+      },
+      {
+        "slot": 2,
+        "filename": "content_card_02.png",
+        "byteLength": 60759,
+        "sourceSha256": "df819d687bc307c572ec3a3345e57ea8785487ac09cfa1500cb20522f487f75a",
+        "decodedRgbSha256": "fabb04a11b03b678befc1d275315bdd85f71b496b75e86fc513625dce10a8b3d"
+      }
+    ]
+  },
+  "mediaFilenames": [
+    "content_card_01.png",
+    "content_card_02.png"
+  ]
+}

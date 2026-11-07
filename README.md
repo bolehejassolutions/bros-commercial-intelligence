@@ -34,3 +34,7 @@ Architecture bootstrap / initial implementation.
 Owner-approved 2026-10-25: BROS CONTENT™ and BROS DEMAND™ are separate products with product-specific intelligence built on reusable BROS Commercial Intelligence services. **This repository remains an internal BCI application**, not a public/customer-facing shared service. Do not expose BCI internals to tenants or infer live provider/spend activation from deployed code.
 
 See [Portfolio shared intelligence contract](docs/PORTFOLIO_SHARED_INTELLIGENCE_CONTRACT.md) and the [Primary Drive product-architecture decision](https://docs.google.com/document/d/1AmnN8agBGkMNCVMzQ6esJ1neWtKVuvqBa-F_j3U7rGM/edit). Customer-facing extraction is gated by product independence, tenant security, verified attribution and explicit production/financial approvals.
+
+## Neon development proof (internal only)
+
+A separate [Neon evidence ledger prototype](docs/NEON_DEV_EVIDENCE_LEDGER.md) is now running in a free **development** project with a `bci_dev` schema and synthetic tenant-isolation tests. It does **not** replace Supabase, enable customer logins, expose BCI APIs, ingest real customer records, or activate any Meta/Buffer actions. The Neon admin/MCP role bypasses RLS; the linked report explains the non-bypass test role and why production tenant authentication remains a hard gate.
