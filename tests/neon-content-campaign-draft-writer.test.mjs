@@ -16,6 +16,7 @@ function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existi
  const calls=[];
  const writer=createContentCampaignDraftWriter(async fn=>fn(async(sql,params)=>{
   calls.push({sql,params});
+  if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:params[0]}]};
   if(sql.includes('FROM pg_roles'))return {rows:[roleRow]};
   if(sql.includes('current_database()'))return {rows:[postureRow]};
   if(sql.includes('FROM content_dev.workspaces'))return {rows:foreign?[]:[{tenant_id:T}]};
@@ -85,4 +86,14 @@ test('draft insertion and reservation link execute as separate ordered statement
  const link=calls.findIndex(x=>x.sql.includes('UPDATE content_dev.campaign_draft_requests'));
  assert.ok(reservation>=0&&campaign>reservation&&link>campaign);
  assert.equal(calls[link].params[3],C);
+});
+
+test('verified principal context precedes membership query and any draft mutation',async()=>{
+ const {writer,calls}=fixture({insert:[{id:C}]});
+ await writer(principal,W,draft,key);
+ const context=calls.findIndex(x=>x.sql.includes("set_config('bci.principal_id'"));
+ const membership=calls.findIndex(x=>x.sql.includes('FROM content_dev.workspaces'));
+ const mutation=calls.findIndex(x=>x.sql.includes('INSERT INTO content_dev.campaign_draft_requests'));
+ assert.ok(context>=0&&membership>context&&mutation>membership);
+ assert.deepEqual(calls[context].params,[A]);
 });
