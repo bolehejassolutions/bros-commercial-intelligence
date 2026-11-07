@@ -173,7 +173,7 @@ export default function ContentWorkspaceClient(){
     <section style={card}>
      <h2 style={{fontSize:20,marginTop:0}}>Kempen sedia ada</h2>
      {detailLoad.status==='loading'||detailLoad.status==='idle'?<p role="status">Memuatkan kempen…</p>:
-      detailLoad.status==='error'?<div role="alert" style={{border:'1px solid #ad665d',padding:12,borderRadius:8}}>
+      detailLoad.status!=='ready'?<div role="alert" style={{border:'1px solid #ad665d',padding:12,borderRadius:8}}>
        <p style={{color:'#ffd0cb'}}>{detailLoad.error}</p>
        <button type="button" onClick={()=>setRefresh(value=>value+1)}
         style={{background:gold,color:'#111b29',padding:'9px 13px',border:0,borderRadius:7,cursor:'pointer'}}>
