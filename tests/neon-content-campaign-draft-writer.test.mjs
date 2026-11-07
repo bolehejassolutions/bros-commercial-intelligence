@@ -12,11 +12,11 @@ const draft={product_service:'Example',audience:'Owners',description:'',problem:
 const key='safe_retry_key_123';
 const role={name:'content_dev_draft_writer',login:'content_dev_draft_writer',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0};
 const posture={db:'bros_intelligence_dev',forced:2,staging:false,credits:false,jobs:false,writes:true,membership:true};
-function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existing=[]}={}){
+function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existing=[],contextPrincipal=A}={}){
  const calls=[];
  const writer=createContentCampaignDraftWriter(async fn=>fn(async(sql,params)=>{
   calls.push({sql,params});
-  if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:params[0]}]};
+  if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:contextPrincipal}]};
   if(sql.includes('FROM pg_roles'))return {rows:[roleRow]};
   if(sql.includes('current_database()'))return {rows:[postureRow]};
   if(sql.includes('FROM content_dev.workspaces'))return {rows:foreign?[]:[{tenant_id:T}]};
@@ -96,4 +96,10 @@ test('verified principal context precedes membership query and any draft mutatio
  const mutation=calls.findIndex(x=>x.sql.includes('INSERT INTO content_dev.campaign_draft_requests'));
  assert.ok(context>=0&&membership>context&&mutation>membership);
  assert.deepEqual(calls[context].params,[A]);
+});
+
+test('identity context mismatch denies before reservation or campaign mutation',async()=>{
+ const {writer,calls}=fixture({contextPrincipal:'55555555-5555-4555-8555-555555555555',insert:[{id:C}]});
+ await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
+ assert.equal(calls.some(x=>x.sql.includes('INSERT INTO content_dev.campaigns')),false);
 });
