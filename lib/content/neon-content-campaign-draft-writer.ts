@@ -58,28 +58,33 @@ export function createContentCampaignDraftWriter(transaction:Transaction){
       [tenant+':'+principal.userId+':'+key])).rows;
    if(lockRows.length!==1)deny();
    const payload=JSON.stringify(draft);
-   const rows=(await query(`WITH reservation AS (
-      INSERT INTO content_dev.campaign_draft_requests
-       (tenant_id,owner_principal_id,idempotency_key,workspace_id,payload)
-      VALUES ($1::uuid,$2::uuid,$3,$4::uuid,$5::jsonb)
-      ON CONFLICT (tenant_id,owner_principal_id,idempotency_key) DO NOTHING
-      RETURNING tenant_id,owner_principal_id,idempotency_key,workspace_id,payload
-     ), created AS (
-      INSERT INTO content_dev.campaigns
+   // Separate statements inside ONE database transaction. PostgreSQL data-modifying
+   // CTEs share a snapshot: UPDATE cannot reliably see a row inserted by a sibling
+   // INSERT CTE. Reservation, campaign and link must therefore execute sequentially.
+   const reserved=(await query(`INSERT INTO content_dev.campaign_draft_requests
+     (tenant_id,owner_principal_id,idempotency_key,workspace_id,payload)
+     VALUES ($1::uuid,$2::uuid,$3,$4::uuid,$5::jsonb)
+     ON CONFLICT (tenant_id,owner_principal_id,idempotency_key) DO NOTHING
+     RETURNING idempotency_key`,
+     [tenant,principal.userId,key,workspaceId,payload])).rows;
+   if(reserved.length>1)deny();
+   if(reserved.length===1){
+     const created=(await query(`INSERT INTO content_dev.campaigns
        (tenant_id,workspace_id,owner_principal_id,product_service,audience,description,
         problem,objective,duration_days,platforms,status)
-      SELECT tenant_id,workspace_id,owner_principal_id,payload->>'product_service',
-        payload->>'audience',payload->>'description',payload->>'problem',
-        payload->>'objective',(payload->>'duration_days')::integer,
-        ARRAY(SELECT jsonb_array_elements_text(payload->'platforms')),'draft'
-      FROM reservation RETURNING id,tenant_id
-     ), linked AS (
-      UPDATE content_dev.campaign_draft_requests r SET campaign_id=c.id
-      FROM created c WHERE r.tenant_id=$1::uuid AND r.owner_principal_id=$2::uuid
-      AND r.idempotency_key=$3 RETURNING r.campaign_id
-     )
-     SELECT campaign_id AS id FROM linked`,[tenant,principal.userId,key,workspaceId,payload])).rows;
-   if(rows.length===1&&UUID.test(String(rows[0].id)))return {id:rows[0].id,status:'draft'};
+       VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10::text[],'draft')
+       RETURNING id`,[tenant,workspaceId,principal.userId,draft.product_service,
+       draft.audience,draft.description,draft.problem,draft.objective,
+       draft.duration_days,draft.platforms])).rows;
+     if(created.length!==1||!UUID.test(String(created[0].id)))deny();
+     const linked=(await query(`UPDATE content_dev.campaign_draft_requests
+       SET campaign_id=$4::uuid
+       WHERE tenant_id=$1::uuid AND owner_principal_id=$2::uuid
+       AND idempotency_key=$3 AND campaign_id IS NULL
+       RETURNING campaign_id`,[tenant,principal.userId,key,created[0].id])).rows;
+     if(linked.length!==1||linked[0].campaign_id!==created[0].id)deny();
+     return {id:created[0].id,status:'draft'};
+   }
    // Conflict must match original payload and workspace. Never reuse a key for another request.
    const existing=(await query(`SELECT r.campaign_id, (r.workspace_id=$4::uuid AND r.payload=$5::jsonb) AS same_request,
       (c.id IS NOT NULL AND c.tenant_id=r.tenant_id AND c.owner_principal_id=r.owner_principal_id
