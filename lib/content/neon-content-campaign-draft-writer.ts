@@ -72,12 +72,15 @@ export function createContentCampaignDraftWriter(transaction:Transaction){
      SELECT campaign_id AS id FROM linked`,[tenant,principal.userId,key,workspaceId,payload])).rows;
    if(rows.length===1&&UUID.test(String(rows[0].id)))return {id:rows[0].id,status:'draft'};
    // Conflict must match original payload and workspace. Never reuse a key for another request.
-   const existing=(await query(`SELECT campaign_id,workspace_id,payload
-      FROM content_dev.campaign_draft_requests WHERE tenant_id=$1::uuid
-      AND owner_principal_id=$2::uuid AND idempotency_key=$3`,
-      [tenant,principal.userId,key])).rows;
-   if(existing.length!==1||existing[0].workspace_id!==workspaceId||
-      JSON.stringify(existing[0].payload)!==payload||!UUID.test(String(existing[0].campaign_id)))deny();
+   const existing=(await query(`SELECT r.campaign_id, (r.workspace_id=$4::uuid AND r.payload=$5::jsonb) AS same_request,
+      (c.id IS NOT NULL AND c.tenant_id=r.tenant_id AND c.owner_principal_id=r.owner_principal_id
+       AND c.workspace_id=r.workspace_id AND c.status='draft') AS valid_campaign
+      FROM content_dev.campaign_draft_requests r
+      LEFT JOIN content_dev.campaigns c ON c.id=r.campaign_id AND c.tenant_id=r.tenant_id
+      WHERE r.tenant_id=$1::uuid AND r.owner_principal_id=$2::uuid AND r.idempotency_key=$3`,
+      [tenant,principal.userId,key,workspaceId,payload])).rows;
+   if(existing.length!==1||existing[0].same_request!==true||
+      existing[0].valid_campaign!==true||!UUID.test(String(existing[0].campaign_id)))deny();
    return {id:existing[0].campaign_id,status:'draft',replayed:true};
   });
  };
