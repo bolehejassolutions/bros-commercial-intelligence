@@ -36,7 +36,7 @@ export function createContentCampaignDraftWriter(transaction:Transaction){
      rolinherit AS inherits,rolbypassrls AS bypass,rolsuper AS superuser,rolcreaterole AS can_create_role,
      (SELECT count(*)::int FROM pg_auth_members WHERE member=pg_roles.oid) AS parents
      FROM pg_roles WHERE rolname=current_user`,[])).rows[0];
-   if(!role||role.name!=='content_dev_draft_writer'||role.login!==role.name||
+   if(!role||role.name!=='content_dev_draft_writer_v2'||role.login!==role.name||
       role.can_login!==true||role.inherits!==false||role.bypass!==false||
       role.superuser!==false||role.can_create_role!==false||role.parents!==0)deny();
    const posture=(await query(`SELECT current_database() AS db,
