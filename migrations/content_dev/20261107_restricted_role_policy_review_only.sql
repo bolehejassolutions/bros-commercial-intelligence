@@ -1,0 +1,48 @@
+-- BROS CONTENT DEV role/policy proposal — REVIEW ONLY, DO NOT AUTO-APPLY.
+-- Requires separate owner authorization for permission expansion and a securely
+-- provisioned password/credential store. This migration deliberately contains
+-- NO CREATE ROLE, GRANT, ALTER ROLE, or executable CREATE POLICY statements.
+--
+-- Existing BCI membership RLS uses transaction-local bci.principal_id.
+-- The CONTENT reader/writer adapters set it after verifying the session and
+-- before querying memberships, inside a single PostgreSQL transaction.
+--
+-- Required roles (dedicated LOGIN; NOINHERIT; NOBYPASSRLS; NOSUPERUSER;
+-- NOCREATEROLE; NOCREATEDB; no role memberships):
+--   content_dev_reader
+--   content_dev_draft_writer
+--
+-- Required reader privileges:
+--   USAGE on content_dev and bci_dev;
+--   SELECT on bci_dev.tenant_memberships;
+--   SELECT on content_dev.workspaces,campaigns,content_items,scenes.
+--
+-- Required writer privileges:
+--   USAGE on content_dev and bci_dev;
+--   SELECT on bci_dev.tenant_memberships;
+--   SELECT on content_dev.workspaces,campaigns,campaign_draft_requests;
+--   INSERT on content_dev.campaigns,campaign_draft_requests;
+--   UPDATE(campaign_id) on content_dev.campaign_draft_requests.
+--
+-- Explicitly prohibited for both:
+--   content_import_dev schema, credit_ledger, generation_jobs,
+--   BCI approvals/reservations, CREATE on schemas, all other DML.
+--
+-- Every policy must bind owner_principal_id to
+-- NULLIF(current_setting('bci.principal_id',true),'')::uuid.
+-- Every tenant lookup must verify active, nonrevoked CONTENT membership.
+-- RLS on content_items/scenes must constrain their tenant via parent
+-- campaign/content item with owner and active membership; tenant alone is
+-- insufficient if tenant users have separate workspaces.
+--
+-- Writer draft reservation policy must restrict tenant, principal, workspace,
+-- and campaign linkage; never allow arbitrary campaign_id reassignment.
+--
+-- PRECONDITIONS:
+-- 1. Obtain explicit approval for the exact grants and policies.
+-- 2. Validate a separate login credential for each role; no BROS owner login.
+-- 3. Apply only to Neon DEV and test with actual direct-login sessions.
+-- 4. Verify unauthorized principal, wrong workspace, revoked membership,
+--    SQL injection, rollback and idempotency replay fail closed.
+-- 5. Reconcile observed pg_policies and information_schema.role_table_grants
+--    against the approved matrix before enabling any HTTP endpoint.
