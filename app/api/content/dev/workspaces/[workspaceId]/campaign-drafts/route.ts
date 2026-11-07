@@ -7,7 +7,7 @@ import {createContentCampaignDraftPost} from '@/lib/content/neon-content-campaig
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 export async function POST(request:Request,context:{params:Promise<{workspaceId:string}>}){
- if(!isContentDevPreviewEnabled(process.env))
+ if(!isContentDevPreviewEnabled(process.env.VERCEL_ENV,process.env.CONTENT_DEV_API_ENABLED))
   return new Response(JSON.stringify({error:'not_found'}),{status:404,headers:{'cache-control':'no-store'}});
  let adapter:ReturnType<typeof createRestrictedContentAdapters>|undefined;
  try{
