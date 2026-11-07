@@ -48,6 +48,14 @@ export function createContentCampaignDraftWriter(transaction:Transaction){
    const gate=(await query(`SELECT to_regclass('content_dev.campaign_draft_requests')::text AS table_name,
       has_table_privilege(current_user,'content_dev.campaign_draft_requests','INSERT') AS can_insert`,[])).rows[0];
    if(gate?.table_name!=='content_dev.campaign_draft_requests'||gate.can_insert!==true)deny();
+   // Serialize same-key requests within this database transaction. PostgreSQL's
+   // transaction-level advisory lock is released automatically on commit/rollback.
+   // Never use session locks (unsafe with pooled connections).
+   const lock=(await query(`SELECT pg_advisory_xact_lock(
+      hashtextextended($1::text, 0)) IS NULL AS acquired`,
+      [tenant+':'+principal.userId+':'+key])).rows[0];
+   // pg_advisory_xact_lock returns void (SQL NULL); IS NULL confirms execution.
+   if(lock?.acquired!==true)deny();
    const payload=JSON.stringify(draft);
    const rows=(await query(`WITH reservation AS (
       INSERT INTO content_dev.campaign_draft_requests
