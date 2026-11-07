@@ -6,7 +6,7 @@ const user='11111111-1111-4111-8111-111111111111';
 const workspace='22222222-2222-4222-8222-222222222222';
 const key='safe_retry_key_123';
 const request=(body,headers={})=>new Request('https://example.invalid/content',{method:'POST',headers:{'idempotency-key':key,'content-type':'application/json',...headers},body:JSON.stringify(body)});
-const valid={product_service:'Test service',audience:'Owners'};
+const valid={product_service:'Test service',audience:'Owners',platforms:['facebook']};
 test('rejects unauthenticated requests without invoking writer',async()=>{
  let calls=0;
  const handler=createContentCampaignDraftPost(async()=>null,async()=>{calls++;});
