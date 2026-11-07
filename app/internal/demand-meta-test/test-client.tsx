@@ -336,15 +336,28 @@ export default function DemandMetaTestClient() {
   }
 
   return (
-    <main className="auth-shell neon-preview-shell">
+    <main className="auth-shell neon-preview-shell bros-luminous demand-studio">
       <section className="auth-card" aria-labelledby="demand-test-heading">
-        <p className="eyebrow">BROS DEMAND · INTERNAL PREVIEW ONLY</p>
-        <h1 id="demand-test-heading">Direct Meta verification</h1>
-        <p className="sub">Read Meta reports and save a bounded observation. The approved campaign pilot below has separate controls for preparing paused ads, launching and stopping the existing RM140 campaign.</p>
-        <p className="sub">Vercel Authentication protects the Preview URL. Sign in to Vercel first if prompted. This is separate from Neon Auth email OTP. You can run no-token HTTP rejection checks without a Neon Auth session.</p>
+        <div className="demand-hero">
+          <span className="luminous-product-pill">BROS DEMAND · PRIVATE PREVIEW</span>
+          <p className="luminous-eyebrow" style={{ marginTop: 24 }}>ACQUISITION / INTELLIGENCE / EXECUTION</p>
+          <h1 id="demand-test-heading">Turn demand into<br/>decisions you can verify.</h1>
+          <p className="demand-lede">Research, diagnose and prepare Meta campaigns with evidence-led controls. Publishing and spending remain separately authorized.</p>
+          <p className="luminous-note">Vercel Authentication protects this Preview. Neon Auth is a separate operator sign-in. This is an internal build, not a customer-ready product.</p>
+          <nav className="luminous-nav" aria-label="DEMAND workspace sections">
+            <a href="#demand-tools">Diagnostics & access</a>
+            <a href="#demand-campaigns">Campaign studio</a>
+            <a href="#demand-attribution">CONTENT handoff</a>
+          </nav>
+        </div>
         <p role="status" aria-live="polite">{notice}</p>
         {stage === "ready" && evidenceNotice !== null ? <p role="status" aria-label="DEV evidence receipt">{evidenceNotice}</p> : null}
-        <div className="auth-form">
+        <div id="demand-tools" className="demand-toolkit">
+          <div className="luminous-section-heading">
+            <h2 className="demand-tools-title">Workspace access & diagnostics</h2>
+            <span className="luminous-product-pill">{stage === "ready" ? "AUTHENTICATED" : "RESTRICTED"}</span>
+          </div>
+          <div className="auth-form">
           <button type="button" disabled={busy || stage === "loading"} onClick={checkDenials}>Run no-token HTTP rejection checks</button>
           {stage === "start" ? (
             <button type="button" disabled={busy || cooldown > 0} onClick={requestCode}>
@@ -371,15 +384,20 @@ export default function DemandMetaTestClient() {
             </>
           ) : null}
         </div>
+        </div>
+        <section id="demand-campaigns" aria-label="Meta campaigns">
         <CampaignPilot signedIn={stage === "ready"} getToken={async () => {
           if (!(await verifiedSession())) { setStage("start"); throw new Error("Sign in again to check campaign access."); }
           return requestNeonPreviewToken(auth());
         }} onSessionExpired={() => { setStage("start"); setNotice("Your session needs a fresh sign-in. No campaign action is certified."); }} />
+        </section>
+        <section id="demand-attribution" aria-label="CONTENT to DEMAND acquisition handoff">
         <PortfolioLineagePanel signedIn={stage === "ready"} getToken={async () => {
           if (!(await verifiedSession())) { setStage("start"); throw new Error("Sign in again to prepare an attribution link."); }
           return requestNeonPreviewToken(auth());
         }} onSessionExpired={() => { setStage("start"); setNotice("The DEMAND session expired. Reauthenticate to continue."); }} />
-        <p className="sub">No JWT, code, access token, tenant ID or database password is shown or written to storage. All provider reads require a manual click and are confined to the pinned ACQ-V2 window or one server-locked historical PAUSED BROS SELL control window. No arbitrary campaign selection.</p>
+        </section>
+        <p className="demand-privacy-note">No JWT, OTP, access token, tenant ID or database password is shown or written to storage. Provider reads require a manual action and remain restricted to the server-authorized windows; arbitrary campaign selection is unavailable.</p>
       </section>
     </main>
   );
