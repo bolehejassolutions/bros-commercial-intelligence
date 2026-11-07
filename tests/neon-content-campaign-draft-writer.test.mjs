@@ -8,7 +8,7 @@ const W='22222222-2222-4222-8222-222222222222';
 const T='33333333-3333-4333-8333-333333333333';
 const C='44444444-4444-4444-8444-444444444444';
 const principal={userId:A,authenticated:true};
-const draft={product_service:'Example',audience:'Owners',description:'',problem:'',objective:'',duration_days:7,platforms:[]};
+const draft={product_service:'Example',audience:'Owners',description:'Campaign overview',problem:'Low qualified reach',objective:'Build awareness',duration_days:7,platforms:['facebook']};
 const key='safe_retry_key_123';
 const role={name:'content_dev_draft_writer',login:'content_dev_draft_writer',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0};
 const posture={db:'bros_intelligence_dev',forced:2,staging:false,credits:false,jobs:false,writes:true,membership:true};
@@ -102,4 +102,18 @@ test('identity context mismatch denies before reservation or campaign mutation',
  const {writer,calls}=fixture({contextPrincipal:'55555555-5555-4555-8555-555555555555',insert:[{id:C}]});
  await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
  assert.equal(calls.some(x=>x.sql.includes('INSERT INTO content_dev.campaigns')),false);
+});
+
+test('malformed campaign input is rejected before any database connection',async()=>{
+ for(const invalid of [
+  {...draft,description:''}, {...draft,platforms:[]},
+  {...draft,platforms:['facebook','facebook']},
+  {...draft,platforms:['unknown']}, {...draft,duration_days:0},
+  {...draft,duration_days:91}, {...draft,duration_days:1.5},
+  {...draft,objective:'x'.repeat(2001)}
+ ]){
+  const {writer,calls}=fixture();
+  await assert.rejects(writer(principal,W,invalid,key),ContentReadDenied);
+  assert.equal(calls.length,0);
+ }
 });
