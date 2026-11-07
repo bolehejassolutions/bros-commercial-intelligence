@@ -20,7 +20,7 @@ function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existi
   if(sql.includes('current_database()'))return {rows:[postureRow]};
   if(sql.includes('FROM content_dev.workspaces'))return {rows:foreign?[]:[{tenant_id:T}]};
   if(sql.includes('to_regclass'))return {rows:[{table_name:'content_dev.campaign_draft_requests',can_insert:true}]};
-  if(sql.includes('pg_advisory_xact_lock'))return {rows:[{acquired:true}]};
+  if(sql.includes('pg_advisory_xact_lock'))return {rows:[{lock_result:null}]};
   if(sql.includes('WITH reservation AS'))return {rows:insert};
   if(sql.includes('SELECT r.campaign_id'))return {rows:existing};
   throw Error('Unexpected SQL');
@@ -64,4 +64,12 @@ test('idempotency lock is acquired before mutation using tenant, principal and k
  assert.ok(lockIndex>=0&&insertIndex>lockIndex);
  assert.deepEqual(calls[lockIndex].params,[T+':'+A+':'+key]);
  assert.match(calls[lockIndex].sql,/pg_advisory_xact_lock/);
+});
+
+test('void-returning advisory lock succeeds on one returned row, without boolean coercion',async()=>{
+ const {writer,calls}=fixture({insert:[{id:C}]});
+ assert.deepEqual(await writer(principal,W,draft,key),{id:C,status:'draft'});
+ const lockCall=calls.find(x=>x.sql.includes('pg_advisory_xact_lock'));
+ assert.match(lockCall.sql,/AS lock_result/);
+ assert.doesNotMatch(lockCall.sql,/IS NULL AS acquired/);
 });
