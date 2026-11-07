@@ -1,0 +1,28 @@
+name: CONTENT recovery security tests
+on:
+  pull_request:
+    paths:
+      - 'lib/content/**'
+      - 'tests/neon-content-*.test.mjs'
+      - 'migrations/content_dev/**'
+      - '.github/workflows/content-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  content-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked dependencies
+        run: npm install --ignore-scripts --no-package-lock --no-save
+      - name: Typecheck application and CONTENT adapters
+        run: npx tsc --noEmit --incremental false
+      - name: Run CONTENT security and idempotency unit tests
+        run: node --test tests/neon-content-*.test.mjs
