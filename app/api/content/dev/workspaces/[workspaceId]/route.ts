@@ -1,7 +1,7 @@
 /** DEV-only authenticated CONTENT workspace API; never deploy as production-ready. */
-import {createContentNeonSessionVerifier} from '../../../../../lib/content/neon-content-session-verifier.ts';
-import {createRestrictedContentAdapters} from '../../../../../lib/content/neon-content-restricted-adapters.ts';
-import {createContentWorkspaceGet} from '../../../../../lib/content/neon-content-workspace-http.ts';
+import {createContentNeonSessionVerifier} from '@/lib/content/neon-content-session-verifier.ts';
+import {createRestrictedContentAdapters} from '@/lib/content/neon-content-restricted-adapters.ts';
+import {createContentWorkspaceGet} from '@/lib/content/neon-content-workspace-http.ts';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 export async function GET(request:Request,context:{params:Promise<{workspaceId:string}>}){
