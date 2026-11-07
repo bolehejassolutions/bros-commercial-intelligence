@@ -35,6 +35,9 @@ export function createContentCampaignDraftWriter(transaction:Transaction){
    if(!posture||posture.db!=='bros_intelligence_dev'||posture.forced!==2||
       posture.staging!==false||posture.credits!==false||posture.jobs!==false||
       posture.writes!==true||posture.membership!==true)deny();
+   // Existing BCI membership RLS reads this transaction-local verified identity.
+   const context=(await query(`SELECT set_config('bci.principal_id',$1,true) AS principal_id`,[principal.userId])).rows;
+   if(context.length!==1||context[0].principal_id!==principal.userId)deny();
    const workspaces=(await query(`SELECT w.tenant_id FROM content_dev.workspaces w
       JOIN bci_dev.tenant_memberships m ON m.tenant_id=w.tenant_id
       AND m.principal_id=$1::uuid AND m.product='content' AND m.active IS TRUE
