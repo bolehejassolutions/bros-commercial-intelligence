@@ -20,5 +20,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Typecheck application and CONTENT adapters
+        run: npx tsc --noEmit --incremental false
       - name: Run CONTENT security and idempotency unit tests
         run: node --test tests/neon-content-*.test.mjs
