@@ -21,7 +21,9 @@ function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existi
   if(sql.includes('FROM content_dev.workspaces'))return {rows:foreign?[]:[{tenant_id:T}]};
   if(sql.includes('to_regclass'))return {rows:[{table_name:'content_dev.campaign_draft_requests',can_insert:true}]};
   if(sql.includes('pg_advisory_xact_lock'))return {rows:[{lock_result:null}]};
-  if(sql.includes('WITH reservation AS'))return {rows:insert};
+  if(sql.includes('INSERT INTO content_dev.campaign_draft_requests'))return {rows:insert.length?[{idempotency_key:key}]:[]};
+  if(sql.includes('INSERT INTO content_dev.campaigns'))return {rows:insert};
+  if(sql.includes('UPDATE content_dev.campaign_draft_requests'))return {rows:insert.length?[{campaign_id:C}]:[]};
   if(sql.includes('SELECT r.campaign_id'))return {rows:existing};
   throw Error('Unexpected SQL');
  }));
@@ -30,12 +32,13 @@ function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existi
 test('new draft returns persisted ID with verified owner scope',async()=>{
  const {writer,calls}=fixture({insert:[{id:C}]});
  assert.deepEqual(await writer(principal,W,draft,key),{id:C,status:'draft'});
- assert.deepEqual(calls.at(-1).params.slice(0,4),[T,A,key,W]);
+ assert.deepEqual(calls.find(x=>x.sql.includes('INSERT INTO content_dev.campaign_draft_requests')).params.slice(0,4),[T,A,key,W]);
+ assert.equal(calls.filter(x=>x.sql.includes('UPDATE content_dev.campaign_draft_requests')).length,1);
 });
 test('foreign workspace denies before any reservation or campaign insert',async()=>{
  const {writer,calls}=fixture({foreign:true});
  await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
- assert.equal(calls.some(x=>x.sql.includes('WITH reservation AS')),false);
+ assert.equal(calls.some(x=>x.sql.includes('INSERT INTO content_dev.campaigns')),false);
 });
 test('replay checks JSONB equality in SQL, not JS property order',async()=>{
  const {writer,calls}=fixture({existing:[{campaign_id:C,same_request:true,valid_campaign:true}]});
@@ -52,7 +55,7 @@ test('unsafe database privileges or inherited role deny writes',async()=>{
  for(const config of [{roleRow:{...role,inherits:true}},{roleRow:{...role,can_create_role:true}},{postureRow:{...posture,credits:true}},{postureRow:{...posture,forced:1}}]){
   const {writer,calls}=fixture(config);
   await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
-  assert.equal(calls.some(x=>x.sql.includes('WITH reservation AS')),false);
+  assert.equal(calls.some(x=>x.sql.includes('INSERT INTO content_dev.campaigns')),false);
  }
 });
 
@@ -60,7 +63,7 @@ test('idempotency lock is acquired before mutation using tenant, principal and k
  const {writer,calls}=fixture({insert:[{id:C}]});
  await writer(principal,W,draft,key);
  const lockIndex=calls.findIndex(x=>x.sql.includes('pg_advisory_xact_lock'));
- const insertIndex=calls.findIndex(x=>x.sql.includes('WITH reservation AS'));
+ const insertIndex=calls.findIndex(x=>x.sql.includes('INSERT INTO content_dev.campaign_draft_requests'));
  assert.ok(lockIndex>=0&&insertIndex>lockIndex);
  assert.deepEqual(calls[lockIndex].params,[T+':'+A+':'+key]);
  assert.match(calls[lockIndex].sql,/pg_advisory_xact_lock/);
@@ -72,4 +75,14 @@ test('void-returning advisory lock succeeds on one returned row, without boolean
  const lockCall=calls.find(x=>x.sql.includes('pg_advisory_xact_lock'));
  assert.match(lockCall.sql,/AS lock_result/);
  assert.doesNotMatch(lockCall.sql,/IS NULL AS acquired/);
+});
+
+test('draft insertion and reservation link execute as separate ordered statements',async()=>{
+ const {writer,calls}=fixture({insert:[{id:C}]});
+ await writer(principal,W,draft,key);
+ const reservation=calls.findIndex(x=>x.sql.includes('INSERT INTO content_dev.campaign_draft_requests'));
+ const campaign=calls.findIndex(x=>x.sql.includes('INSERT INTO content_dev.campaigns'));
+ const link=calls.findIndex(x=>x.sql.includes('UPDATE content_dev.campaign_draft_requests'));
+ assert.ok(reservation>=0&&campaign>reservation&&link>campaign);
+ assert.equal(calls[link].params[3],C);
 });
