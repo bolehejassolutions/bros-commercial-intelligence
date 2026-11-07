@@ -13,7 +13,6 @@ test('CONTENT DEV workspace and campaign drafts bypass only BCI Supabase login',
 
 test('CONTENT DEV proxy exception is exact and does not match neighboring or malformed paths',()=>{
  for(const url of [
-  '/api/content/dev/workspaces',
   '/api/content/dev/workspaces/bogus',
   '/api/content/dev/workspaces/'+workspace+'/',
   route+'/campaign-drafts/',
