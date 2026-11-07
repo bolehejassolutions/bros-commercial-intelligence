@@ -56,6 +56,12 @@ function makeDb({role='content_dev_generated_writer_v1',postureOk=true,
     if(sql.includes('pg_advisory_xact_lock'))return {rows:[{lock_result:null}]};
     if(sql.includes('SELECT r.workspace_id,r.fingerprint'))return {rows:local.request?
      [{...local.request,status:'draft',tenant_id:TENANT,owner_principal_id:owner}]:[]};
+    if(sql.includes('FROM content_dev.campaigns')&&sql.includes('SELECT product_service'))
+     return {rows:local.campaign?[local.campaign]:[]};
+    if(sql.includes('SELECT id,type,title,body,sort_order,version'))
+     return {rows:local.items};
+    if(sql.includes('SELECT s.content_item_id,'))
+     return {rows:local.scenes};
     if(sql.includes('INSERT INTO content_dev.generated_output_requests')){
      if(local.request)return {rows:[]};
      local.request={tenant_id:params[0],owner_principal_id:params[1],
@@ -65,18 +71,25 @@ function makeDb({role='content_dev_generated_writer_v1',postureOk=true,
     }
     if(sql.includes('INSERT INTO content_dev.campaigns')){
      local.campaign={id:CAMPAIGN,tenant_id:params[0],owner_principal_id:params[2],
-      workspace_id:params[1],status:'draft'};return {rows:[{id:CAMPAIGN}]};
+      workspace_id:params[1],status:'draft',product_service:params[3],description:params[4],
+      audience:params[5],problem:params[6],objective:params[7],duration_days:params[8],
+      platforms:params[9],strategy:JSON.parse(params[10]),angles:JSON.parse(params[11]),
+      captions:JSON.parse(params[12]),publish_plan:JSON.parse(params[13])};return {rows:[{id:CAMPAIGN}]};
     }
     if(sql.includes('INSERT INTO content_dev.content_items')){
      itemIndex++;
      const id=idFor(itemIndex);
-     local.items.push({id,tenant_id:params[0],campaign_id:params[1],type:params[2]});
+     local.items.push({id,tenant_id:params[0],campaign_id:params[1],type:params[2],
+      title:params[3],body:JSON.parse(params[4]),sort_order:params[5],version:params[6]});
      return {rows:[{id}]};
     }
     if(sql.includes('INSERT INTO content_dev.scenes')){
      sceneIndex++;
      const id=idFor(100+sceneIndex);
-     local.scenes.push({id,tenant_id:params[0],content_item_id:params[1]});
+     local.scenes.push({id,tenant_id:params[0],content_item_id:params[1],
+      scene_number:params[2],duration_seconds:String(params[3]),narration:params[4],
+      dialogue:params[5],visual_prompt:params[6],motion_prompt:params[7],
+      continuity_lock:JSON.parse(params[8])});
      return {rows:[{id}]};
     }
     if(sql.includes('UPDATE content_dev.generated_output_requests')){
@@ -126,6 +139,27 @@ test('same key and fingerprint replays without a second campaign or new content 
  assert.equal(db.stat().committed.scenes.length,1);
  assert.equal(db.calls.filter(c=>c.sql.includes('INSERT INTO')).length,inserts);
  assert.equal(db.stat().commits,2);
+});
+test('unchanged counts but altered stored script body or campaign captions refuse replay',async()=>{
+ const db=makeDb();
+ await db.write(...args());
+ const stored=db.stat().committed;
+ const oldBody=structuredClone(stored.items[0].body);
+ stored.items[0].body={...oldBody,body:'Tampered copy'};
+ await assert.rejects(db.write(...args()),ContentReadDenied);
+ stored.items[0].body=oldBody;
+ const oldCaptions=structuredClone(stored.campaign.captions);
+ stored.campaign.captions={facebook:'Wrong message'};
+ await assert.rejects(db.write(...args()),ContentReadDenied);
+ stored.campaign.captions=oldCaptions;
+ assert.deepEqual(await db.write(...args()),{id:CAMPAIGN,status:'draft',replayed:true});
+});
+test('stored scene tampering cannot replay even if scene count stays unchanged',async()=>{
+ const db=makeDb();
+ await db.write(...args());
+ const stored=db.stat().committed;
+ stored.scenes[0].visual_prompt='Unexpected modification';
+ await assert.rejects(db.write(...args()),ContentReadDenied);
 });
 test('reused key with a changed payload is rejected and leaves committed campaign unchanged',async()=>{
  const db=makeDb();
