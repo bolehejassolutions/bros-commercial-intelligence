@@ -5,7 +5,7 @@ import {ContentReadDenied} from '../lib/content/neon-content-workspace-reader.ts
 const user='11111111-1111-4111-8111-111111111111';
 const workspace='22222222-2222-4222-8222-222222222222';
 const key='safe_retry_key_123';
-const request=(body,headers={})=>new Request('https://example.invalid/content',{method:'POST',headers:{'idempotency-key':key,...headers},body:JSON.stringify(body)});
+const request=(body,headers={})=>new Request('https://example.invalid/content',{method:'POST',headers:{'idempotency-key':key,'content-type':'application/json',...headers},body:JSON.stringify(body)});
 const valid={product_service:'Test service',audience:'Owners'};
 test('rejects unauthenticated requests without invoking writer',async()=>{
  let calls=0;
@@ -37,4 +37,13 @@ test('foreign tenant denial and database failure reveal no details',async()=>{
  const q=await unavailable(request(valid),workspace);
  assert.equal(q.status,503);
  assert.equal((await q.text()).includes('sensitive'),false);
+});
+
+test('rejects unsupported media types and multibyte oversized JSON before writer',async()=>{
+ let calls=0;
+ const handler=createContentCampaignDraftPost(async()=>({userId:user,authenticated:true}),async()=>{calls++;return {id:'draft'};});
+ assert.equal((await handler(request(valid,{'content-type':'text/plain'}),workspace)).status,415);
+ const oversized={...valid,description:'界'.repeat(5500)};
+ assert.equal((await handler(request(oversized),workspace)).status,413);
+ assert.equal(calls,0);
 });
