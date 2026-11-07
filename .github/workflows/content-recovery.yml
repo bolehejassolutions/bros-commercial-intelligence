@@ -5,6 +5,10 @@ on:
       - 'lib/content/**'
       - 'tests/neon-content-*.test.mjs'
       - 'migrations/content_dev/**'
+      - 'app/api/content/dev/**'
+      - 'app/api/auth/**'
+      - 'app/content/dev/**'
+      - 'proxy.ts'
       - '.github/workflows/content-recovery.yml'
   workflow_dispatch:
 
