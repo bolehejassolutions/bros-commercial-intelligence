@@ -7,7 +7,7 @@ type Verify = (request:Request)=>Promise<Principal|null>;
 type Create = (principal:Principal, workspaceId:string, draft:Draft, key:string)=>Promise<unknown>;
 type Draft = {product_service:string;audience:string;description:string;problem:string;objective:string;duration_days:number;platforms:string[]};
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const reply=(status:number,error:string)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'}});
+const reply=(status:number,error:string)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff','vary':'Cookie, Authorization'}});
 const own=(o:object,k:string)=>Object.prototype.hasOwnProperty.call(o,k);
 export function createContentCampaignDraftPost(verify:Verify,create:Create) {
  if(typeof verify!=='function'||typeof create!=='function')throw new Error('Missing secure dependencies');
@@ -17,12 +17,14 @@ export function createContentCampaignDraftPost(verify:Verify,create:Create) {
   let principal:Principal|null;
   try{principal=await verify(request);}catch{return reply(401,'unauthorized');}
   if(!principal||principal.authenticated!==true||!UUID.test(principal.userId))return reply(401,'unauthorized');
+  const type=request.headers.get('content-type')||'';
+  if(!/^application\/json(?:\s*;\s*charset=utf-8)?\s*$/i.test(type))return reply(415,'unsupported_media_type');
   const key=request.headers.get('idempotency-key');
   if(!key||!/^[a-zA-Z0-9_-]{12,180}$/.test(key))return reply(400,'invalid_idempotency_key');
   const length=Number(request.headers.get('content-length')||0);
   if(length>16384)return reply(413,'payload_too_large');
   let input:unknown;
-  try{const raw=await request.text();if(raw.length>16384)return reply(413,'payload_too_large');input=JSON.parse(raw);}
+  try{const raw=await request.text();if(new TextEncoder().encode(raw).byteLength>16384)return reply(413,'payload_too_large');input=JSON.parse(raw);}
   catch{return reply(400,'invalid_json');}
   if(!input||typeof input!=='object'||Array.isArray(input))return reply(400,'invalid_draft');
   const v=input as Record<string,unknown>;
