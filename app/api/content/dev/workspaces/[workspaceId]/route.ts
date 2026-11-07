@@ -5,7 +5,7 @@ import {createContentWorkspaceGet} from '@/lib/content/neon-content-workspace-ht
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 export async function GET(request:Request,context:{params:Promise<{workspaceId:string}>}){
- if(process.env.VERCEL_ENV!=='development'||process.env.CONTENT_DEV_API_ENABLED!=='true')
+ if(process.env.VERCEL_ENV!=='preview'||process.env.CONTENT_DEV_API_ENABLED!=='true')
   return new Response(JSON.stringify({error:'not_found'}),{status:404,headers:{'cache-control':'no-store'}});
  const base=process.env.CONTENT_NEON_AUTH_URL;
  if(!base)return new Response(JSON.stringify({error:'unavailable'}),{status:503});
