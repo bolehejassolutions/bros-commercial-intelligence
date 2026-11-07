@@ -1,0 +1,61 @@
+name: CONTENT real PostgreSQL generated writer integration
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/content-postgres-integration.yml'
+      - 'tests/postgres/**'
+      - 'docs/sql-proposals/CONTENT_DEV_GENERATED_OUTPUT_WRITER_V1_NOT_APPLIED.sql'
+      - 'lib/content/neon-content-generated-output-writer.ts'
+      - 'lib/content/neon-content-persistence-bundle.ts'
+      - 'lib/content/neon-content-transaction.ts'
+      - 'lib/content/neon-content-generation-contract.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-postgres:
+    name: RLS + idempotency + rollback on disposable PostgreSQL 16
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_only_postgres
+          POSTGRES_DB: bros_intelligence_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bros_intelligence_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked project dependencies for actual PostgreSQL driver
+        run: npm install --ignore-scripts --no-package-lock --no-save
+      - name: Verify exact CI-only database and execute reviewed permission proposal
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v psql >/dev/null || { echo 'psql missing on runner'; exit 1; }
+          export PGPASSWORD=ci_only_postgres
+          export ADMIN_DATABASE_URL='postgresql://postgres:ci_only_postgres@127.0.0.1:5432/bros_intelligence_dev'
+          test "$(psql "$ADMIN_DATABASE_URL" -Atqc "SELECT current_database()")" = "bros_intelligence_dev"
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgres/content-generated-writer-fixture.sql
+          # Fresh random secret never committed or emitted in build logs. Both
+          # login and database exist ONLY in this disposable Docker service.
+          role_pass="$(openssl rand -hex 32)"
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE content_dev_generated_writer_v1 LOGIN NOINHERIT NOBYPASSRLS NOSUPERUSER NOCREATEROLE PASSWORD '${role_pass}'"
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/sql-proposals/CONTENT_DEV_GENERATED_OUTPUT_WRITER_V1_NOT_APPLIED.sql
+          export CONTENT_TEST_DB_URL="postgresql://content_dev_generated_writer_v1:${role_pass}@127.0.0.1:5432/bros_intelligence_dev"
+          export CONTENT_ADMIN_DB_URL="$ADMIN_DATABASE_URL"
+          export CONTENT_PG_INTEGRATION_CI="disposable_only"
+          node --test tests/postgres/content-generated-writer.integration.test.mjs
