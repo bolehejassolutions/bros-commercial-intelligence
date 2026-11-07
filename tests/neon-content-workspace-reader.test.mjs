@@ -19,7 +19,7 @@ function mock({owner=A,roleRow=role,postureRow=posture,contextPrincipal=A}={}) {
     if(sql.includes('FROM content_dev.workspaces'))return {rows:params[0]===owner?[{id:W,tenant_id:T,name:'Legacy',business_dna:{}}]:[]};
     if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:C}]};
     if(sql.includes('FROM content_dev.content_items'))return {rows:[{id:I,campaign_id:C}]};
-    if(sql.includes('FROM content_dev.scenes'))return {rows:[{id:'scene'}]};
+    if(sql.includes('FROM content_dev.scenes'))return {rows:[{id:'77777777-7777-4777-8777-777777777777',content_item_id:I}]};
     throw Error('unexpected SQL');
   }));
   return {reader,calls};
@@ -69,4 +69,20 @@ test('identity context mismatch fails closed before workspace query',async()=>{
  const {reader,calls}=mock({contextPrincipal:B});
  await assert.rejects(reader({userId:A,authenticated:true},W),ContentReadDenied);
  assert.equal(calls.some(x=>x.sql.includes('FROM content_dev.workspaces')),false);
+});
+
+test('malformed nested campaign ownership fails closed',async()=>{
+ const calls=[];
+ const reader=createContentWorkspaceReader(async fn=>fn(async(sql,params)=>{
+  calls.push(sql);
+  if(sql.includes('FROM pg_roles'))return {rows:[role]};
+  if(sql.includes('current_database()'))return {rows:[posture]};
+  if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:A}]};
+  if(sql.includes('FROM content_dev.workspaces'))return {rows:[{id:W,tenant_id:T}]};
+  if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:C}]};
+  if(sql.includes('FROM content_dev.content_items'))return {rows:[{id:I,campaign_id:B}]};
+  throw Error('unexpected query');
+ }));
+ await assert.rejects(reader({userId:A,authenticated:true},W),ContentReadDenied);
+ assert.equal(calls.some(sql=>sql.includes('FROM content_dev.scenes')),false);
 });
