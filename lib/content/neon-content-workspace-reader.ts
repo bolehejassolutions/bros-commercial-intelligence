@@ -19,8 +19,8 @@ export function createContentWorkspaceReader(transaction: Transaction) {
         rolsuper AS superuser, rolcreaterole AS can_create_role,
         (SELECT count(*)::int FROM pg_auth_members WHERE member=pg_roles.oid) AS parents
         FROM pg_roles WHERE rolname=current_user`, [])).rows;
-      if (role.length !== 1 || role[0].name !== "content_dev_reader" ||
-          role[0].login !== "content_dev_reader" || role[0].can_login !== true ||
+      if (role.length !== 1 || role[0].name !== "content_dev_reader_v2" ||
+          role[0].login !== "content_dev_reader_v2" || role[0].can_login !== true ||
           role[0].inherits !== false || role[0].bypass !== false ||
           role[0].superuser !== false || role[0].can_create_role !== false ||
           role[0].parents !== 0) deny();
