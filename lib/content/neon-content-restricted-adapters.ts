@@ -19,7 +19,7 @@ export function createRestrictedContentAdapters(){
  const login=decodeURIComponent(parsed.username);
  if(!['content_dev_reader','content_dev_draft_writer'].includes(login)||prohibited.test(login))
   throw new Error('CONTENT database login must be restricted');
- if(!parsed.password||parsed.searchParams.get('sslmode')!=='require')
+ if(!parsed.password||parsed.searchParams.get('sslmode')!=='require'||!parsed.hostname.endsWith('.neon.tech'))
   throw new Error('CONTENT database credentials require TLS');
  // Distinct reader and writer roles cannot share one login. The caller must
  // instantiate only the matching adapter. The SQL layer also verifies the role.
