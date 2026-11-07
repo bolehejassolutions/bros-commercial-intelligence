@@ -21,14 +21,17 @@ export type WorkspaceDetail=Readonly<{
 function uniqueIds(rows:unknown[],parentField?:string,parentIds?:Set<string>){
  const ids=new Set<string>();
  for(const row of rows){
-  if(!obj(row)||!validId(row.id)||ids.has(row.id))invalid();
+  if(!obj(row))invalid();
+  if(!validId(row.id)||ids.has(row.id))invalid();
   ids.add(row.id);
   if(parentField&&(!validId(row[parentField])||!parentIds?.has(row[parentField] as string)))invalid();
  }
  return ids;
 }
 export function parseContentWorkspaceDetail(payload:unknown,expectedWorkspaceId:string):WorkspaceDetail{
- if(!validId(expectedWorkspaceId)||!obj(payload)||!obj(payload.data))invalid();
+ if(!validId(expectedWorkspaceId))invalid();
+ if(!obj(payload))invalid();
+ if(!obj(payload.data))invalid();
  const d=payload.data;
  if(!obj(d.workspace)||d.workspace.id!==expectedWorkspaceId||
     typeof d.workspace.name!=='string'||!d.workspace.name.trim()||
