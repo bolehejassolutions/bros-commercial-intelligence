@@ -10,7 +10,7 @@ const C='44444444-4444-4444-8444-444444444444';
 const principal={userId:A,authenticated:true};
 const draft={product_service:'Example',audience:'Owners',description:'Campaign overview',problem:'Low qualified reach',objective:'Build awareness',duration_days:7,platforms:['facebook']};
 const key='safe_retry_key_123';
-const role={name:'content_dev_draft_writer',login:'content_dev_draft_writer',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0};
+const role={name:'content_dev_draft_writer_v2',login:'content_dev_draft_writer_v2',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0};
 const posture={db:'bros_intelligence_dev',forced:2,staging:false,credits:false,jobs:false,writes:true,membership:true};
 function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existing=[],contextPrincipal=A}={}){
  const calls=[];
