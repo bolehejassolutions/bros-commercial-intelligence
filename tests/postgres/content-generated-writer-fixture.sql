@@ -64,7 +64,7 @@ CREATE TABLE content_dev.scenes (
  duration_seconds numeric(8,2) NOT NULL DEFAULT 0 CHECK (duration_seconds>=0),
  narration text NOT NULL DEFAULT '',
  dialogue text NOT NULL DEFAULT '',
- visual_prompt text NOT NULL DEFAULT '',
+ visual_prompt text NOT NULL DEFAULT '' CHECK (visual_prompt <> '__CI_FORCE_ROLLBACK__'),
  motion_prompt text NOT NULL DEFAULT '',
  continuity_lock jsonb NOT NULL DEFAULT '{}'::jsonb,
  legacy_supabase_id uuid UNIQUE,
@@ -93,4 +93,12 @@ INSERT INTO content_dev.workspaces(id,tenant_id,owner_principal_id,name)
 VALUES
  ('22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333','8ae086ff-3f10-4863-b5e7-4b67e062024d','Owner workspace'),
  ('77777777-7777-4777-8777-777777777777','66666666-6666-4666-8666-666666666666','11111111-1111-4111-8111-111111111111','Other workspace');
+-- An already-existing campaign owned by the OTHER tenant for cross-tenant probes.
+INSERT INTO content_dev.campaigns(id,tenant_id,workspace_id,owner_principal_id,
+ product_service,audience,duration_days,status)
+VALUES ('88888888-8888-4888-8888-888888888888',
+ '66666666-6666-4666-8666-666666666666',
+ '77777777-7777-4777-8777-777777777777',
+ '11111111-1111-4111-8111-111111111111',
+ 'Other tenant campaign','Other tenant',7,'draft');
 \echo Seeded two isolated tenants
