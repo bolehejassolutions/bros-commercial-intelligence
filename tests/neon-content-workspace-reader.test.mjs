@@ -7,7 +7,7 @@ const W='33333333-3333-4333-8333-333333333333';
 const T='44444444-4444-4444-8444-444444444444';
 const C='55555555-5555-4555-8555-555555555555';
 const I='66666666-6666-4666-8666-666666666666';
-const role={name:'content_dev_reader',login:'content_dev_reader',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0};
+const role={name:'content_dev_reader_v2',login:'content_dev_reader_v2',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0};
 const posture={db:'bros_intelligence_dev',forced:4,staging:false,credits:false,writes:false,membership:true};
 function mock({owner=A,roleRow=role,postureRow=posture,contextPrincipal=A}={}) {
   const calls=[];
