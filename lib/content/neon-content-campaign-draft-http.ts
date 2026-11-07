@@ -15,6 +15,14 @@ export function createContentCampaignDraftPost(verify:Verify,create:Create) {
  return async (request:Request,workspaceId:string):Promise<Response>=>{
   if(request.method!=='POST')return reply(405,'method_not_allowed');
   if(!UUID.test(workspaceId))return reply(404,'not_found');
+  // Reject cross-origin browser writes before authentication or database access.
+  // Browser clients must use same-origin requests; no permissive CORS is offered.
+  const origin=request.headers.get('origin');
+  const fetchSite=request.headers.get('sec-fetch-site');
+  if(fetchSite&&fetchSite!=='same-origin'&&fetchSite!=='none')return reply(403,'forbidden_origin');
+  if(origin){let expected:string;try{expected=new URL(request.url).origin;}catch{return reply(403,'forbidden_origin');}
+   if(origin!==expected)return reply(403,'forbidden_origin');}
+
   let principal:Principal|null;
   try{principal=await verify(request);}catch{return reply(401,'unauthorized');}
   if(!principal||principal.authenticated!==true||!UUID.test(principal.userId))return reply(401,'unauthorized');
