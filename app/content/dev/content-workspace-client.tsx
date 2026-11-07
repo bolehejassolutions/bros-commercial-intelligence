@@ -6,6 +6,7 @@ import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {prepareContentDraftRetry,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
+import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
@@ -116,12 +117,8 @@ export default function ContentWorkspaceClient(){
    try{
     const res=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected),{cache:'no-store',credentials:'same-origin'});
     if(!res.ok)throw new Error(res.status===401?'Sesi tamat. Sila log masuk semula.':'Data kempen belum dapat dibaca.');
-    const response=await res.json() as {data?:Details};
-    if(!response.data||!Array.isArray(response.data.campaigns)||
-       !Array.isArray(response.data.contentItems)||!Array.isArray(response.data.scenes)||
-       response.data.workspace?.id!==selected)
-     throw new Error('Respons workspace tidak lengkap. Cuba muat semula.');
-    if(active)setDetailLoad(loadedWorkspace(response.data));
+    const detail=parseContentWorkspaceDetail(await res.json(),selected);
+    if(active)setDetailLoad(loadedWorkspace(detail));
    }catch(e){if(active)setDetailLoad(failedWorkspace(e instanceof Error?e.message:'Ralat memuatkan data.'));}
   
   })();
