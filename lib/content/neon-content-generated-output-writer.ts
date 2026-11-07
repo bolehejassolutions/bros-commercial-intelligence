@@ -12,6 +12,7 @@
 import {createHash} from 'node:crypto';
 import {ContentReadDenied} from './neon-content-workspace-reader.ts';
 import {compileContentPersistenceBundle} from './neon-content-persistence-bundle.ts';
+import {verifyContentGeneratedReplay} from './neon-content-replay-integrity.ts';
 import type {
  CampaignInput,CampaignPlan,QualityReview
 } from './neon-content-generation-contract.ts';
@@ -147,6 +148,28 @@ export function createContentGeneratedOutputWriter(transaction:Transaction) {
        WHERE s.tenant_id=$1::uuid AND i.campaign_id=$2::uuid) AS scenes`,
       [tenantId,id])).rows);
     if(count.items!==expectedItems||count.scenes!==expectedScenes)deny();
+    // A matching row count or reservation fingerprint does NOT prove the
+    // persisted body still matches the approved output. Verify all stored
+    // values before claiming an idempotent replay succeeded.
+    const persisted=rowsOne((await query(`SELECT product_service,
+      description,audience,problem,objective,duration_days,platforms,
+      status,strategy,angles,captions,publish_plan
+      FROM content_dev.campaigns
+      WHERE id=$1::uuid AND tenant_id=$2::uuid
+       AND owner_principal_id=$3::uuid AND workspace_id=$4::uuid
+      LIMIT 2`,[id,tenantId,principalId,workspaceId])).rows);
+    const persistedItems=(await query(`SELECT id,type,title,body,sort_order,version
+      FROM content_dev.content_items WHERE tenant_id=$1::uuid
+       AND campaign_id=$2::uuid ORDER BY type,sort_order,id LIMIT 501`,
+      [tenantId,id])).rows;
+    const persistedScenes=(await query(`SELECT s.content_item_id,
+      s.scene_number,s.duration_seconds,s.narration,s.dialogue,
+      s.visual_prompt,s.motion_prompt,s.continuity_lock
+      FROM content_dev.scenes s JOIN content_dev.content_items i
+       ON i.id=s.content_item_id AND i.tenant_id=s.tenant_id
+      WHERE s.tenant_id=$1::uuid AND i.campaign_id=$2::uuid
+      ORDER BY s.scene_number,s.id LIMIT 301`,[tenantId,id])).rows;
+    verifyContentGeneratedReplay(bundle,persisted,persistedItems,persistedScenes);
     return {id,status:'draft' as const,replayed:true as const};
    };
    const replay=await current();
