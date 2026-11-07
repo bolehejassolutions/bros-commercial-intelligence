@@ -114,6 +114,54 @@ test('real PostgreSQL 16: atomic authorization, persistence and rollback',async 
   assert.equal(replay.replayed,true);
   assert.deepEqual(await counts(),baseline);
  });
+ await t.test('unchanged counts but modified stored script or captions deny idempotent replay',async()=>{
+  const existing=await admin.query(`SELECT campaign_id FROM content_dev.generated_output_requests
+    WHERE tenant_id=$1 AND owner_principal_id=$2 AND idempotency_key=$3`,
+    [TENANT,OWNER,'ci-real-save-one-20261107']);
+  assert.equal(existing.rows.length,1);
+  const campaignId=existing.rows[0].campaign_id;
+  const storedItem=await admin.query(`SELECT id,body FROM content_dev.content_items
+    WHERE campaign_id=$1 AND type='script' LIMIT 1`,[campaignId]);
+  assert.equal(storedItem.rows.length,1);
+  const itemId=storedItem.rows[0].id,body=storedItem.rows[0].body;
+  const baseline=await counts();
+  try{
+   await admin.query('UPDATE content_dev.content_items SET body=$2::jsonb WHERE id=$1',
+    [itemId,JSON.stringify({...body,body:'Tampered message'})]);
+   await assert.rejects(write(...args('ci-real-save-one-20261107')),ContentReadDenied);
+   assert.deepEqual(await counts(),baseline);
+  }finally{
+   await admin.query('UPDATE content_dev.content_items SET body=$2::jsonb WHERE id=$1',
+    [itemId,JSON.stringify(body)]);
+  }
+  const original=await admin.query('SELECT captions FROM content_dev.campaigns WHERE id=$1',[campaignId]);
+  try{
+   await admin.query('UPDATE content_dev.campaigns SET captions=$2::jsonb WHERE id=$1',
+    [campaignId,JSON.stringify({facebook:'Modified platform copy'})]);
+   await assert.rejects(write(...args('ci-real-save-one-20261107')),ContentReadDenied);
+   assert.deepEqual(await counts(),baseline);
+  }finally{
+   await admin.query('UPDATE content_dev.campaigns SET captions=$2::jsonb WHERE id=$1',
+    [campaignId,JSON.stringify(original.rows[0].captions)]);
+  }
+ });
+ await t.test('unchanged counts but modified stored scene denies replay',async()=>{
+  const stored=await admin.query(`SELECT s.id,s.visual_prompt FROM content_dev.scenes s
+   JOIN content_dev.content_items i ON i.id=s.content_item_id
+   JOIN content_dev.generated_output_requests r ON r.campaign_id=i.campaign_id
+   WHERE r.tenant_id=$1 AND r.owner_principal_id=$2 AND r.idempotency_key=$3 LIMIT 1`,
+   [TENANT,OWNER,'ci-real-save-one-20261107']);
+  assert.equal(stored.rows.length,1);
+  const id=stored.rows[0].id,original=stored.rows[0].visual_prompt;
+  try{
+   await admin.query('UPDATE content_dev.scenes SET visual_prompt=$2 WHERE id=$1',
+    [id,'Modified scene content']);
+   await assert.rejects(write(...args('ci-real-save-one-20261107')),ContentReadDenied);
+  }finally{
+   await admin.query('UPDATE content_dev.scenes SET visual_prompt=$2 WHERE id=$1',[id,original]);
+  }
+  assert.equal((await write(...args('ci-real-save-one-20261107'))).replayed,true);
+ });
  await t.test('changed QC with same key is denied, and counts do not change',async()=>{
   const baseline=await counts();
   await assert.rejects(
