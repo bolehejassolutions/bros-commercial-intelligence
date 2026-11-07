@@ -8,6 +8,7 @@ import 'server-only';
 import {Pool} from 'pg';
 import {createContentTransaction} from './neon-content-transaction.ts';
 import {createContentWorkspaceReader} from './neon-content-workspace-reader.ts';
+import {createContentWorkspaceIndexReader} from './neon-content-workspace-index.ts';
 import {createContentCampaignDraftWriter} from './neon-content-campaign-draft-writer.ts';
 
 const prohibited=/^(postgres|neondb_owner|bros|bci_dev_.*)$/i;
@@ -33,6 +34,7 @@ export function createRestrictedContentAdapters(role:'content_dev_reader_v2'|'co
  return {
   role:login,
   readWorkspace:login==='content_dev_reader_v2'?createContentWorkspaceReader(transaction):null,
+  listWorkspaces:login==='content_dev_reader_v2'?createContentWorkspaceIndexReader(transaction):null,
   createDraft:login==='content_dev_draft_writer_v2'?createContentCampaignDraftWriter(transaction):null,
   close:()=>pool.end()
  };
