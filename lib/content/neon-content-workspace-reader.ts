@@ -59,19 +59,19 @@ export function createContentWorkspaceReader(transaction: Transaction) {
       const contentItems: Row[] = [], scenes: Row[] = [];
       for (const campaign of campaigns) {
         if (!UUID.test(String(campaign.id))) deny();
-        const rows = (await query(`SELECT id,campaign_id,type,title,body,sort_order,version
+        const rows = (await query(`SELECT id,tenant_id,campaign_id,type,title,body,sort_order,version
           FROM content_dev.content_items WHERE tenant_id=$1::uuid AND campaign_id=$2::uuid
           ORDER BY sort_order,id LIMIT 501`,[tenant,String(campaign.id)])).rows;
-        if (rows.length>500 || rows.some(row => row.campaign_id !== campaign.id || !UUID.test(String(row.id)))) deny();
+        if (rows.length>500 || rows.some(row => row.tenant_id !== tenant || row.campaign_id !== campaign.id || !UUID.test(String(row.id)))) deny();
         contentItems.push(...rows);
       }
       for (const item of contentItems) {
         if (!UUID.test(String(item.id))) deny();
-        const itemScenes=(await query(`SELECT id,content_item_id,scene_number,duration_seconds,
+        const itemScenes=(await query(`SELECT id,tenant_id,content_item_id,scene_number,duration_seconds,
           narration,dialogue,visual_prompt,motion_prompt,continuity_lock
           FROM content_dev.scenes WHERE tenant_id=$1::uuid AND content_item_id=$2::uuid
           ORDER BY scene_number LIMIT 101`,[tenant,String(item.id)])).rows;
-        if (itemScenes.length>100 || itemScenes.some(row => row.content_item_id !== item.id || !UUID.test(String(row.id)))) deny();
+        if (itemScenes.length>100 || itemScenes.some(row => row.tenant_id !== tenant || row.content_item_id !== item.id || !UUID.test(String(row.id)))) deny();
         scenes.push(...itemScenes);
       }
       return {workspace:workspace[0],campaigns,contentItems,scenes};
