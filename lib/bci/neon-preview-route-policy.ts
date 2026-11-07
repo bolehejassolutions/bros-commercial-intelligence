@@ -17,6 +17,12 @@ const neonPreviewPaths = new Set([
   "/api/internal/demand-meta-campaigns",
 ]);
 
+
+// Restrict the CONTENT exception to the two exact DEV routes. These endpoints
+// enforce their own Preview-only feature flag, Neon Auth identity and tenant RLS;
+// the BCI Supabase middleware must not redirect them to /login first.
+const contentDevWorkspacePath = /^\/api\/content\/dev\/workspaces\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?:\/campaign-drafts)?$/i;
+
 export function usesNeonPreviewAuthentication(pathname: string): boolean {
-  return neonPreviewPaths.has(pathname);
+  return neonPreviewPaths.has(pathname) || contentDevWorkspacePath.test(pathname);
 }
