@@ -418,7 +418,7 @@ export default function NeonPreviewSignIn() {
   }
 
   return (
-    <main className="auth-shell neon-preview-shell">
+    <main className="auth-shell neon-preview-shell bros-luminous bci-studio">
       <section className="auth-card" aria-labelledby="neon-preview-title">
         <p className="eyebrow">BROS INTERNAL PREVIEW</p>
         <h1 id="neon-preview-title">Secure development access</h1>
