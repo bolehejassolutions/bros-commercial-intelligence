@@ -9,13 +9,13 @@ export const dynamic='force-dynamic';
 const reply=(status:number,error:string)=>new Response(JSON.stringify({error}),{
  status,headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'}
 });
-export async function GET(request:Request){
- if(!isContentDevPreviewEnabled(process.env))return reply(404,'not_found');
- try{return await getContentNeonAuth().handler().GET(request);}
+export async function GET(request:Request,context:{params:Promise<{path:string[]}>}){
+ if(!isContentDevPreviewEnabled(process.env.VERCEL_ENV,process.env.CONTENT_DEV_API_ENABLED))return reply(404,'not_found');
+ try{return await getContentNeonAuth().handler().GET(request,context);}
  catch{return reply(503,'auth_unavailable');}
 }
-export async function POST(request:Request){
- if(!isContentDevPreviewEnabled(process.env))return reply(404,'not_found');
- try{return await getContentNeonAuth().handler().POST(request);}
+export async function POST(request:Request,context:{params:Promise<{path:string[]}>}){
+ if(!isContentDevPreviewEnabled(process.env.VERCEL_ENV,process.env.CONTENT_DEV_API_ENABLED))return reply(404,'not_found');
+ try{return await getContentNeonAuth().handler().POST(request,context);}
  catch{return reply(503,'auth_unavailable');}
 }
