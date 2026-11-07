@@ -17,9 +17,10 @@ export function createRestrictedContentAdapters(){
  try{parsed=new URL(url);}catch{throw new Error('Invalid CONTENT restricted database URL');}
  if(!['postgresql:','postgres:'].includes(parsed.protocol))throw new Error('Invalid CONTENT database protocol');
  const login=decodeURIComponent(parsed.username);
+ if(parsed.searchParams.has('options')||parsed.searchParams.has('application_name'))throw new Error('Unsupported CONTENT connection parameters');
  if(!['content_dev_reader','content_dev_draft_writer'].includes(login)||prohibited.test(login))
   throw new Error('CONTENT database login must be restricted');
- if(!parsed.password||parsed.searchParams.get('sslmode')!=='require'||!parsed.hostname.endsWith('.neon.tech'))
+ if(!parsed.password||parsed.searchParams.get('sslmode')!=='require'||!parsed.hostname.endsWith('.neon.tech')||parsed.port&&parsed.port!=='5432'||parsed.hash)
   throw new Error('CONTENT database credentials require TLS');
  // Distinct reader and writer roles cannot share one login. The caller must
  // instantiate only the matching adapter. The SQL layer also verifies the role.
