@@ -11,6 +11,8 @@ on:
       - 'lib/content/neon-content-persistence-bundle.ts'
       - 'lib/content/neon-content-transaction.ts'
       - 'lib/content/neon-content-generation-contract.ts'
+      - 'lib/content/neon-content-generation-orchestrator.ts'
+      - 'lib/content/neon-content-workspace-reader.ts'
   workflow_dispatch:
 
 permissions:
@@ -56,7 +58,15 @@ jobs:
           role_pass="$(openssl rand -hex 32)"
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE content_dev_generated_writer_v1 LOGIN NOINHERIT NOBYPASSRLS NOSUPERUSER NOCREATEROLE PASSWORD '${role_pass}'"
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/sql-proposals/CONTENT_DEV_GENERATED_OUTPUT_WRITER_V1_NOT_APPLIED.sql
+          # The reader has a distinct, randomly generated CI-only password.
+          # Its RLS policies mirror the live Neon reader without altering Neon.
+          reader_pass="$(openssl rand -hex 32)"
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE content_dev_reader_v2 LOGIN NOINHERIT NOBYPASSRLS NOSUPERUSER NOCREATEROLE PASSWORD '${reader_pass}'"
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgres/content-reader-fixture.sql
           export CONTENT_TEST_DB_URL="postgresql://content_dev_generated_writer_v1:${role_pass}@127.0.0.1:5432/bros_intelligence_dev"
+          export CONTENT_READER_DB_URL="postgresql://content_dev_reader_v2:${reader_pass}@127.0.0.1:5432/bros_intelligence_dev"
           export CONTENT_ADMIN_DB_URL="$ADMIN_DATABASE_URL"
           export CONTENT_PG_INTEGRATION_CI="disposable_only"
-          node --test tests/postgres/content-generated-writer.integration.test.mjs
+          # Two test files share the disposable database; avoid inter-file
+          # concurrency so their tenant row-count assertions remain reliable.
+          node --test --test-concurrency=1 tests/postgres/*.integration.test.mjs
