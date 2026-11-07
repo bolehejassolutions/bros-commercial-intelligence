@@ -9,9 +9,9 @@ export class ContentWorkspaceDetailInvalid extends Error{
  constructor(){super('Respons workspace tidak lengkap. Cuba muat semula.');this.name='ContentWorkspaceDetailInvalid';}
 }
 const invalid=():never=>{throw new ContentWorkspaceDetailInvalid();};
-export type WorkspaceDetailCampaign=Record<string,unknown>&{id:string};
-export type WorkspaceDetailItem=Record<string,unknown>&{id:string;campaign_id:string};
-export type WorkspaceDetailScene=Record<string,unknown>&{id:string;content_item_id:string};
+export type WorkspaceDetailCampaign=Record<string,unknown>&{id:string;product_service?:string;audience?:string;status?:string;description?:string;created_at?:string;strategy?:unknown;angles?:unknown;captions?:unknown;publish_plan?:unknown};
+export type WorkspaceDetailItem=Record<string,unknown>&{id:string;campaign_id:string;type?:string;title?:string;body?:unknown};
+export type WorkspaceDetailScene=Record<string,unknown>&{id:string;content_item_id:string;scene_number?:number;narration?:string;dialogue?:string;visual_prompt?:string;motion_prompt?:string;duration_seconds?:number|string};
 export type WorkspaceDetail=Readonly<{
  workspace:Record<string,unknown>&{id:string;name:string};
  campaigns:WorkspaceDetailCampaign[];
