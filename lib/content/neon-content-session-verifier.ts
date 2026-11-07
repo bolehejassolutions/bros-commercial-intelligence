@@ -26,7 +26,7 @@ export function createContentNeonSessionVerifier(authBaseUrl:string, fetcher:Fet
   if(selected.length!==1)return null;
   const separator=selected[0].indexOf('=');
   const value=selected[0].slice(separator+1);
-  if(separator<1||!value||value.length>4096||/[\\s;,]/.test(value))return null;
+  if(separator<1||!value||value.length>4096||/[\s;,]/.test(value))return null;
   const scopedCookie=selected[0];
   let response:Response;
   try{response=await fetcher(endpoint.toString(),{
