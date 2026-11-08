@@ -12,6 +12,7 @@ import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-i
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
 import {contentWorkspaceReadError} from '@/lib/content/neon-content-workspace-http-error';
 import {shouldResetContentDraftOnWorkspaceSwitch,reconcileContentWorkspaceSelection} from '@/lib/content/neon-content-workspace-switch';
+import {isContentWorkspaceDetailCurrent} from '@/lib/content/neon-content-workspace-render-guard';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
@@ -209,7 +210,7 @@ export default function ContentWorkspaceClient(){
    {selected&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,420px),1fr))',gap:20,alignItems:'start'}}>
     <section style={card}>
      <h2 style={{fontSize:20,marginTop:0}}>Kempen sedia ada</h2>
-     {detailLoad.status==='loading'||detailLoad.status==='idle'?<p role="status">Memuatkan kempen…</p>:
+     {detailLoad.status==='loading'||detailLoad.status==='idle'||(detailLoad.status==='ready'&&!isContentWorkspaceDetailCurrent(selected,detailLoad))?<p role="status">Memuatkan kempen…</p>:
       detailLoad.status!=='ready'?<div role="alert" style={{border:'1px solid #ad665d',padding:12,borderRadius:8}}>
        <p style={{color:'#ffd0cb'}}>{detailLoad.error}</p>
        <button type="button" onClick={()=>setRefresh(value=>value+1)}
