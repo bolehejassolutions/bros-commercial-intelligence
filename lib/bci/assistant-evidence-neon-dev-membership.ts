@@ -61,7 +61,7 @@ export function createBusinessOsDevMembershipChecker(transaction: MembershipTran
         const roleResult = await query(ROLE_SQL, []);
         if (!Array.isArray(roleResult?.rows) || roleResult.rows.length !== 1 ||
             !object(roleResult.rows[0])) deny();
-        const role = roleResult.rows[0];
+        const role = roleResult.rows[0] as Record<string, unknown>;
         if (role.role_name !== "bci_dev_membership_reader" ||
             role.session_role_name !== "bci_dev_membership_reader" ||
             role.bypass_rls !== false || role.superuser !== false ||
@@ -71,7 +71,7 @@ export function createBusinessOsDevMembershipChecker(transaction: MembershipTran
         const postureResult = await query(POSTURE_SQL, []);
         if (!Array.isArray(postureResult?.rows) || postureResult.rows.length !== 1 ||
             !object(postureResult.rows[0])) deny();
-        const posture = postureResult.rows[0];
+        const posture = postureResult.rows[0] as Record<string, unknown>;
         if (posture.database_name !== "bros_intelligence_dev" ||
             posture.read_only_mode !== "on" || posture.rls_enabled !== true ||
             posture.rls_forced !== true || posture.can_read_membership !== true ||
