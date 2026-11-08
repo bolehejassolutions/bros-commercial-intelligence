@@ -6,6 +6,7 @@ import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,shouldClearContentDraftAttempt,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
+import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-preview';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
@@ -32,6 +33,7 @@ function readableBody(value:unknown){
 }
 function CampaignLayers({campaign}:{campaign:Campaign}){
  const view=buildContentCampaignView(campaign);
+ const preview=buildContentPublishPreview(campaign);
  if(!view.hasGeneratedContent)return null;
  return <details style={{border:'1px solid #34445c',padding:12,borderRadius:8,margin:'10px 0'}}>
   <summary style={{cursor:'pointer',color:gold,fontWeight:600}}>Lihat strategi, sudut, kapsyen & pelan penerbitan</summary>
@@ -65,6 +67,14 @@ function CampaignLayers({campaign}:{campaign:Campaign}){
     </p>)}
    </section>}
   </div>
+  {preview.length>0&&<section aria-label="Pratonton penerbitan" style={{borderTop:'1px solid #34445c',paddingTop:12}}>
+   <h4 style={{margin:'0 0 6px'}}>Pratonton penerbitan — belum dijadualkan</h4>
+   {preview.map((entry,i)=><article key={i} style={{padding:'8px 0',borderBottom:'1px solid #34445c'}}>
+    <strong style={{fontSize:13}}>Hari {entry.day} · {entry.platform} · {entry.contentType||'Kandungan'}</strong>
+    {entry.objective&&<p style={{fontSize:12}}>{entry.objective}</p>}
+    <p style={{fontSize:12,whiteSpace:'pre-wrap'}}>{entry.captionAvailable?entry.caption:'Kapsyen platform ini belum tersedia; tiada kandungan direka secara automatik.'}</p>
+   </article>)}
+  </section>}
   <p style={{fontSize:11,color:'#b6c1cf'}}>Paparan bacaan sahaja. Tiada penjadualan atau penerbitan aktif.</p>
  </details>;
 }
