@@ -114,7 +114,8 @@ export async function readDirectMetaCampaignInsights(
     if (paging !== undefined) {
       if (!paging || typeof paging !== "object" ||
           Array.isArray(paging)) reject();
-      if (Object.hasOwn(paging as object, "next")) reject();
+      if (Object.hasOwn(paging as object, "next") ||
+          Object.hasOwn(paging as object, "previous")) reject();
     }
     if (rows.length === 0) {
       return Object.freeze({
