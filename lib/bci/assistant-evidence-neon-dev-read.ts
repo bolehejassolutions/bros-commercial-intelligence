@@ -117,11 +117,12 @@ export function createBusinessOsDevScopedEvidenceReader(transaction: BusinessOsR
     if (!scope || typeof scope.tenantId !== "string" || !UUID.test(scope.tenantId) ||
         (scope.product !== "content" && scope.product !== "demand") ||
         scope.maxRows !== 20) deny();
-    return transaction(async query => {
+    try {
+      return await transaction(async query => {
       const identity = await query(ROLE_SQL, []);
       if (!Array.isArray(identity?.rows) || identity.rows.length !== 1 ||
           !object(identity.rows[0])) deny();
-      const role = identity.rows[0];
+      const role: Record<string, unknown> = identity.rows[0] as Record<string, unknown>;
       if (role.role_name !== "bci_dev_private_reader" ||
           role.session_role_name !== "bci_dev_private_reader" ||
           role.bypass_rls !== false || role.is_superuser !== false ||
@@ -132,7 +133,7 @@ export function createBusinessOsDevScopedEvidenceReader(transaction: BusinessOsR
       const posture = await query(POSTURE_SQL, []);
       if (!Array.isArray(posture?.rows) || posture.rows.length !== 1 ||
           !object(posture.rows[0])) deny();
-      const p = posture.rows[0];
+      const p: Record<string, unknown> = posture.rows[0] as Record<string, unknown>;
       if (p.database_name !== "bros_intelligence_dev" ||
           p.rls_enabled !== true || p.rls_forced !== true ||
           p.can_read_evidence !== true || p.can_write_evidence !== false ||
@@ -157,6 +158,10 @@ export function createBusinessOsDevScopedEvidenceReader(transaction: BusinessOsR
         seen.add(row.evidenceId);
         return row;
       });
-    });
+      });
+    } catch {
+      // Do not expose a driver exception, connection secret, or SQL detail.
+      throw new BusinessOsDevSqlDenied();
+    }
   };
 }
