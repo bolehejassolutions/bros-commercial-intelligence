@@ -33,3 +33,26 @@ export async function readDemandMetaObjectStatus(binding: MetaStatusBinding, tok
       executionAllowed: false as const, providerAuthorizationIndependentlyAttested: false as const });
   } catch { deny(); }
 }
+
+/** All-or-nothing bounded status snapshot. No partial success or provider writes. */
+export async function readDemandMetaStatusSnapshot(
+  bindings: readonly MetaStatusBinding[], token: string, observedAt: string, transport: MetaStatusTransport
+) {
+  if (!Array.isArray(bindings) || bindings.length < 1 || bindings.length > 20) deny();
+  const keys = new Set<string>();
+  const accountId = bindings[0]?.accountId;
+  for (const binding of bindings) {
+    if (!object(binding) || binding.accountId !== accountId ||
+      typeof binding.objectId !== "string" || typeof binding.kind !== "string") deny();
+    const key = binding.kind + ":" + binding.objectId;
+    if (keys.has(key)) deny();
+    keys.add(key);
+  }
+  // Sequential reads cap concurrency and prevent partial results escaping.
+  const results: Awaited<ReturnType<typeof readDemandMetaObjectStatus>>[] = [];
+  for (const binding of bindings) results.push(
+    await readDemandMetaObjectStatus(binding, token, observedAt, transport)
+  );
+  return Object.freeze({ source: "META_GRAPH_API_UNATTESTED" as const,
+    observedAt, accountId, rows: Object.freeze(results), executionAllowed: false as const });
+}
