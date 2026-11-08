@@ -6,6 +6,7 @@ import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,shouldClearContentDraftAttempt,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
+import {buildContentCampaignBrief} from '@/lib/content/neon-content-campaign-brief';
 import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-preview';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
@@ -14,7 +15,7 @@ import {shouldResetContentDraftOnWorkspaceSwitch,reconcileContentWorkspaceSelect
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
-type Campaign={id:string;product_service?:string;audience?:string;status?:string;description?:string;created_at?:string;
+type Campaign={id:string;product_service?:string;audience?:string;status?:string;description?:string;problem?:string;objective?:string;duration_days?:number;platforms?:string[];created_at?:string;
  strategy?:unknown;angles?:unknown;captions?:unknown;publish_plan?:unknown;};
 type ContentItem={id:string;campaign_id:string;type?:string;title?:string;body?:unknown};
 type Scene={id:string;content_item_id:string;scene_number?:number;narration?:string;dialogue?:string;visual_prompt?:string;
@@ -221,7 +222,14 @@ export default function ContentWorkspaceClient(){
       return <article key={c.id} style={{borderTop:'1px solid #34445c',paddingTop:12}}>
        <p style={{fontSize:11,letterSpacing:1,color:gold,margin:'0 0 6px'}}>{safeText(c.status).toUpperCase()} · {items.length} KANDUNGAN</p>
        <h3 style={{fontSize:17,margin:'4px 0 8px'}}>{safeText(c.product_service)}</h3>
-       <p style={{color:'#b6c1cf',fontSize:13}}>{safeText(c.description||c.audience)}</p>
+       <details style={{margin:'8px 0'}}><summary style={{cursor:'pointer',color:gold,fontSize:13}}>Lihat butiran draf / brief asal</summary>
+        <dl style={{margin:'10px 0',display:'grid',gap:8}}>
+         {buildContentCampaignBrief(c).map(row=><div key={row.label}>
+          <dt style={{fontSize:11,color:'#b6c1cf'}}>{row.label}</dt>
+          <dd style={{margin:0,fontSize:13,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{row.value}</dd>
+         </div>)}
+        </dl>
+       </details>
        <CampaignLayers campaign={c}/>
        {items.length>0&&<details><summary style={{cursor:'pointer',color:gold}}>Lihat skrip, visual dan scene</summary>
         <div style={{display:'grid',gap:10,marginTop:10}}>{items.map(item=>{
