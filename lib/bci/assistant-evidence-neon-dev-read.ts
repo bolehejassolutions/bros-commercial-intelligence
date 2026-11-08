@@ -38,7 +38,7 @@ const ROLE_SQL = [
 ].join(" ");
 
 const POSTURE_SQL = [
-  "SELECT current_database() AS database_name,",
+  "SELECT current_database() AS database_name, current_setting('transaction_read_only') AS read_only_mode,",
   "c.relrowsecurity AS rls_enabled, c.relforcerowsecurity AS rls_forced,",
   "has_table_privilege(current_user, 'bci_dev.evidence', 'SELECT') AS can_read_evidence,",
   "has_table_privilege(current_user, 'bci_dev.evidence', 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN') AS can_write_evidence,",
@@ -134,7 +134,7 @@ export function createBusinessOsDevScopedEvidenceReader(transaction: BusinessOsR
       if (!Array.isArray(posture?.rows) || posture.rows.length !== 1 ||
           !object(posture.rows[0])) deny();
       const p: Record<string, unknown> = posture.rows[0] as Record<string, unknown>;
-      if (p.database_name !== "bros_intelligence_dev" ||
+      if (p.database_name !== "bros_intelligence_dev" || p.read_only_mode !== "on" ||
           p.rls_enabled !== true || p.rls_forced !== true ||
           p.can_read_evidence !== true || p.can_write_evidence !== false ||
           p.can_access_memberships !== false ||
