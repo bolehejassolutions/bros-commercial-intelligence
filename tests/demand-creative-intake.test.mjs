@@ -115,3 +115,58 @@ test("PNG CRC, IDAT presence, exact chunk boundaries and forged matching hashes 
   for (const bytes of bad)
     assert.throws(() => prepareDemandCreativeIntake(tenantId, withMedia(bytes), bytes), denied);
 });
+
+test("PNG rejects illegal IHDR modes and unknown critical chunks even with valid CRC and SHA-256", () => {
+  const crc32 = bytes => {
+    let crc = 0xffffffff;
+    for (const value of bytes) {
+      crc ^= value;
+      for (let bit = 0; bit < 8; bit++)
+        crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const write32 = (bytes, at, value) => {
+    bytes[at] = (value >>> 24) & 255;
+    bytes[at + 1] = (value >>> 16) & 255;
+    bytes[at + 2] = (value >>> 8) & 255;
+    bytes[at + 3] = value & 255;
+  };
+  const ihdrChanged = (at, value) => {
+    const bytes = Uint8Array.from(media);
+    bytes[at] = value;
+    write32(bytes, 29, crc32(bytes.subarray(12, 29)));
+    return bytes;
+  };
+  const chunk = (name, payload) => {
+    const out = new Uint8Array(12 + payload.length);
+    write32(out, 0, payload.length);
+    out.set([...name].map(c => c.charCodeAt(0)), 4);
+    out.set(payload, 8);
+    write32(out, out.length - 4, crc32(out.subarray(4, out.length - 4)));
+    return out;
+  };
+  const insertBeforeIdat = (name, payload) => Uint8Array.from([
+    ...media.subarray(0, 33), ...chunk(name, payload), ...media.subarray(33),
+  ]);
+  const withMedia = bytes => ({
+    ...approved, bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+  for (const bytes of [
+    ihdrChanged(24, 3), // RGBA cannot have 3-bit samples
+    ihdrChanged(25, 1), // undefined color type
+    ihdrChanged(26, 1), // unsupported compression
+    ihdrChanged(27, 1), // unsupported filter method
+    ihdrChanged(28, 2), // unsupported interlace method
+    insertBeforeIdat("ABCD", Uint8Array.of(1)), // unknown critical chunk
+    insertBeforeIdat("PLTE", Uint8Array.of(1, 2)), // malformed palette
+  ]) {
+    assert.throws(() => prepareDemandCreativeIntake(tenantId, withMedia(bytes), bytes), denied);
+  }
+  // Valid ancillary metadata does not confer ad approval.
+  const ancillary = insertBeforeIdat("tEXt", Uint8Array.of(75, 0, 86));
+  const result = prepareDemandCreativeIntake(tenantId, withMedia(ancillary), ancillary);
+  assert.equal(result.metaUploadAllowed, false);
+  assert.equal(result.campaignExecutionAllowed, false);
+});
