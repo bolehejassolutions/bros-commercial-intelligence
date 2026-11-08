@@ -23,9 +23,23 @@ const id = /^[a-zA-Z0-9][a-zA-Z0-9:_-]{7,127}$/;
 const hash = /^[0-9a-f]{64}$/;
 const deny = (): never => { throw new Error("BROS_DEMAND_CREATIVE_INTAKE_DENIED"); };
 function signature(mime: CreativeRecord["mime"], data: Uint8Array): boolean {
-  if (mime === "image/png") return data.length >= 24 &&
-    [137,80,78,71,13,10,26,10].every((v,i) => data[i] === v) &&
-    data[12] === 73 && data[13] === 72 && data[14] === 68 && data[15] === 82;
+  if (mime === "image/png") {
+    // PNG requires a complete, bounded IHDR and IEND, not merely an
+    // eight-byte magic prefix. Decoding/visual QA remains CONTENT-owned.
+    if (data.length < 45 ||
+        ![137,80,78,71,13,10,26,10].every((v,i) => data[i] === v) ||
+        !(data[8] === 0 && data[9] === 0 && data[10] === 0 && data[11] === 13) ||
+        !(data[12] === 73 && data[13] === 72 && data[14] === 68 && data[15] === 82)) return false;
+    const width = (data[16] * 0x1000000 + (data[17] << 16) + (data[18] << 8) + data[19]) >>> 0;
+    const height = (data[20] * 0x1000000 + (data[21] << 16) + (data[22] << 8) + data[23]) >>> 0;
+    return width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
+      data[data.length - 12] === 0 && data[data.length - 11] === 0 &&
+      data[data.length - 10] === 0 && data[data.length - 9] === 0 &&
+      data[data.length - 8] === 73 && data[data.length - 7] === 69 &&
+      data[data.length - 6] === 78 && data[data.length - 5] === 68 &&
+      data[data.length - 4] === 174 && data[data.length - 3] === 66 &&
+      data[data.length - 2] === 96 && data[data.length - 1] === 130;
+  }
   if (mime === "image/jpeg") return data.length >= 4 &&
     data[0] === 255 && data[1] === 216 && data[data.length - 2] === 255 &&
     data[data.length - 1] === 217;
