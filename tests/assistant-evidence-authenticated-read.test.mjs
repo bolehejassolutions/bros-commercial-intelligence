@@ -302,3 +302,48 @@ test("post-read authoritative membership service failure returns generic 503", a
   assert.equal(body, JSON.stringify({ error: "read_unavailable" }));
   assert.equal(checks, 2);
 });
+
+test("post-read session rotation with unchanged user and expiry is denied", async () => {
+  let verifies = 0;
+  let grants = 0;
+  const { handler } = fixture({
+    verifyBearerToken: async () => ({
+      subjectId: "user-1", expiresAt: "2026-11-08T06:00:00Z",
+      sessionId: ++verifies === 1 ? "session-A" : "session-B",
+    }),
+    hasEvidenceReadGrant: async () => { grants++; return true; },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
+  assert.equal(verifies, 2);
+  assert.equal(grants, 1);
+});
+
+test("stable verified session can pass second identity and membership check", async () => {
+  let verifies = 0;
+  const { handler } = fixture({
+    verifyBearerToken: async () => {
+      verifies++;
+      return { subjectId: "user-1", expiresAt: "2026-11-08T06:00:00Z", sessionId: "session-A" };
+    },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(verifies, 2);
+  assert.equal(body.access, "read_only");
+  assert.ok(!JSON.stringify(body).includes("session-A"));
+});
+
+test("invalid verified session ID fails closed before returning receipts", async () => {
+  const { handler } = fixture({
+    verifyBearerToken: async () => ({
+      subjectId: "user-1", expiresAt: "2026-11-08T06:00:00Z",
+      sessionId: "../../untrusted",
+    }),
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
+});
