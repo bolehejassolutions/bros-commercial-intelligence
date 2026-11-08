@@ -133,8 +133,8 @@ test("valid numeric Content-Length is accepted when bytes and schema match", asy
   assert.equal(f.calls.length, 1);
 });
 
-test("invalid or oversized Content-Length fails closed before reading response", async () => {
-  for (const size of ["-1", "1.5", "NaN", "4097", "999999999999999999999999", " 12", "12 ", "0x12"]) {
+test("malformed or oversized normalized Content-Length fails closed before reading response", async () => {
+  for (const size of ["-1", "1.5", "NaN", "4097", "999999999999999999999999", "0x12"]) {
     const f = fixture(good, { headers: { "Content-Length": size } });
     assert.equal(await f.introspect("opaque-token"), null, "reject Content-Length " + size);
   }
@@ -149,4 +149,10 @@ test("declared short Content-Length cannot bypass streaming byte ceiling", async
     return response;
   });
   assert.equal(await oversized("opaque-token"), null);
+});
+
+test("Fetch Headers normalize surrounding whitespace before Content-Length validation", async () => {
+  const f = fixture(good, { headers: { "Content-Length": " 12 " } });
+  assert.deepEqual(await f.introspect("opaque-token"), good);
+  assert.equal(f.calls.length, 1);
 });
