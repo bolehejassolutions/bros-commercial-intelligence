@@ -4,6 +4,7 @@
  */
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {prepareContentDraftRetry,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
+import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
@@ -143,6 +144,7 @@ export default function ContentWorkspaceClient(){
    });
    if(!response.ok)throw new Error(response.status===401?'Sesi tamat. Sila log masuk semula.':
     response.status===404?'Akses workspace tidak dibenarkan.':'Draf tidak dapat disimpan. Sila cuba lagi.');
+   parseContentDraftAcknowledgement(await response.json(),response.status);
    setNotice('Draf kempen berjaya disimpan dalam Neon DEV. Tiada kandungan dijana atau diterbitkan.');
    pendingDraftAttempt.current=null;
    setDraft(current=>JSON.stringify(current)===submitted?initialDraft:current);
