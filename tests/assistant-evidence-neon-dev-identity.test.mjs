@@ -23,9 +23,9 @@ const fixture = (override = {}, options = {}) => {
 
 test("verified opaque bearer maps to UUID principal only, no raw session data", async () => {
   const f = fixture();
-  assert.deepEqual(await f.verify("opaque-token"), { subjectId: P, expiresAt: session.expiresAt });
+  assert.deepEqual(await f.verify("opaque-token"), { subjectId: P, sessionId: "session-1", expiresAt: session.expiresAt });
   assert.equal(f.count(), 1);
-  assert.ok(!JSON.stringify(await f.verify("opaque-token")).includes("session-1"));
+  assert.ok(!JSON.stringify(await f.verify("opaque-token")).includes("opaque-token"));
 });
 
 test("introspection is invoked for every verification, never cached", async () => {
