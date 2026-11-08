@@ -7,7 +7,7 @@ import { projectReadOnlyEvidence } from "./assistant-evidence-bridge.ts";
 import type { BciProduct, EvidenceRow, ReadOnlyEvidenceSnapshot } from "./assistant-evidence-bridge.ts";
 
 type Selection = Readonly<{ tenantId: string; product: BciProduct }>;
-type VerifiedPrincipal = Readonly<{ subjectId: string; expiresAt: string }>;
+type VerifiedPrincipal = Readonly<{ subjectId: string; expiresAt: string; sessionId?: string }>;
 
 export interface ReadEvidenceDependencies {
   /** Check cryptographic token issuer/audience/expiry AND live revocation, on each call. */
@@ -102,6 +102,9 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
       const nowAfterRead = deps.now ? deps.now() : Date.now();
       if (!stillVerified || stillVerified.subjectId !== principal.subjectId ||
           stillVerified.expiresAt !== principal.expiresAt ||
+          (principal.sessionId !== undefined &&
+            (typeof principal.sessionId !== "string" || !ID.test(principal.sessionId) ||
+              stillVerified.sessionId !== principal.sessionId)) ||
           !Number.isFinite(nowAfterRead) ||
           Date.parse(principal.expiresAt) <= nowAfterRead) {
         return reply(401, { error: "authentication_required" });
