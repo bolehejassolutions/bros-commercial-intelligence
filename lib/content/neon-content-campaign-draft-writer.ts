@@ -107,11 +107,16 @@ export function createContentCampaignDraftWriter(transaction:Transaction){
    // Conflict must match original payload and workspace. Never reuse a key for another request.
    const existing=(await query(`SELECT r.campaign_id, (r.workspace_id=$4::uuid AND r.payload=$5::jsonb) AS same_request,
       (c.id IS NOT NULL AND c.tenant_id=r.tenant_id AND c.owner_principal_id=r.owner_principal_id
-       AND c.workspace_id=r.workspace_id AND c.status='draft') AS valid_campaign
+       AND c.workspace_id=r.workspace_id AND c.status='draft'
+       AND c.product_service=$6 AND c.audience=$7 AND c.description=$8
+       AND c.problem=$9 AND c.objective=$10 AND c.duration_days=$11
+       AND c.platforms=$12::text[]) AS valid_campaign
       FROM content_dev.campaign_draft_requests r
       LEFT JOIN content_dev.campaigns c ON c.id=r.campaign_id AND c.tenant_id=r.tenant_id
       WHERE r.tenant_id=$1::uuid AND r.owner_principal_id=$2::uuid AND r.idempotency_key=$3`,
-      [tenant,principal.userId,key,workspaceId,payload])).rows;
+      [tenant,principal.userId,key,workspaceId,payload,draft.product_service,
+       draft.audience,draft.description,draft.problem,draft.objective,
+       draft.duration_days,draft.platforms])).rows;
    if(existing.length!==1||existing[0].same_request!==true||
       existing[0].valid_campaign!==true||!UUID.test(String(existing[0].campaign_id)))deny();
    return {id:existing[0].campaign_id,status:'draft',replayed:true};
