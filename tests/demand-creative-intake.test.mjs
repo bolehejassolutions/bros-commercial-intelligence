@@ -56,3 +56,18 @@ test("prompt-only CONTENT preset registry cannot be treated as media or editoria
   };
   assert.throws(() => prepareDemandCreativeIntake(tenantId, draft, media), denied);
 });
+
+test("PNG creative intake rejects truncated signature, malformed IHDR and invalid dimensions", () => {
+  for (const bytes of [
+    media.subarray(0, 24),
+    Uint8Array.from(media, (v, i) => i === 11 ? 12 : v),
+    Uint8Array.from(media, (v, i) => i === 19 ? 0 : v),
+    Uint8Array.from(media, (v, i) => i === 23 ? 0 : v),
+    Uint8Array.from(media, (v, i) => i === media.length - 8 ? 0 : v),
+    Uint8Array.from(media, (v, i) => i === 17 ? 33 : v),
+  ]) {
+    const record = { ...approved, bytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex") };
+    assert.throws(() => prepareDemandCreativeIntake(tenantId, record, bytes), denied);
+  }
+});
