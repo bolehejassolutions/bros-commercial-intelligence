@@ -10,7 +10,7 @@ import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-pre
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
 import {contentWorkspaceReadError} from '@/lib/content/neon-content-workspace-http-error';
-import {shouldResetContentDraftOnWorkspaceSwitch} from '@/lib/content/neon-content-workspace-switch';
+import {shouldResetContentDraftOnWorkspaceSwitch,reconcileContentWorkspaceSelection} from '@/lib/content/neon-content-workspace-switch';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
@@ -112,6 +112,16 @@ export default function ContentWorkspaceClient(){
  // Keep the currently selected tenant visible to asynchronous save completions.
  const selectedWorkspaceRef=useRef(selected);
  selectedWorkspaceRef.current=selected;
+ // The index loader may replace the selected workspace after membership changes.
+ // Reset tenant-scoped unsaved input for *every* selection transition, not only
+ // button clicks, including index refresh fallback and loss of membership.
+ const previousWorkspaceRef=useRef(selected);
+ useEffect(()=>{
+  if(!shouldResetContentDraftOnWorkspaceSwitch(previousWorkspaceRef.current,selected))return;
+  previousWorkspaceRef.current=selected;
+  setDraft(initialDraft);setError('');setNotice('');
+  setDetailLoad(initialWorkspaceLoad());
+ },[selected]);
  useEffect(()=>{
   let active=true;
   (async()=>{
@@ -120,7 +130,7 @@ export default function ContentWorkspaceClient(){
     if(res.status===401)throw new Error('Sesi tamat. Sila log masuk semula.');
     if(!res.ok)throw new Error('Senarai workspace belum dapat dibaca.');
     const next=parseContentWorkspaceIndex(await res.json());
-    if(active){setWorkspaces(next);setSelected(previous=>next.some(w=>w.id===previous)?previous:(next[0]?.id??''));setIndexError('');}
+    if(active){setWorkspaces(next);setSelected(previous=>reconcileContentWorkspaceSelection(previous,next.map(w=>w.id)));setIndexError('');}
    }catch(e){if(active){setWorkspaces([]);setSelected('');setIndexError(e instanceof Error?e.message:'Ralat memuatkan workspace.');}}
    finally{if(active)setLoading(false);}
   })();
@@ -190,11 +200,7 @@ export default function ContentWorkspaceClient(){
       style={{background:gold,color:'#111b29',padding:'9px 13px',border:0,borderRadius:7,cursor:'pointer'}}>Cuba semula senarai workspace</button>
     </div>:workspaces.length===0?<p>Tiada workspace yang dipautkan kepada identiti Neon Auth ini. Semak keahlian CONTENT sebelum meneruskan.</p>:
     <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>{workspaces.map(workspace=><button key={workspace.id} type="button"
-     onClick={()=>{if(!shouldResetContentDraftOnWorkspaceSwitch(selected,workspace.id))return;
-      // Draft input is tenant-scoped. Never carry workspace A's unsaved fields
-      // into workspace B where they could be submitted by mistake.
-      setDraft(initialDraft);setError('');setNotice('');
-      setDetailLoad(initialWorkspaceLoad());setSelected(workspace.id);}}
+     onClick={()=>{if(shouldResetContentDraftOnWorkspaceSwitch(selected,workspace.id))setSelected(workspace.id);}}
      aria-pressed={selected===workspace.id}
      style={{border:'1px solid '+(selected===workspace.id?gold:'#526580'),background:selected===workspace.id?'#39432e':'#1a2b43',color:'#f4efe1',padding:'10px 16px',borderRadius:8,cursor:'pointer'}}>
      {workspace.name}</button>)}</div>}
