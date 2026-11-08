@@ -85,9 +85,7 @@ export function createContentCampaignDraftWriter(transaction:Transaction){
      VALUES ($1::uuid,$2::uuid,$3,$4::uuid,$5::jsonb)
      ON CONFLICT (tenant_id,owner_principal_id,idempotency_key) DO NOTHING
      RETURNING idempotency_key`,
-     [tenant,principal.userId,key,workspaceId,payload,draft.product_service,
-       draft.audience,draft.description,draft.problem,draft.objective,
-       draft.duration_days,draft.platforms])).rows;
+     [tenant,principal.userId,key,workspaceId,payload])).rows;
    if(reserved.length>1)deny();
    if(reserved.length===1){
      const created=(await query(`INSERT INTO content_dev.campaigns
@@ -116,7 +114,9 @@ export function createContentCampaignDraftWriter(transaction:Transaction){
       FROM content_dev.campaign_draft_requests r
       LEFT JOIN content_dev.campaigns c ON c.id=r.campaign_id AND c.tenant_id=r.tenant_id
       WHERE r.tenant_id=$1::uuid AND r.owner_principal_id=$2::uuid AND r.idempotency_key=$3`,
-      [tenant,principal.userId,key,workspaceId,payload])).rows;
+      [tenant,principal.userId,key,workspaceId,payload,draft.product_service,
+       draft.audience,draft.description,draft.problem,draft.objective,
+       draft.duration_days,draft.platforms])).rows;
    if(existing.length!==1||existing[0].same_request!==true||
       existing[0].valid_campaign!==true||!UUID.test(String(existing[0].campaign_id)))deny();
    return {id:existing[0].campaign_id,status:'draft',replayed:true};
