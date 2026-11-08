@@ -26,7 +26,7 @@ function signature(mime: CreativeRecord["mime"], data: Uint8Array): boolean {
   if (mime === "image/png") {
     // PNG requires a complete, bounded IHDR and IEND, not merely an
     // eight-byte magic prefix. Decoding/visual QA remains CONTENT-owned.
-    if (data.length < 45 ||
+    if (data.length < 44 ||
         ![137,80,78,71,13,10,26,10].every((v,i) => data[i] === v) ||
         !(data[8] === 0 && data[9] === 0 && data[10] === 0 && data[11] === 13) ||
         !(data[12] === 73 && data[13] === 72 && data[14] === 68 && data[15] === 82)) return false;
