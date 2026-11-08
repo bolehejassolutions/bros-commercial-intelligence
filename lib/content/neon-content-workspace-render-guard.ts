@@ -20,3 +20,16 @@ export function isContentDraftWorkspaceSettled(
 ):boolean{
  return Boolean(selectedWorkspaceId)&&selectedWorkspaceId===lastResetWorkspaceId;
 }
+
+/** Index membership must be freshly confirmed before any tenant-scoped UI is
+ * exposed or a draft is submitted. Cached details are not authorization.
+ */
+export function isContentWorkspaceIndexReady(
+ loading:boolean,
+ indexError:string,
+ selectedWorkspaceId:string,
+ availableWorkspaceIds:readonly string[],
+):boolean{
+ return !loading&&!indexError&&Boolean(selectedWorkspaceId)&&
+  availableWorkspaceIds.includes(selectedWorkspaceId);
+}
