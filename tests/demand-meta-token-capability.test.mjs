@@ -35,9 +35,15 @@ test("unsupported self-debug stays unverified while a complete permission read c
   assert.equal(r.permissionReadbackVerified, true); assert.equal(r.debugReadbackVerified, false);
   assert.equal(r.appBindingVerified, false); assert.equal(r.adsManagement, "NOT_GRANTED"); assert.equal(r.debugCode, null);
 });
-test("empty, malformed, paginated and conflicting metadata never become permission proof", async () => {
+test("permission readback is reported without falsely claiming independent debug corroboration", async () => {
   const conflict = fixture({ scopes: ["ads_read"], permissionScopes: ["ads_read", "ads_management"] });
-  assert.equal((await inspectExistingDemandMetaToken(token, conflict.transport, now)).adsManagement, "UNVERIFIED");
+  const reported = await inspectExistingDemandMetaToken(token, conflict.transport, now);
+  assert.equal(reported.adsManagement, "GRANTED");
+  assert.equal(reported.permissionReadbackVerified, true);
+  assert.equal(reported.debugReadbackVerified, false);
+  assert.equal(reported.appBindingVerified, false);
+  assert.equal(reported.managementConnectionVerified, false);
+  assert.equal(reported.executionAllowed, false);
   const empty = fixture({ empty: true, debugCode: 100 });
   assert.equal((await inspectExistingDemandMetaToken(token, empty.transport, now)).adsManagement, "UNVERIFIED");
   const f = fixture({ debugCode: 100 });
