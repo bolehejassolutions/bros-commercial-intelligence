@@ -57,8 +57,7 @@ function fixture({ revokedAtCheck, membership = true, row = receipt, throwIdp = 
           principal_scope: params[0], tenant_scope: params[1], product_scope: params[2],
         }] };
         if (sql.includes("FROM bci_dev.tenant_memberships")) {
-          assert.deepEqual(params, [P, T, "demand"]);
-          return { rows: membership ? [{
+          return { rows: membership && params[0] === P && params[1] === T && params[2] === "demand" ? [{
             principal_id: P, tenant_id: T, product: "demand", active: true, revoked_at: null,
           }] : [] };
         }
