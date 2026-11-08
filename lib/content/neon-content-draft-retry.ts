@@ -26,3 +26,12 @@ export function prepareContentDraftRetry(
 export function isContentDraftSaveFeedbackCurrent(submittedWorkspace:string,currentWorkspace:string):boolean {
  return UUID.test(submittedWorkspace)&&submittedWorkspace===currentWorkspace;
 }
+
+/** Only the exact in-flight attempt may clear the pending retry identity.
+ * A later attempt must survive an older POST acknowledgement.
+ */
+export function shouldClearContentDraftAttempt(
+ pending:ContentDraftAttempt|null,completed:ContentDraftAttempt
+):boolean {
+ return pending===completed;
+}

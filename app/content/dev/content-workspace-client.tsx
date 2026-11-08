@@ -3,7 +3,7 @@
  * No generative, credit, billing, campaign launch or publishing controls.
  */
 import {useEffect,useRef,useState,type FormEvent} from 'react';
-import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
+import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,shouldClearContentDraftAttempt,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
@@ -150,10 +150,13 @@ export default function ContentWorkspaceClient(){
    parseContentDraftAcknowledgement(await response.json(),response.status);
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
     setNotice('Draf kempen berjaya disimpan dalam Neon DEV. Tiada kandungan dijana atau diterbitkan.');
-   pendingDraftAttempt.current=null;
+   // A later save may have replaced this attempt while the POST was pending.
+   // Never clear its retry key or mutate a different workspace's form.
+   if(shouldClearContentDraftAttempt(pendingDraftAttempt.current,attempt))pendingDraftAttempt.current=null;
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
     setDraft(current=>JSON.stringify(current)===submitted?initialDraft:current);
-   setRefresh(value=>value+1);
+   if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
+    setRefresh(value=>value+1);
   }catch(e){if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
    setError(e instanceof Error?e.message:'Ralat menyimpan draf.');}
   finally{setSaving(false);}
