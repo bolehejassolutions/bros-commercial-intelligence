@@ -88,6 +88,12 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
       // A restricted repository must enforce its SQL LIMIT independently; never
       // silently truncate an oversized result and misrepresent it as a complete read.
       if (!Array.isArray(rows) || rows.length > 20) return reply(503, { error: "read_unavailable" });
+      // A repository returning another tenant or product is an isolation breach,
+      // not an empty-data result. Deny the whole read before projecting anything.
+      if (rows.some(row => !row || row.tenantId !== selection.tenantId ||
+          row.product !== selection.product)) {
+        return reply(503, { error: "read_unavailable" });
+      }
       const scoped = {
         identityVerifiedByServer: true as const,
         tenantMembershipVerifiedByServer: true as const,
