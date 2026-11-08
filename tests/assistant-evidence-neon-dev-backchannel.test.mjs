@@ -89,3 +89,39 @@ test("transport is not a live Neon Auth proof; no network happens until injected
   assert.equal(called, false);
   assert.equal(typeof introspect, "function");
 });
+
+test("private IPv4, IPv6, alternative IP notation and internal DNS destinations are rejected", () => {
+  const hosts = [
+    "127.0.0.1", "10.0.0.1", "172.16.0.1", "172.31.255.255",
+    "192.168.1.1", "169.254.169.254", "100.64.0.1",
+    "8.8.8.8", "[::1]", "[fc00::1]", "[fe80::1]",
+    "0x7f000001", "2130706433", "0177.0.0.1",
+    "localhost", "auth.local", "auth.internal", "intranet",
+  ];
+  for (const host of hosts) {
+    const target = "https://" + host + "/internal/introspect";
+    assert.throws(
+      () => createBusinessOsDevBackchannel({ endpoint: target, expectedOrigin: new URL(target).origin }),
+      { message: "DEV backchannel unavailable" },
+      "host must be denied: " + host
+    );
+  }
+});
+
+test("expected origin cannot carry embedded credentials or a hidden path", () => {
+  for (const expectedOrigin of [
+    "https://user:password@auth.example.test",
+    "https://auth.example.test/path",
+    "https://auth.example.test?query=1",
+    "https://auth.example.test#fragment",
+  ]) assert.throws(
+    () => createBusinessOsDevBackchannel({ endpoint, expectedOrigin }),
+    { message: "DEV backchannel unavailable" }
+  );
+});
+
+test("a configured HTTPS DNS hostname remains usable with the injected test transport", async () => {
+  const f = fixture();
+  assert.deepEqual(await f.introspect("opaque-token"), good);
+  assert.equal(f.calls.length, 1);
+});
