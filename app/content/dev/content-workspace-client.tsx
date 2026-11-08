@@ -180,7 +180,7 @@ export default function ContentWorkspaceClient(){
     cache:'no-store',credentials:'same-origin'
    });
    if(!readback.ok)throw new Error('Draf diterima tetapi bacaan semula gagal. Cuba semula dengan selamat.');
-   const verified=confirmContentDraftReadback(await readback.json(),selected,receipt.id);
+   const verified=confirmContentDraftReadback(await readback.json(),selected,receipt.id,draft);
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current)){
     setDetailLoad(loadedWorkspace(verified));
     setNotice('Draf kempen disimpan dan disahkan melalui bacaan semula Neon DEV. Tiada kandungan dijana atau diterbitkan.');
