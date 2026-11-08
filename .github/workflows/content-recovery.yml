@@ -4,6 +4,7 @@ on:
     paths:
       - 'lib/content/**'
       - 'tests/neon-content-*.test.mjs'
+      - 'tests/content-draft-readback.test.mjs'
       - 'migrations/content_dev/**'
       - 'app/api/content/dev/**'
       - 'app/api/auth/**'
@@ -29,4 +30,4 @@ jobs:
       - name: Typecheck application and CONTENT adapters
         run: npx tsc --noEmit --incremental false
       - name: Run CONTENT security and idempotency unit tests
-        run: node --test tests/neon-content-*.test.mjs
+        run: node --test tests/neon-content-*.test.mjs tests/content-draft-readback.test.mjs
