@@ -27,3 +27,21 @@ Before any endpoint/MCP integration, additionally require reviewed credential st
 Run: `node --experimental-strip-types --test tests/assistant-evidence-bridge.test.mjs`
 
 Source decisions: [Primary Drive approved BROS architecture](https://docs.google.com/document/d/1AmnN8agBGkMNCVMzQ6esJ1neWtKVuvqBa-F_j3U7rGM/edit) and [portfolio shared intelligence contract](PORTFOLIO_SHARED_INTELLIGENCE_CONTRACT.md).
+
+
+## DEV-only authenticated request adapter — PR #40 follow-on
+
+`lib/bci/assistant-evidence-authenticated-read.ts` now contains a **non-routed**, injectable HTTP request contract for a future private BROS Business OS evidence tool. This is a synthetic DEV security harness, not live authentication and not a deployed endpoint. It has no configured token verifier or database repository.
+
+Its enforced sequence is:
+
+1. Reject every non-`GET` method; additionally deny when `NODE_ENV=production`.
+2. Parse an exact allowlisted path with **one** tenant and one `content`/`demand` product selector; reject arbitrary actor/role fields, unexpected query keys and duplicate selectors.
+3. Require a bearer credential **and invoke a trusted, server-injected verifier**. An unchecked JWT claim, client-supplied `user_id`, or inferred user metadata is never accepted as authentication.
+4. Check the verified subject's expiration, then require a separate **authoritative server-injected membership and product-grant decision** for that exact tenant and product.
+5. Ask an independent scoped repository to read a maximum of 20 receipts for the same tenant/product. Filter the returned rows a second time with the existing safe projection.
+6. Return only allowlisted evidence metadata/metrics, with `Cache-Control: private, no-store`, without broad CORS access. Return generic 401/403/503 errors without raw backend diagnostics or access tokens.
+
+`tests/assistant-evidence-authenticated-read.test.mjs` exercises this with synthetic identities, grants and data. Cases cover missing/revoked/expired tokens, grant rejection before reads, tenant/product spoofing and wrong-scope rows, malformed selectors, method rejection, provider failures, cache controls, limited reads and secret redaction. Test success proves the injected contract's fail-closed behavior in the CI fixture, **NOT a real IdP cryptographic check, live tenant membership, actual DB RLS, authenticated HTTP endpoint or ChatGPT plugin integration**.
+
+**Required next implementation gates (unchanged):** wire a reviewed independent session verifier and authoritative membership store, use a restricted SQL role/session and database-level tenant/product predicates, prove negative tests against the actual DEV provider and HTTP boundary, decide provider consent and token revocation, and obtain release approval. Do not publish a route, grant table permissions, expose admin SQL or connect customer data as part of this PR.
