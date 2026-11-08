@@ -47,3 +47,21 @@ test('missing stored fields cannot be mistaken for an intact brief',()=>{
  assert.throws(()=>confirm([row]),ContentDraftReadbackUnverified);
  assert.throws(()=>confirm([stored()],null),ContentDraftReadbackUnverified);
 });
+
+test('in-flight form edits do not invalidate the immutable submitted draft readback',()=>{
+ const editable={...submitted,platforms:[...submitted.platforms]};
+ const submittedBody=JSON.stringify(editable);
+ const submittedSnapshot=JSON.parse(submittedBody);
+ // Mimics a user editing the form after POST begins but before the independent GET.
+ editable.audience='Changed while saving';
+ editable.platforms.push('instagram');
+ assert.equal(confirm([stored()],submittedSnapshot).campaigns.length,1);
+ assert.throws(()=>confirm([stored()],editable),ContentDraftReadbackUnverified);
+ assert.equal(submittedBody,JSON.stringify(submittedSnapshot));
+});
+test('the captured request snapshot cannot silently confirm a different persisted brief',()=>{
+ const editable={...submitted};
+ const snapshot=JSON.parse(JSON.stringify(editable));
+ editable.problem='Updated after request dispatch';
+ assert.throws(()=>confirm([stored({problem:'Unexpected server mutation'})],snapshot),ContentDraftReadbackUnverified);
+});
