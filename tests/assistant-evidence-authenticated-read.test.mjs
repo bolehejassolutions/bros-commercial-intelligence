@@ -230,3 +230,75 @@ test("repository at the exact 20-row boundary remains readable", async () => {
   assert.equal(body.receipts.length, 20);
   assert.equal(body.result, "observed_rows");
 });
+
+test("grant revoked after SQL completes blocks disclosure of formerly scoped evidence", async () => {
+  let grants = 0;
+  let reads = 0;
+  const { handler } = fixture({
+    hasEvidenceReadGrant: async () => ++grants === 1,
+    listScopedReceipts: async () => { reads++; return [record()]; },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 403);
+  assert.equal(await response.text(), JSON.stringify({ error: "access_denied" }));
+  assert.equal(grants, 2);
+  assert.equal(reads, 1);
+});
+
+test("bearer revoked during SQL read returns 401 before post-read membership check", async () => {
+  let verifies = 0, grants = 0;
+  const { handler } = fixture({
+    verifyBearerToken: async () => ++verifies === 1
+      ? { subjectId: "user-1", expiresAt: "2026-11-08T06:00:00Z" } : null,
+    hasEvidenceReadGrant: async () => { grants++; return true; },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
+  assert.equal(verifies, 2);
+  assert.equal(grants, 1);
+});
+
+test("changed post-read subject and changed token expiration are denied", async () => {
+  for (const second of [
+    { subjectId: "user-2", expiresAt: "2026-11-08T06:00:00Z" },
+    { subjectId: "user-1", expiresAt: "2026-11-08T07:00:00Z" },
+    { subjectId: "user-1", expiresAt: "2026-11-08T04:59:59Z" },
+  ]) {
+    let verifies = 0;
+    const { handler } = fixture({
+      verifyBearerToken: async () => ++verifies === 1
+        ? { subjectId: "user-1", expiresAt: "2026-11-08T06:00:00Z" } : second,
+    });
+    const response = await handler(get());
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "authentication_required" });
+    assert.equal(verifies, 2);
+  }
+});
+
+test("token that expires while repository reads cannot disclose evidence", async () => {
+  let clocks = 0;
+  const { handler } = fixture({
+    now: () => ++clocks === 1 ? NOW : Date.parse("2026-11-08T06:00:00Z"),
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
+  assert.equal(clocks, 2);
+});
+
+test("post-read authoritative membership service failure returns generic 503", async () => {
+  let checks = 0;
+  const { handler } = fixture({
+    hasEvidenceReadGrant: async () => {
+      if (++checks === 2) throw Error("PRIVATE_GRANT_BACKEND_DIAGNOSTIC");
+      return true;
+    },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 503);
+  const body = await response.text();
+  assert.equal(body, JSON.stringify({ error: "read_unavailable" }));
+  assert.equal(checks, 2);
+});
