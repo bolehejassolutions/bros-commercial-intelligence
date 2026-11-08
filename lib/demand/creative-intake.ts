@@ -27,6 +27,7 @@ function validPngChunks(data: Uint8Array): boolean {
   const read32 = (i: number) =>
     (data[i] * 0x1000000 + data[i + 1] * 65536 + data[i + 2] * 256 + data[i + 3]) >>> 0;
   let offset = 8, count = 0, seenIdat = false, seenEnd = false;
+  let idatClosed = false;
   while (offset + 12 <= data.length && count++ < 512) {
     const length = read32(offset);
     if (length > data.length - offset - 12) return false;
@@ -34,7 +35,17 @@ function validPngChunks(data: Uint8Array): boolean {
     if (!/^[A-Za-z]{4}$/.test(type)) return false;
     if (count === 1 && (type !== "IHDR" || length !== 13)) return false;
     if (type === "IHDR" && count !== 1) return false;
-    if (type === "IDAT") seenIdat = true;
+    // Reject unknown critical chunks, repeated IHDR, and noncontiguous IDAT.
+    // Ancillary chunks may be present, but cannot interrupt an IDAT sequence
+    // that later resumes. These are PNG structural rules, not decode proof.
+    if (type[0] === type[0].toUpperCase() &&
+        !["IHDR", "PLTE", "IDAT", "IEND"].includes(type)) return false;
+    if (type === "IDAT") {
+      if (idatClosed || length === 0) return false;
+      seenIdat = true;
+    } else if (seenIdat) idatClosed = true;
+    if (type === "PLTE" && (seenIdat || length === 0 || length % 3 !== 0 ||
+        length > 768)) return false;
     if (type === "IEND" && (length !== 0 || !seenIdat)) return false;
     let crc = 0xffffffff;
     for (let i = offset + 4; i < offset + 8 + length; i++) {
@@ -57,7 +68,18 @@ function signature(mime: CreativeRecord["mime"], data: Uint8Array): boolean {
         !(data[12] === 73 && data[13] === 72 && data[14] === 68 && data[15] === 82)) return false;
     const width = (data[16] * 0x1000000 + (data[17] << 16) + (data[18] << 8) + data[19]) >>> 0;
     const height = (data[20] * 0x1000000 + (data[21] << 16) + (data[22] << 8) + data[23]) >>> 0;
+    // IHDR: legal bit-depth/color-type pairs, compression/filter method 0,
+    // and interlace method 0 (none) or 1 (Adam7).
+    const bitDepth = data[24], colorType = data[25];
+    const legalDepths: Record<number, readonly number[]> = {
+      0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8],
+      4: [8, 16], 6: [8, 16],
+    };
     return width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
+      Array.isArray(legalDepths[colorType]) &&
+      legalDepths[colorType].includes(bitDepth) &&
+      data[26] === 0 && data[27] === 0 &&
+      (data[28] === 0 || data[28] === 1) &&
       validPngChunks(data) &&
       data[data.length - 12] === 0 && data[data.length - 11] === 0 &&
       data[data.length - 10] === 0 && data[data.length - 9] === 0 &&
