@@ -12,7 +12,7 @@ const draft={product_service:'Example',audience:'Owners',description:'Campaign o
 const key='safe_retry_key_123';
 const role={name:'content_dev_draft_writer_v2',login:'content_dev_draft_writer_v2',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0};
 const posture={db:'bros_intelligence_dev',forced:2,staging:false,credits:false,jobs:false,writes:true,membership:true};
-function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existing=[],contextPrincipal=A}={}){
+function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existing=[],contextPrincipal=A,linkSuccess=true}={}){
  const calls=[];
  const writer=createContentCampaignDraftWriter(async fn=>fn(async(sql,params)=>{
   calls.push({sql,params});
@@ -24,7 +24,7 @@ function fixture({foreign=false,roleRow=role,postureRow=posture,insert=[],existi
   if(sql.includes('pg_advisory_xact_lock'))return {rows:[{lock_result:null}]};
   if(sql.includes('INSERT INTO content_dev.campaign_draft_requests'))return {rows:insert.length?[{idempotency_key:key}]:[]};
   if(sql.includes('INSERT INTO content_dev.campaigns'))return {rows:insert};
-  if(sql.includes('UPDATE content_dev.campaign_draft_requests'))return {rows:insert.length?[{campaign_id:C}]:[]};
+  if(sql.includes('UPDATE content_dev.campaign_draft_requests'))return {rows:insert.length&&linkSuccess?[{campaign_id:C}]:[]};
   if(sql.includes('SELECT r.campaign_id'))return {rows:existing};
   throw Error('Unexpected SQL');
  }));
@@ -134,4 +134,20 @@ test('same idempotency key cannot replay a draft whose stored brief fails integr
  await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
  assert.equal(calls.some(x=>x.sql.includes('INSERT INTO content_dev.campaigns')),false);
  assert.equal(calls.some(x=>x.sql.includes('UPDATE content_dev.campaign_draft_requests')),false);
+});
+
+// A reservation and campaign INSERT must never be reported as saved when the
+// final idempotency link cannot be committed. The injected transaction rejects;
+// the real PostgreSQL integration suite separately owns rollback verification.
+test('failed reservation link denies success after campaign insert',async()=>{
+ const {writer,calls}=fixture({insert:[{id:C}],linkSuccess:false});
+ await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
+ assert.equal(calls.filter(x=>x.sql.includes('INSERT INTO content_dev.campaigns')).length,1);
+ assert.equal(calls.filter(x=>x.sql.includes('UPDATE content_dev.campaign_draft_requests')).length,1);
+});
+
+test('existing idempotency reservation with missing campaign link fails closed',async()=>{
+ const {writer,calls}=fixture({existing:[{campaign_id:null,same_request:true,valid_campaign:false}]});
+ await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
+ assert.equal(calls.some(x=>x.sql.includes('INSERT INTO content_dev.campaigns')),false);
 });
