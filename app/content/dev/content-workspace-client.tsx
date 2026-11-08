@@ -10,6 +10,7 @@ import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-pre
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
 import {contentWorkspaceReadError} from '@/lib/content/neon-content-workspace-http-error';
+import {shouldResetContentDraftOnWorkspaceSwitch} from '@/lib/content/neon-content-workspace-switch';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
@@ -189,7 +190,7 @@ export default function ContentWorkspaceClient(){
       style={{background:gold,color:'#111b29',padding:'9px 13px',border:0,borderRadius:7,cursor:'pointer'}}>Cuba semula senarai workspace</button>
     </div>:workspaces.length===0?<p>Tiada workspace yang dipautkan kepada identiti Neon Auth ini. Semak keahlian CONTENT sebelum meneruskan.</p>:
     <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>{workspaces.map(workspace=><button key={workspace.id} type="button"
-     onClick={()=>{if(workspace.id===selected)return;
+     onClick={()=>{if(!shouldResetContentDraftOnWorkspaceSwitch(selected,workspace.id))return;
       // Draft input is tenant-scoped. Never carry workspace A's unsaved fields
       // into workspace B where they could be submitted by mistake.
       setDraft(initialDraft);setError('');setNotice('');
