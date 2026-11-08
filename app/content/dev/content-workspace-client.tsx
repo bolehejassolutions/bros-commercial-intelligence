@@ -165,6 +165,9 @@ export default function ContentWorkspaceClient(){
    // Preserve the server-side idempotency key if the prior POST committed but
    // its response was lost. A changed draft or workspace gets a fresh key.
    const submitted=JSON.stringify(draft);
+   // The form can change while POST/readback is pending. Verify the immutable
+   // submitted payload, never the latest editable form state.
+   const submittedDraft:Draft=JSON.parse(submitted);
    const attempt=prepareContentDraftRetry(pendingDraftAttempt.current,selected,draft,()=>crypto.randomUUID());
    pendingDraftAttempt.current=attempt;
    const response=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected)+'/campaign-drafts',{
@@ -180,7 +183,7 @@ export default function ContentWorkspaceClient(){
     cache:'no-store',credentials:'same-origin'
    });
    if(!readback.ok)throw new Error('Draf diterima tetapi bacaan semula gagal. Cuba semula dengan selamat.');
-   const verified=confirmContentDraftReadback(await readback.json(),selected,receipt.id,draft);
+   const verified=confirmContentDraftReadback(await readback.json(),selected,receipt.id,submittedDraft);
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current)){
     setDetailLoad(loadedWorkspace(verified));
     setNotice('Draf kempen disimpan dan disahkan melalui bacaan semula Neon DEV. Tiada kandungan dijana atau diterbitkan.');
