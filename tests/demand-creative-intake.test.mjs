@@ -71,3 +71,25 @@ test("PNG creative intake rejects truncated signature, malformed IHDR and invali
     assert.throws(() => prepareDemandCreativeIntake(tenantId, record, bytes), denied);
   }
 });
+
+test("WebP intake enforces RIFF declared length, exact chunk boundary and recognized codec", () => {
+  const webp = Uint8Array.from([
+    82,73,70,70,16,0,0,0,87,69,66,80,
+    86,80,56,76,3,0,0,0,47,0,0,0,
+  ]);
+  const withMedia = bytes => ({
+    ...approved, mime: "image/webp", bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+  const result = prepareDemandCreativeIntake(tenantId, withMedia(webp), webp);
+  assert.equal(result.metaUploadAllowed, false);
+  assert.equal(result.campaignExecutionAllowed, false);
+  for (const bad of [
+    webp.subarray(0, 20),
+    Uint8Array.from([...webp, 0]),
+    Uint8Array.from(webp, (v, i) => i === 4 ? 15 : v),
+    Uint8Array.from(webp, (v, i) => i === 12 ? 88 : v),
+    Uint8Array.from(webp, (v, i) => i === 16 ? 4 : v),
+    Uint8Array.from(webp, (v, i) => i === 16 ? 0 : v),
+  ]) assert.throws(() => prepareDemandCreativeIntake(tenantId, withMedia(bad), bad), denied);
+});
