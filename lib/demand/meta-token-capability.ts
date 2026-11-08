@@ -49,8 +49,16 @@ export async function inspectExistingDemandMetaToken(token: unknown, transport: 
     debugCode: debug.code, debugSubcode: debug.subcode, accountCode: account.code, accountSubcode: account.subcode };
   let permissionScopes: string[] | null = null, debugScopes: string[] | null = null;
   const permissions = permission.body?.data;
-  if (Array.isArray(permissions) && permissions.length > 0 && permissions.length <= 100 &&
-      !(object(permission.body?.paging) && permission.body.paging.next) &&
+  // An incomplete, malformed or cursor-advanced page cannot prove a missing
+  // grant (NOT_GRANTED) or corroborate one (GRANTED). Treat it as UNVERIFIED.
+  // A standard first page may include cursors, but neither navigation edge.
+  const paging = permission.body?.paging;
+  const completePermissionPage = permission.body !== null &&
+    (paging === undefined ||
+      (object(paging) && !Object.hasOwn(paging, "next") &&
+        !Object.hasOwn(paging, "previous")));
+  if (completePermissionPage && Array.isArray(permissions) &&
+      permissions.length > 0 && permissions.length <= 100 &&
       permissions.every(x => object(x) && typeof x.permission === "string" &&
         ["granted", "declined", "expired"].includes(String(x.status)))) {
     permissionScopes = permissions.filter(x => x.status === "granted").map(x => x.permission as string);
