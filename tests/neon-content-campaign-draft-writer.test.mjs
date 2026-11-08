@@ -45,6 +45,17 @@ test('replay checks JSONB equality in SQL, not JS property order',async()=>{
  const {writer,calls}=fixture({existing:[{campaign_id:C,same_request:true,valid_campaign:true}]});
  assert.deepEqual(await writer(principal,W,draft,key),{id:C,status:'draft',replayed:true});
  assert.match(calls.at(-1).sql,/r\.payload=\$5::jsonb/);
+ assert.match(calls.at(-1).sql,/c\.product_service=\$6/);
+ assert.match(calls.at(-1).sql,/c\.audience=\$7/);
+ assert.match(calls.at(-1).sql,/c\.description=\$8/);
+ assert.match(calls.at(-1).sql,/c\.problem=\$9/);
+ assert.match(calls.at(-1).sql,/c\.objective=\$10/);
+ assert.match(calls.at(-1).sql,/c\.duration_days=\$11/);
+ assert.match(calls.at(-1).sql,/c\.platforms=\$12::text\[\]/);
+ assert.deepEqual(calls.at(-1).params.slice(5),[
+  draft.product_service,draft.audience,draft.description,draft.problem,
+  draft.objective,draft.duration_days,draft.platforms
+ ]);
 });
 test('mismatched replay or stale campaign link fails closed',async()=>{
  for(const row of [{campaign_id:C,same_request:false,valid_campaign:true},{campaign_id:C,same_request:true,valid_campaign:false}]){
@@ -116,4 +127,11 @@ test('malformed campaign input is rejected before any database connection',async
   await assert.rejects(writer(principal,W,invalid,key),ContentReadDenied);
   assert.equal(calls.length,0);
  }
+});
+
+test('same idempotency key cannot replay a draft whose stored brief fails integrity check',async()=>{
+ const {writer,calls}=fixture({existing:[{campaign_id:C,same_request:true,valid_campaign:false}]});
+ await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
+ assert.equal(calls.some(x=>x.sql.includes('INSERT INTO content_dev.campaigns')),false);
+ assert.equal(calls.some(x=>x.sql.includes('UPDATE content_dev.campaign_draft_requests')),false);
 });
