@@ -198,3 +198,27 @@ test("production runtime guard denies the unregistered DEV handler", async () =>
     else process.env.NODE_ENV = original;
   }
 });
+
+
+test("oversized scoped repository response fails closed instead of silently truncating", async () => {
+  const { handler } = fixture({
+    listScopedReceipts: async () => Array.from({ length: 21 }, (_, i) =>
+      record({ evidenceId: `evidence-${i + 1}` })),
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "read_unavailable" });
+  assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+});
+
+test("repository at the exact 20-row boundary remains readable", async () => {
+  const { handler } = fixture({
+    listScopedReceipts: async () => Array.from({ length: 20 }, (_, i) =>
+      record({ evidenceId: `evidence-${i + 1}` })),
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.receipts.length, 20);
+  assert.equal(body.result, "observed_rows");
+});
