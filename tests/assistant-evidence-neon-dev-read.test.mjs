@@ -204,7 +204,7 @@ test("DEV HTTP handler composes verified subject, grant, scoped SQL and privacy 
   const url = "https://dev.example/internal/dev/bros-business-os/evidence?tenant_id=" + A + "&product=demand";
   const response = await handler(new Request(url, { headers: { authorization: "Bearer synthetic" } }));
   assert.equal(response.status, 200);
-  assert.deepEqual(log, ["verified", "grant", "sql"]);
+  assert.deepEqual(log, ["verified", "grant", "sql", "verified", "grant"]);
   const body = await response.json();
   assert.equal(body.access, "read_only");
   assert.equal(body.result, "observed_rows");
