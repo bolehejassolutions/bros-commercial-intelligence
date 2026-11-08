@@ -175,3 +175,21 @@ test("purchase signal comparison is fail-closed for absent aliases and never a p
    assert.throws(()=>project(scope,query,full,{...campaign,metaAttributedPurchases:bad}),
      /Invalid BROS DEMAND/);
 });
+
+test("duplicate provider action labels fail closed even when repeated values match", () => {
+ const invalid=/Invalid BROS DEMAND ad-level readback/;
+ for(const duplicate of [
+   [{action_type:"purchase",value:1},{action_type:"purchase",value:1}],
+   [{action_type:"landing_page_view",value:"3"},{action_type:"landing_page_view",value:"3"}],
+ ]) assert.throws(()=>project(scope,query,{...response,rows:[
+   {...response.rows[0],actions:duplicate},response.rows[1]]}),invalid);
+ for(const duplicate of [
+   [{action_type:"purchase",value:"50.00"},{action_type:"purchase",value:"50"}],
+   [{action_type:"landing_page_view",value:"0"},{action_type:"landing_page_view",value:"0.0"}],
+ ]) assert.throws(()=>project(scope,query,{...response,rows:[
+   {...response.rows[0],action_values:duplicate},response.rows[1]]}),invalid);
+ const normal=project();
+ assert.equal(normal.adTotalsMatchCampaign,true);
+ assert.equal(normal.verifiedOrders,null);
+ assert.equal(normal.executionAllowed,false);
+});
