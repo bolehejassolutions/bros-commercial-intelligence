@@ -151,3 +151,38 @@ test('existing idempotency reservation with missing campaign link fails closed',
  await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
  assert.equal(calls.some(x=>x.sql.includes('INSERT INTO content_dev.campaigns')),false);
 });
+
+
+test('failed link propagates rejection through transaction adapter without a success receipt',async()=>{
+ const attempted=[];
+ let committed=0,rolledBack=0;
+ const writer=createContentCampaignDraftWriter(async fn=>{
+  const pending=[];
+  try {
+   const result=await fn(async(sql,params)=>{
+    attempted.push(sql);
+    if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:A}]};
+    if(sql.includes('FROM pg_roles'))return {rows:[role]};
+    if(sql.includes('current_database()'))return {rows:[posture]};
+    if(sql.includes('FROM content_dev.workspaces'))return {rows:[{tenant_id:T}]};
+    if(sql.includes('to_regclass'))return {rows:[{table_name:'content_dev.campaign_draft_requests',can_insert:true}]};
+    if(sql.includes('pg_advisory_xact_lock'))return {rows:[{lock_result:null}]};
+    if(sql.includes('INSERT INTO content_dev.campaign_draft_requests')){pending.push('reservation');return {rows:[{idempotency_key:key}]};}
+    if(sql.includes('INSERT INTO content_dev.campaigns')){pending.push('campaign');return {rows:[{id:C}]};}
+    if(sql.includes('UPDATE content_dev.campaign_draft_requests'))return {rows:[]};
+    throw Error('Unexpected SQL');
+   });
+   committed+=pending.length;
+   return result;
+  } catch(error) {
+   rolledBack+=pending.length;
+   throw error;
+  }
+ });
+ await assert.rejects(writer(principal,W,draft,key),ContentReadDenied);
+ assert.equal(committed,0);
+ assert.equal(rolledBack,2);
+ assert.equal(attempted.filter(sql=>sql.includes('UPDATE content_dev.campaign_draft_requests')).length,1);
+});
+// This adapter-level simulation does not establish real PostgreSQL rollback.
+// Database-level atomicity requires an isolated PostgreSQL integration run.
