@@ -3,10 +3,12 @@
  * No permissions are granted by this module.
  */
 export class ContentReadDenied extends Error { constructor() { super("CONTENT access denied"); } }
+/** Valid access but too many rows for a complete response; never report this as 404. */
+export class ContentReadIncomplete extends Error { constructor() { super("CONTENT result exceeds supported read limit"); } }
 /** A LIMIT N+1 sentinel distinguishes complete reads from silent truncation. */
 export function requireCompleteContentRows<T>(rows:readonly T[],limit:number):readonly T[]{
  if(!Array.isArray(rows)||!Number.isSafeInteger(limit)||limit<1||rows.length>limit)
-  throw new ContentReadDenied();
+  throw new ContentReadIncomplete();
  return rows;
 }
 type Row = Record<string, unknown>;
