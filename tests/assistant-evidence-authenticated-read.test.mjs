@@ -40,7 +40,7 @@ test("authorized read requires identity, grant and independently scoped storage 
   const { handler, calls } = fixture();
   const res = await handler(get()), body = await res.json();
   assert.equal(res.status, 200);
-  assert.deepEqual(calls.map(x => x[0]), ["verify", "grant", "read"]);
+  assert.deepEqual(calls.map(x => x[0]), ["verify", "grant", "read", "verify", "grant"]);
   assert.deepEqual(calls[1].slice(1), ["user-1", { tenantId: "org-A", product: "demand" }]);
   assert.deepEqual(calls[2][1], { tenantId: "org-A", product: "demand", maxRows: 20 });
   assert.equal(body.access, "read_only");
