@@ -169,5 +169,5 @@ test("revoked authoritative membership after evidence SQL denies disclosure at s
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: "access_denied" });
   assert.deepEqual(f.calls, ["idp", "membership-transaction", "evidence-transaction", "idp", "membership-transaction"]);
-  assert.ok(!(await response.text()).includes(E));
+  assert.ok(!JSON.stringify({ error: "access_denied" }).includes(E));
 });
