@@ -5,6 +5,7 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,shouldClearContentDraftAttempt,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
+import {confirmContentDraftReadback} from '@/lib/content/neon-content-draft-readback';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
 import {buildContentCampaignBrief} from '@/lib/content/neon-content-campaign-brief';
 import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-preview';
@@ -172,9 +173,18 @@ export default function ContentWorkspaceClient(){
    });
    if(!response.ok)throw new Error(response.status===401?'Sesi tamat. Sila log masuk semula.':
     response.status===404?'Akses workspace tidak dibenarkan.':'Draf tidak dapat disimpan. Sila cuba lagi.');
-   parseContentDraftAcknowledgement(await response.json(),response.status);
-   if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
-    setNotice('Draf kempen berjaya disimpan dalam Neon DEV. Tiada kandungan dijana atau diterbitkan.');
+   const receipt=parseContentDraftAcknowledgement(await response.json(),response.status);
+   // A 201 receipt alone is not proof that the draft is independently readable.
+   // Preserve the idempotency key on readback failure for a safe retry.
+   const readback=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected),{
+    cache:'no-store',credentials:'same-origin'
+   });
+   if(!readback.ok)throw new Error('Draf diterima tetapi bacaan semula gagal. Cuba semula dengan selamat.');
+   const verified=confirmContentDraftReadback(await readback.json(),selected,receipt.id);
+   if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current)){
+    setDetailLoad(loadedWorkspace(verified));
+    setNotice('Draf kempen disimpan dan disahkan melalui bacaan semula Neon DEV. Tiada kandungan dijana atau diterbitkan.');
+   }
    // A later save may have replaced this attempt while the POST was pending.
    // Never clear its retry key or mutate a different workspace's form.
    if(shouldClearContentDraftAttempt(pendingDraftAttempt.current,attempt))pendingDraftAttempt.current=null;
