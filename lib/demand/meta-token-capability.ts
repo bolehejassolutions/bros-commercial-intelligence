@@ -2,7 +2,6 @@ import { metaProviderRequest, metaProviderJson } from "../marketing-operator/met
 
 const GRAPH = "https://graph.facebook.com/v24.0";
 const ACCOUNT = "act_1997776120879476";
-const APP = "1315572270590189";
 type Grant = "GRANTED" | "NOT_GRANTED" | "UNVERIFIED";
 type Readback = { body: Record<string, unknown> | null; code: number | null; subcode: number | null };
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -40,7 +39,11 @@ export async function inspectExistingDemandMetaToken(token: unknown, transport: 
   // Self-introspection is attempted with the existing token. If Meta requires
   // a separate app/developer credential, return UNVERIFIED; never infer scopes.
   const permission = await get("/me/permissions", { limit: "100" });
-  const debug = await get("/debug_token", { input_token: token });
+  // Never put bearer credentials in URL query strings: they can be retained by
+  // intermediary logs, tracing systems and provider request telemetry.
+  // Meta debug_token requires input_token in the URL for GET. Until a reviewed
+  // non-URL transport is available, app binding remains UNVERIFIED.
+  const debug: Readback = { body: null, code: null, subcode: null };
   const account = await get("/" + ACCOUNT, { fields: "id,account_id,account_status,currency,timezone_name" });
   const r = { ...empty, permissionCode: permission.code, permissionSubcode: permission.subcode,
     debugCode: debug.code, debugSubcode: debug.subcode, accountCode: account.code, accountSubcode: account.subcode };
@@ -60,7 +63,7 @@ export async function inspectExistingDemandMetaToken(token: unknown, transport: 
       (d.expires_at === 0 || d.expires_at * 1000 > now) && Array.isArray(d.scopes) &&
       d.scopes.length > 0 && d.scopes.length <= 100 && d.scopes.every(s => typeof s === "string") &&
       new Set(d.scopes).size === d.scopes.length) {
-    debugScopes = d.scopes as string[]; r.debugReadbackVerified = true; r.appBindingVerified = d.app_id === APP;
+    debugScopes = d.scopes as string[]; r.debugReadbackVerified = true; r.appBindingVerified = false;
   }
   const grant = (name: string): Grant => {
     if (permissionScopes && debugScopes && permissionScopes.includes(name) !== debugScopes.includes(name)) return "UNVERIFIED";
