@@ -102,6 +102,10 @@ export function createBusinessOsDevBackchannel(
           chunks.push(part.value);
         }
       } finally { reader.releaseLock(); }
+      // A trusted introspection service must not provide contradictory framing.
+      // Do not accept a short declared body with extra streamed bytes or a
+      // longer declared body that silently truncates before a valid JSON object.
+      if (size !== null && total !== Number(size)) return null;
       const bytes = new Uint8Array(total);
       let offset = 0;
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
