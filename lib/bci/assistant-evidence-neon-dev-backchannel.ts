@@ -9,6 +9,7 @@
  * No endpoint is supplied by default; no route or credential is provisioned.
  */
 import type { TrustedIntrospection, TrustedSession } from "./assistant-evidence-neon-dev-identity.ts";
+import { isIP } from "node:net";
 
 export type BackchannelConfig = Readonly<{
   endpoint: string;
@@ -21,6 +22,19 @@ const MAX_TOKEN = 4096;
 const SAFE_TOKEN = /^[A-Za-z0-9._~+/-]+={0,2}$/;
 const SAFE_ID = /^[A-Za-z0-9_.:-]{1,256}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// Reject literal IP destinations, private-name endpoints and non-DNS hostnames.
+// This is a configuration guard, NOT a substitute for network-level egress
+// controls against DNS rebinding or private IPs returned by DNS resolution.
+function isAllowedDnsHost(host: string): boolean {
+  const name = host.toLowerCase();
+  return isIP(name) === 0 && !name.startsWith("[") &&
+    name.includes(".") && !name.endsWith(".") &&
+    !name.endsWith(".local") && !name.endsWith(".internal") &&
+    !name.endsWith(".localhost") && name !== "localhost" &&
+    name.split(".").every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+}
+
 
 export function createBusinessOsDevBackchannel(
   config: BackchannelConfig, transport: Transport = fetch
@@ -35,9 +49,8 @@ export function createBusinessOsDevBackchannel(
       url.origin !== origin.origin || origin.pathname !== "/" ||
       origin.search || origin.hash || url.username || url.password ||
       url.search || url.hash || url.pathname === "/" ||
-      url.hostname === "localhost" || url.hostname.endsWith(".localhost") ||
-      /^(?:127|10|192\\.168)\\./.test(url.hostname) ||
-      url.hostname === "169.254.169.254" ||
+      origin.username || origin.password || origin.port !== "" ||
+      !isAllowedDnsHost(url.hostname) || !isAllowedDnsHost(origin.hostname) ||
       !Number.isInteger(config.timeoutMs ?? 3000) ||
       (config.timeoutMs ?? 3000) < 100 || (config.timeoutMs ?? 3000) > 10000) {
     throw Error("DEV backchannel unavailable");
