@@ -12,7 +12,7 @@ import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-i
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
 import {contentWorkspaceReadError} from '@/lib/content/neon-content-workspace-http-error';
 import {shouldResetContentDraftOnWorkspaceSwitch,reconcileContentWorkspaceSelection} from '@/lib/content/neon-content-workspace-switch';
-import {isContentWorkspaceDetailCurrent,isContentDraftWorkspaceSettled} from '@/lib/content/neon-content-workspace-render-guard';
+import {isContentWorkspaceDetailCurrent,isContentDraftWorkspaceSettled,isContentWorkspaceIndexReady} from '@/lib/content/neon-content-workspace-render-guard';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
@@ -117,6 +117,7 @@ export default function ContentWorkspaceClient(){
  // The index loader may replace the selected workspace after membership changes.
  // Reset tenant-scoped unsaved input for *every* selection transition, not only
  // button clicks, including index refresh fallback and loss of membership.
+ const indexReady=isContentWorkspaceIndexReady(loading,indexError,selected,workspaces.map(w=>w.id));
  const previousWorkspaceRef=useRef(selected);
  useEffect(()=>{
   if(!shouldResetContentDraftOnWorkspaceSwitch(previousWorkspaceRef.current,selected))return;
@@ -157,7 +158,7 @@ export default function ContentWorkspaceClient(){
    ?previous.platforms.filter(p=>p!==platform):[...previous.platforms,platform]}));
  }
  async function saveDraft(event:FormEvent<HTMLFormElement>){
-  event.preventDefault();if(saving||!isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)||draft.platforms.length===0)return;
+  event.preventDefault();if(saving||!indexReady||!isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)||draft.platforms.length===0)return;
   setSaving(true);setNotice('');setError('');
   try{
    // Preserve the server-side idempotency key if the prior POST committed but
@@ -207,7 +208,7 @@ export default function ContentWorkspaceClient(){
      style={{border:'1px solid '+(selected===workspace.id?gold:'#526580'),background:selected===workspace.id?'#39432e':'#1a2b43',color:'#f4efe1',padding:'10px 16px',borderRadius:8,cursor:'pointer'}}>
      {workspace.name}</button>)}</div>}
    </section>
-   {selected&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,420px),1fr))',gap:20,alignItems:'start'}}>
+   {indexReady&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,420px),1fr))',gap:20,alignItems:'start'}}>
     <section style={card}>
      <h2 style={{fontSize:20,marginTop:0}}>Kempen sedia ada</h2>
      {detailLoad.status==='loading'||detailLoad.status==='idle'||(detailLoad.status==='ready'&&!isContentWorkspaceDetailCurrent(selected,detailLoad))?<p role="status">Memuatkan kempen…</p>:
@@ -271,7 +272,7 @@ export default function ContentWorkspaceClient(){
        {['facebook','instagram','tiktok','youtube','linkedin','whatsapp'].map(p=><label key={p} style={{display:'inline-flex',alignItems:'center',gap:5,margin:'8px 12px 8px 0',textTransform:'capitalize'}}>
         <input type="checkbox" checked={draft.platforms.includes(p)} onChange={()=>togglePlatform(p)}/>{p}</label>)}
       </fieldset>
-      <button disabled={saving||draft.platforms.length===0} type="submit"
+      <button disabled={saving||!indexReady||draft.platforms.length===0} type="submit"
        style={{background:gold,border:0,borderRadius:8,color:'#111b29',fontWeight:700,padding:13,cursor:'pointer'}}>
        {saving?'Menyimpan…':'Simpan draf kempen'}
       </button>
