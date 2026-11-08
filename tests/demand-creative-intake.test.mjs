@@ -4,10 +4,12 @@ import { createHash } from "node:crypto";
 import { prepareDemandCreativeIntake } from "../lib/demand/creative-intake.ts";
 
 const tenantId = "11111111-1111-4111-8111-111111111111";
+// Valid, independently encoded 1x1 RGBA PNG: IHDR + IDAT + IEND with CRCs.
 const media = Uint8Array.from([
   137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,
-  0,0,0,1,0,0,0,1,8,6,0,0,0,0,0,0,
-  0,0,0,0,73,69,78,68,174,66,96,130,
+  0,0,0,1,0,0,0,1,8,6,0,0,0,31,21,196,137,
+  0,0,0,13,73,68,65,84,120,156,99,248,207,192,240,31,
+  0,5,0,1,255,137,153,61,29,0,0,0,0,73,69,78,68,174,66,96,130,
 ]);
 const sha256 = createHash("sha256").update(media).digest("hex");
 const approved = {
@@ -92,4 +94,24 @@ test("WebP intake enforces RIFF declared length, exact chunk boundary and recogn
     Uint8Array.from(webp, (v, i) => i === 16 ? 4 : v),
     Uint8Array.from(webp, (v, i) => i === 16 ? 0 : v),
   ]) assert.throws(() => prepareDemandCreativeIntake(tenantId, withMedia(bad), bad), denied);
+});
+
+test("PNG CRC, IDAT presence, exact chunk boundaries and forged matching hashes fail closed", () => {
+  const withMedia = bytes => ({
+    ...approved, bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+  const changed = (index, value) => Uint8Array.from(media, (v, i) => i === index ? value : v);
+  const bad = [
+    changed(29, media[29] ^ 1), // IHDR CRC corruption
+    changed(45, media[45] ^ 1), // IDAT payload corruption
+    changed(57, media[57] ^ 1), // IDAT CRC corruption
+    changed(67, media[67] ^ 1), // IEND CRC corruption
+    changed(37, 14), // IDAT declared length exceeds its actual chunk
+    changed(36, 88), // missing IDAT (unrecognized replacement)
+    Uint8Array.from([...media, 0]), // bytes after IEND
+    Uint8Array.from([...media.slice(0, 33), ...media.slice(58)]), // missing IDAT
+  ];
+  for (const bytes of bad)
+    assert.throws(() => prepareDemandCreativeIntake(tenantId, withMedia(bytes), bytes), denied);
 });
