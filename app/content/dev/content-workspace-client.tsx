@@ -9,6 +9,7 @@ import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view
 import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-preview';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
+import {contentWorkspaceReadError} from '@/lib/content/neon-content-workspace-http-error';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
@@ -130,7 +131,7 @@ export default function ContentWorkspaceClient(){
   (async()=>{
    try{
     const res=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected),{cache:'no-store',credentials:'same-origin'});
-    if(!res.ok)throw new Error(res.status===401?'Sesi tamat. Sila log masuk semula.':'Data kempen belum dapat dibaca.');
+    if(!res.ok)throw new Error(contentWorkspaceReadError(res.status));
     const detail=parseContentWorkspaceDetail(await res.json(),selected);
     if(active)setDetailLoad(loadedWorkspace(detail));
    }catch(e){if(active)setDetailLoad(failedWorkspace(e instanceof Error?e.message:'Ralat memuatkan data.'));}
