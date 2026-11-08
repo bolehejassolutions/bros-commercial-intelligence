@@ -12,7 +12,7 @@ import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-i
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
 import {contentWorkspaceReadError} from '@/lib/content/neon-content-workspace-http-error';
 import {shouldResetContentDraftOnWorkspaceSwitch,reconcileContentWorkspaceSelection} from '@/lib/content/neon-content-workspace-switch';
-import {isContentWorkspaceDetailCurrent} from '@/lib/content/neon-content-workspace-render-guard';
+import {isContentWorkspaceDetailCurrent,isContentDraftWorkspaceSettled} from '@/lib/content/neon-content-workspace-render-guard';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
@@ -157,7 +157,7 @@ export default function ContentWorkspaceClient(){
    ?previous.platforms.filter(p=>p!==platform):[...previous.platforms,platform]}));
  }
  async function saveDraft(event:FormEvent<HTMLFormElement>){
-  event.preventDefault();if(saving||!selected||draft.platforms.length===0)return;
+  event.preventDefault();if(saving||!isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)||draft.platforms.length===0)return;
   setSaving(true);setNotice('');setError('');
   try{
    // Preserve the server-side idempotency key if the prior POST committed but
@@ -250,7 +250,7 @@ export default function ContentWorkspaceClient(){
          </div>})}</div></details>}
       </article>})}</div>}
     </section>
-    <section style={card}>
+    {isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)?<section style={card}>
      <p style={{fontSize:11,color:gold,letterSpacing:2}}>DRAFT ONLY</p>
      <h2 style={{fontSize:20,marginTop:0}}>Draf kempen baharu</h2>
      <form onSubmit={saveDraft} style={{display:'grid',gap:14}}>
@@ -277,7 +277,7 @@ export default function ContentWorkspaceClient(){
       </button>
       <p style={{fontSize:12,color:'#b6c1cf'}}>Menyimpan draf sahaja. Tiada penjanaan visual, penggunaan kredit atau penerbitan automatik.</p>
      </form>
-    </section>
+    </section>:<section style={card} role="status">Menukar workspace dan mengosongkan draf sebelumnya…</section>}
    </div>}
   </div>
  </main>;

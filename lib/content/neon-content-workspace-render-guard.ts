@@ -10,3 +10,13 @@ export function isContentWorkspaceDetailCurrent<T extends {workspace:{id:string}
  return Boolean(selectedWorkspaceId)&&state.status==='ready'&&
   state.data.workspace.id===selectedWorkspaceId;
 }
+
+/** A selection change can render before the effect clearing the prior draft.
+ * Never expose or submit the previous tenant's form in that interim render.
+ */
+export function isContentDraftWorkspaceSettled(
+ selectedWorkspaceId:string,
+ lastResetWorkspaceId:string,
+):boolean{
+ return Boolean(selectedWorkspaceId)&&selectedWorkspaceId===lastResetWorkspaceId;
+}
