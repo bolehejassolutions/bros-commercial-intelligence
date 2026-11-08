@@ -150,10 +150,13 @@ export default function ContentWorkspaceClient(){
    parseContentDraftAcknowledgement(await response.json(),response.status);
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
     setNotice('Draf kempen berjaya disimpan dalam Neon DEV. Tiada kandungan dijana atau diterbitkan.');
-   pendingDraftAttempt.current=null;
+   // A later save may have replaced this attempt while the POST was pending.
+   // Never clear its retry key or mutate a different workspace's form.
+   if(pendingDraftAttempt.current===attempt)pendingDraftAttempt.current=null;
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
     setDraft(current=>JSON.stringify(current)===submitted?initialDraft:current);
-   setRefresh(value=>value+1);
+   if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
+    setRefresh(value=>value+1);
   }catch(e){if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
    setError(e instanceof Error?e.message:'Ralat menyimpan draf.');}
   finally{setSaving(false);}
