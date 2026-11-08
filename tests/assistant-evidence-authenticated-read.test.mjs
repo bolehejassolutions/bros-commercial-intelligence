@@ -162,3 +162,39 @@ test("a storage adapter contract violation is not treated as empty results", asy
   const { handler } = fixture({ listScopedReceipts: async () => null });
   assert.equal((await handler(get())).status, 503);
 });
+
+
+test("unverified subject identifier is denied before membership lookup", async () => {
+  let memberships = 0;
+  const { handler } = fixture({
+    verifyBearerToken: async () => ({ subjectId: "../../admin", expiresAt: "2026-11-08T06:00:00Z" }),
+    hasEvidenceReadGrant: async () => { memberships++; return true; },
+  });
+  assert.equal((await handler(get())).status, 401);
+  assert.equal(memberships, 0);
+});
+
+test("authoritative membership-provider failure is 503, not an empty-data success", async () => {
+  let reads = 0;
+  const { handler } = fixture({
+    hasEvidenceReadGrant: async () => { throw new Error("PRIVATE_GRANT_ERROR"); },
+    listScopedReceipts: async () => { reads++; return [record()]; },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 503);
+  assert.ok(!(await response.text()).includes("PRIVATE_GRANT_ERROR"));
+  assert.equal(reads, 0);
+});
+
+test("production runtime guard denies the unregistered DEV handler", async () => {
+  const original = process.env.NODE_ENV;
+  try {
+    process.env.NODE_ENV = "production";
+    const { handler, calls } = fixture();
+    assert.equal((await handler(get())).status, 503);
+    assert.equal(calls.length, 0);
+  } finally {
+    if (original === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = original;
+  }
+});
