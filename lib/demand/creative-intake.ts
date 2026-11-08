@@ -43,8 +43,19 @@ function signature(mime: CreativeRecord["mime"], data: Uint8Array): boolean {
   if (mime === "image/jpeg") return data.length >= 4 &&
     data[0] === 255 && data[1] === 216 && data[data.length - 2] === 255 &&
     data[data.length - 1] === 217;
-  return data.length >= 16 && String.fromCharCode(...data.subarray(0,4)) === "RIFF" &&
-    String.fromCharCode(...data.subarray(8,12)) === "WEBP";
+  // A WebP RIFF header must declare the exact container size. Otherwise a
+  // matching hash can still describe a truncated or trailing-data container.
+  if (data.length < 20 ||
+      String.fromCharCode(...data.subarray(0,4)) !== "RIFF" ||
+      String.fromCharCode(...data.subarray(8,12)) !== "WEBP") return false;
+  const declared = (data[4] + data[5] * 256 + data[6] * 65536 +
+    data[7] * 16777216) >>> 0;
+  const chunk = String.fromCharCode(...data.subarray(12,16));
+  const chunkLength = (data[16] + data[17] * 256 + data[18] * 65536 +
+    data[19] * 16777216) >>> 0;
+  return declared === data.length - 8 && ["VP8 ", "VP8L", "VP8X"].includes(chunk) &&
+    chunkLength > 0 && chunkLength <= data.length - 20 &&
+    20 + chunkLength + (chunkLength % 2) === data.length;
 }
 export function prepareDemandCreativeIntake(
   tenantId: string, record: CreativeRecord, media: Uint8Array,
