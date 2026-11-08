@@ -61,7 +61,14 @@ export function createBusinessOsDevBackchannel(
     if (typeof bearer !== "string" || bearer.length === 0 ||
         bearer.length > MAX_TOKEN || !SAFE_TOKEN.test(bearer)) return null;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // AbortSignal is cooperative: an injected transport can ignore it. Race
+    // the entire exchange (including body streaming) against a hard deadline.
+    // Never expose a late response after the deadline has denied the read.
+    const deadline = new Promise<null>(resolve => {
+      timer = setTimeout(() => { controller.abort(); resolve(null); }, timeoutMs);
+    });
+    const exchange = async (): Promise<TrustedSession | null> => {
     try {
       const response = await transport(url.href, {
         method: "POST",
@@ -111,6 +118,8 @@ export function createBusinessOsDevBackchannel(
           v.revoked !== false) return null;
       return Object.freeze(v as TrustedSession);
     } catch { return null; }
-    finally { clearTimeout(timer); }
+    };
+    try { return await Promise.race([exchange(), deadline]); }
+    finally { if (timer !== undefined) clearTimeout(timer); }
   };
 }
