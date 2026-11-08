@@ -24,7 +24,7 @@ const post=(id=workspace,session='valid',key='fixed-test-key-123456')=>new Reque
 function harness(){
  const records=new Map();let writes=0;let reads=0;
  const authorize=(p,id)=>{if(p.userId!==user||id!==workspace)throw new ContentReadDenied();};
- const list=createContentWorkspaceIndexGet(verify,async p=>p.userId===user?[{id:workspace,name:'Recovered DEV'}]:[]);
+ const list=createContentWorkspaceIndexGet(verify,async p=>({workspaces:p.userId===user?[{id:workspace,name:'Recovered DEV'}]:[]}));
  const save=createContentCampaignDraftPost(verify,async(p,id,draft,key)=>{
   authorize(p,id);const identity=id+'|'+key;
   if(!records.has(identity)){writes++;records.set(identity,{id:campaign,workspace_id:id,status:'draft',...draft});}
