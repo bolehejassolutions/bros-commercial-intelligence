@@ -31,7 +31,7 @@ function fixture({ rows = [receipt()], identity = {}, posture = {}, set = {}, fa
         inherits_roles: false, parent_role_count: 0, ...identity,
       }] };
       if (sql.includes("current_database() AS database_name")) return { rows: [{
-        database_name: "bros_intelligence_dev", rls_enabled: true, rls_forced: true,
+        database_name: "bros_intelligence_dev", read_only_mode: "on", rls_enabled: true, rls_forced: true,
         can_read_evidence: true, can_write_evidence: false,
         can_access_memberships: false, can_create_schema_objects: false,
         can_create_database_objects: false, no_definer_exec: true,
@@ -116,7 +116,7 @@ test("admin BYPASSRLS, SET ROLE impersonation and privileged roles fail before s
 
 test("wrong database, RLS or privilege drift rejects before any tenant GUC", async () => {
   for (const posture of [
-    { database_name: "neondb" }, { rls_enabled: false }, { rls_forced: false },
+    { database_name: "neondb" }, { read_only_mode: "off" }, { rls_enabled: false }, { rls_forced: false },
     { can_read_evidence: false }, { can_write_evidence: true },
     { can_access_memberships: true }, { can_create_schema_objects: true },
     { can_create_database_objects: true }, { no_definer_exec: false },
@@ -179,7 +179,7 @@ test("duplicate evidence ID, oversized responses and malformed result objects ar
 
 test("SQL driver failure is propagated to the fail-closed HTTP boundary; never fallback", async () => {
   const f = fixture({ failAt: 3 });
-  await assert.rejects(f.read(selection), /SECRET_BACKEND_DRIVER_FAILURE/);
+  await assert.rejects(f.read(selection), BusinessOsDevSqlDenied);
   assert.equal(f.calls.length, 3);
   assert.equal(f.rolledBack, true);
   assert.equal(f.calls.some(c => c.sql.includes("FROM bci_dev.evidence")), false);
