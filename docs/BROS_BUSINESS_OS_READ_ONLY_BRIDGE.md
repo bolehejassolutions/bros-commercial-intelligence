@@ -49,3 +49,7 @@ Its enforced sequence is:
 ## Scoped repository result-size contract (8 Nov 2026)
 
 The non-routed DEV handler now fails closed with generic `503 read_unavailable` if an injected repository returns more than 20 rows, rather than silently truncating the result and implying that a potentially unbounded query was valid. Exactly 20 rows remain allowed. This is defense in depth, **not** proof of a database `LIMIT`, SQL tenant/product predicates, or database RLS. The repository must still enforce all three independently using a restricted role; synthetic boundary tests cannot certify real Neon isolation. No HTTP route, grant or provider was activated.
+
+## Fail-closed repository isolation boundary (8 Nov 2026 follow-on)
+
+The DEV-only non-routed HTTP adapter now rejects an injected repository response containing **any** row with a mismatched tenant or product, or a null row, with generic `503 read_unavailable`. Previously, a mis-scoped row could be silently filtered and an exclusively wrong-tenant result misreported as `NO_ROWS_NOT_ZERO`. That is inappropriate for a repository whose SQL is required to enforce tenant/product predicates independently. A genuinely empty, properly scoped result still returns `NO_ROWS_NOT_ZERO`. Synthetic regressions cover mixed and exclusively mis-scoped results, and the genuine empty result. This is an application-layer detection guard, **not** evidence of real SQL isolation, RLS, or an authenticated MCP integration.
