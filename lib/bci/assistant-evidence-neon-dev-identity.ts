@@ -9,7 +9,7 @@
  *
  * This module does not configure an IdP, issue tokens or register a route.
  */
-export type VerifiedBusinessOsPrincipal = Readonly<{ subjectId: string; expiresAt: string }>;
+export type VerifiedBusinessOsPrincipal = Readonly<{ subjectId: string; sessionId: string; expiresAt: string }>;
 export type TrustedSession = Readonly<{
   subjectId: string;
   sessionId: string;
@@ -50,7 +50,7 @@ export function createBusinessOsDevIdentityVerifier(
       const expiry = Date.parse(session.expiresAt);
       if (!Number.isFinite(expiry) || expiry <= clock ||
           expiry - clock > MAX_TTL_MS) return null;
-      return Object.freeze({ subjectId: session.subjectId, expiresAt: session.expiresAt });
+      return Object.freeze({ subjectId: session.subjectId, sessionId: session.sessionId, expiresAt: session.expiresAt });
     } catch {
       // Fail closed; do not expose tokens, session identifiers or IdP diagnostics.
       return null;
