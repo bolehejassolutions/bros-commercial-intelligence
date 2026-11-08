@@ -3,6 +3,12 @@
  * No permissions are granted by this module.
  */
 export class ContentReadDenied extends Error { constructor() { super("CONTENT access denied"); } }
+/** A LIMIT N+1 sentinel distinguishes complete reads from silent truncation. */
+export function requireCompleteContentRows<T>(rows:readonly T[],limit:number):readonly T[]{
+ if(!Array.isArray(rows)||!Number.isSafeInteger(limit)||limit<1||rows.length>limit)
+  throw new ContentReadDenied();
+ return rows;
+}
 type Row = Record<string, unknown>;
 type Query = (sql: string, params: readonly string[]) => Promise<{rows: readonly Row[]}>;
 type Transaction = <T>(fn: (query: Query) => Promise<T>) => Promise<T>;
@@ -56,14 +62,14 @@ export function createContentWorkspaceReader(transaction: Transaction) {
         [tenant,workspaceId,principal.userId])).rows;
       // Never present a truncated campaign list as a complete workspace.
       // Fetch one sentinel row beyond the supported UI maximum.
-      if(campaigns.length>100)deny();
+      requireCompleteContentRows(campaigns,100);
       const contentItems: Row[] = [], scenes: Row[] = [];
       for (const campaign of campaigns) {
         if (!UUID.test(String(campaign.id))) deny();
         const rows = (await query(`SELECT id,campaign_id,type,title,body,sort_order,version
           FROM content_dev.content_items WHERE tenant_id=$1::uuid AND campaign_id=$2::uuid
           ORDER BY sort_order,id LIMIT 501`,[tenant,String(campaign.id)])).rows;
-        if(rows.length>500)deny();
+        requireCompleteContentRows(rows,500);
         if (rows.some(row => row.campaign_id !== campaign.id || !UUID.test(String(row.id)))) deny();
         contentItems.push(...rows);
       }
@@ -73,7 +79,7 @@ export function createContentWorkspaceReader(transaction: Transaction) {
           narration,dialogue,visual_prompt,motion_prompt,continuity_lock
           FROM content_dev.scenes WHERE tenant_id=$1::uuid AND content_item_id=$2::uuid
           ORDER BY scene_number,id LIMIT 101`,[tenant,String(item.id)])).rows;
-        if(itemScenes.length>100)deny();
+        requireCompleteContentRows(itemScenes,100);
         if (itemScenes.some(row => row.content_item_id !== item.id || !UUID.test(String(row.id)))) deny();
         scenes.push(...itemScenes);
       }
