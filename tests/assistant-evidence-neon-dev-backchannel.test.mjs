@@ -13,10 +13,12 @@ function fixture(payload = good, init = {}) {
   const calls = [];
   const transport = async (url, options) => {
     calls.push({ url, options });
-    return new Response(JSON.stringify(payload), {
+    const response = new Response(JSON.stringify(payload), {
       status: init.status ?? 200,
       headers: { "Content-Type": init.type ?? "application/json", ...(init.headers ?? {}) },
     });
+    Object.defineProperty(response, "url", { value: endpoint });
+    return response;
   };
   return { introspect: createBusinessOsDevBackchannel(config, transport), calls };
 }
@@ -68,14 +70,14 @@ test("network and malformed JSON errors fail closed without leaking details", as
   });
   assert.equal(await offline("opaque-token"), null);
   const malformed = createBusinessOsDevBackchannel(config, async () =>
-    new Response("{secret", { headers: { "Content-Type": "application/json" } }));
+    Object.defineProperty(new Response("{secret", { headers: { "Content-Type": "application/json" } }), "url", { value: endpoint }));
   assert.equal(await malformed("opaque-token"), null);
 });
 test("oversized streaming response rejected regardless of missing content-length", async () => {
   const oversized = createBusinessOsDevBackchannel(config, async () =>
-    new Response(JSON.stringify({ ...good, padding: "x".repeat(5000) }), {
+    Object.defineProperty(new Response(JSON.stringify({ ...good, padding: "x".repeat(5000) }), {
       headers: { "Content-Type": "application/json" },
-    }));
+    }), "url", { value: endpoint }));
   assert.equal(await oversized("opaque-token"), null);
 });
 test("transport is not a live Neon Auth proof; no network happens until injected call", () => {
