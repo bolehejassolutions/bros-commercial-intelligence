@@ -140,6 +140,20 @@ test("malformed or oversized normalized Content-Length fails closed before readi
   }
 });
 
+test("backchannel framing must match streamed body length exactly", async () => {
+  const actual = Buffer.byteLength(JSON.stringify(good));
+  for (const declared of [String(actual - 1), String(actual + 1), "0"]) {
+    const f = fixture(good, { headers: { "Content-Length": declared } });
+    assert.equal(await f.introspect("opaque-token"), null,
+      "deny valid JSON with contradictory declared length " + declared);
+    assert.equal(f.calls.length, 1);
+  }
+  const exact = fixture(good, { headers: { "Content-Length": String(actual) } });
+  assert.deepEqual(await exact.introspect("opaque-token"), good);
+  const absent = fixture(good);
+  assert.deepEqual(await absent.introspect("opaque-token"), good);
+});
+
 test("declared short Content-Length cannot bypass streaming byte ceiling", async () => {
   const oversized = createBusinessOsDevBackchannel(config, async () => {
     const response = new Response(JSON.stringify({ ...good, padding: "x".repeat(5000) }), {
