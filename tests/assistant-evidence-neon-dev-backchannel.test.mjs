@@ -166,7 +166,7 @@ test("declared short Content-Length cannot bypass streaming byte ceiling", async
 });
 
 test("Fetch Headers normalize surrounding whitespace before Content-Length validation", async () => {
-  const f = fixture(good, { headers: { "Content-Length": " 12 " } });
+  const f = fixture(good, { headers: { "Content-Length": " " + Buffer.byteLength(JSON.stringify(good)) + " " } });
   assert.deepEqual(await f.introspect("opaque-token"), good);
   assert.equal(f.calls.length, 1);
 });
