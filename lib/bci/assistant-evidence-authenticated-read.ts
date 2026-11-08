@@ -85,7 +85,9 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
       const granted = await deps.hasEvidenceReadGrant(principal.subjectId, selection);
       if (granted !== true) return reply(403, { error: "access_denied" });
       const rows = await deps.listScopedReceipts({ ...selection, maxRows: 20 });
-      if (!Array.isArray(rows)) return reply(503, { error: "read_unavailable" });
+      // A restricted repository must enforce its SQL LIMIT independently; never
+      // silently truncate an oversized result and misrepresent it as a complete read.
+      if (!Array.isArray(rows) || rows.length > 20) return reply(503, { error: "read_unavailable" });
       const scoped = {
         identityVerifiedByServer: true as const,
         tenantMembershipVerifiedByServer: true as const,
