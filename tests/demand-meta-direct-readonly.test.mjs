@@ -172,3 +172,26 @@ test("malformed or conflicting provider action_values fail closed", async () => 
     await assert.rejects(call(ok({ data: [{ ...raw, action_values: bad }] })), generic);
   }
 });
+
+test("Meta Insights cursor-rewound or malformed paging fails closed even with a valid row", async () => {
+  for (const paging of [
+    { previous: "https://graph.facebook.com/previous" },
+    { previous: "" },
+    { next: "" },
+    null, [], "unexpected",
+  ]) {
+    await assert.rejects(call(ok({ data: [raw], paging })), generic);
+    await assert.rejects(call(ok({ data: [], paging })), generic);
+  }
+  const complete = await call(ok({ data: [raw], paging: {
+    cursors: { before: "opaque", after: "opaque" },
+  } }));
+  assert.equal(complete.status, "CAMPAIGN_ROW_OBSERVED_UNATTESTED");
+  assert.equal(complete.executionAllowed, false);
+  const noRows = await call(ok({ data: [], paging: {
+    cursors: { before: "opaque", after: "opaque" },
+  } }));
+  assert.equal(noRows.status, "NO_ROWS_NOT_ZERO");
+  assert.equal(noRows.observation, null);
+  assert.equal(noRows.verifiedPaidOrders, null);
+});
