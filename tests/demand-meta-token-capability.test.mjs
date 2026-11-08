@@ -70,3 +70,42 @@ test("no bearer token appears in any Meta URL, including debug_token, on success
     assert.equal(new URL(c.url).pathname.endsWith("/debug_token"), false);
   }
 });
+
+test("partial Meta permission pagination never certifies scope grants or absence", async () => {
+  for (const paging of [
+    null, "invalid", [], { next: "" }, { next: "https://graph.facebook.com/next" },
+    { previous: "https://graph.facebook.com/previous" },
+  ]) {
+    const f = fixture({ scopes: ["ads_read", "ads_management"] });
+    const transport = (url, init) => new URL(url).pathname.endsWith("/permissions")
+      ? Promise.resolve(Response.json({ data: [
+          { permission: "ads_read", status: "granted" },
+          { permission: "ads_management", status: "granted" },
+        ], paging }))
+      : f.transport(url, init);
+    const r = await inspectExistingDemandMetaToken(token, transport, now);
+    assert.equal(r.permissionReadbackVerified, false);
+    assert.equal(r.adsRead, "UNVERIFIED");
+    assert.equal(r.adsManagement, "UNVERIFIED");
+    assert.equal(r.fixedAccountReadVerified, true);
+    assert.equal(r.executionAllowed, false);
+    assert.equal(r.appBindingVerified, false);
+    assert.equal(JSON.stringify(r).includes(token), false);
+  }
+});
+
+test("complete first-page cursor metadata retains reported read-only permissions without execution", async () => {
+  const f = fixture();
+  const transport = (url, init) => new URL(url).pathname.endsWith("/permissions")
+    ? Promise.resolve(Response.json({ data: [
+        { permission: "ads_read", status: "granted" },
+        { permission: "ads_management", status: "declined" },
+      ], paging: { cursors: { before: "opaque", after: "opaque" } } }))
+    : f.transport(url, init);
+  const r = await inspectExistingDemandMetaToken(token, transport, now);
+  assert.equal(r.permissionReadbackVerified, true);
+  assert.equal(r.adsRead, "GRANTED");
+  assert.equal(r.adsManagement, "NOT_GRANTED");
+  assert.equal(r.appBindingVerified, false);
+  assert.equal(r.executionAllowed, false);
+});
