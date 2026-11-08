@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareContentDraftRetry} from '../lib/content/neon-content-draft-retry.ts';
+import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent} from '../lib/content/neon-content-draft-retry.ts';
 import {buildContentCampaignView} from '../lib/content/neon-content-campaign-view.ts';
 
 const workspaceA='22222222-2222-4222-8222-222222222222';
@@ -77,4 +77,11 @@ test('untrusted content cannot inject unknown platforms, duplicate captions, or 
  assert.deepEqual(v.captions,[{platform:'facebook',caption:'Good'}]);
  assert.equal(v.publishPlan.length,1);
  assert.equal(v.angles.length,1);
+});
+
+test('late draft save acknowledgement cannot update another selected workspace',()=>{
+ assert.equal(isContentDraftSaveFeedbackCurrent(workspaceA,workspaceA),true);
+ assert.equal(isContentDraftSaveFeedbackCurrent(workspaceA,workspaceB),false);
+ assert.equal(isContentDraftSaveFeedbackCurrent(workspaceB,workspaceA),false);
+ assert.equal(isContentDraftSaveFeedbackCurrent('invalid',workspaceA),false);
 });

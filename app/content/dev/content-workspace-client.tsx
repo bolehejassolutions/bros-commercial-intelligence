@@ -3,7 +3,7 @@
  * No generative, credit, billing, campaign launch or publishing controls.
  */
 import {useEffect,useRef,useState,type FormEvent} from 'react';
-import {prepareContentDraftRetry,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
+import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
@@ -97,6 +97,9 @@ export default function ContentWorkspaceClient(){
  const[notice,setNotice]=useState('');
  const[refresh,setRefresh]=useState(0);
  const pendingDraftAttempt=useRef<ContentDraftAttempt|null>(null);
+ // Keep the currently selected tenant visible to asynchronous save completions.
+ const selectedWorkspaceRef=useRef(selected);
+ selectedWorkspaceRef.current=selected;
  useEffect(()=>{
   let active=true;
   (async()=>{
@@ -145,11 +148,14 @@ export default function ContentWorkspaceClient(){
    if(!response.ok)throw new Error(response.status===401?'Sesi tamat. Sila log masuk semula.':
     response.status===404?'Akses workspace tidak dibenarkan.':'Draf tidak dapat disimpan. Sila cuba lagi.');
    parseContentDraftAcknowledgement(await response.json(),response.status);
-   setNotice('Draf kempen berjaya disimpan dalam Neon DEV. Tiada kandungan dijana atau diterbitkan.');
+   if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
+    setNotice('Draf kempen berjaya disimpan dalam Neon DEV. Tiada kandungan dijana atau diterbitkan.');
    pendingDraftAttempt.current=null;
-   setDraft(current=>JSON.stringify(current)===submitted?initialDraft:current);
+   if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
+    setDraft(current=>JSON.stringify(current)===submitted?initialDraft:current);
    setRefresh(value=>value+1);
-  }catch(e){setError(e instanceof Error?e.message:'Ralat menyimpan draf.');}
+  }catch(e){if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
+   setError(e instanceof Error?e.message:'Ralat menyimpan draf.');}
   finally{setSaving(false);}
  }
  return <main style={{minHeight:'100vh',background:'#091425',color:'#f4efe1',padding:'30px 18px 80px',fontFamily:'system-ui,Segoe UI,sans-serif'}}>
