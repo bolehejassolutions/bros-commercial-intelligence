@@ -10,9 +10,9 @@ type Selection = Readonly<{ tenantId: string; product: BciProduct }>;
 type VerifiedPrincipal = Readonly<{ subjectId: string; expiresAt: string }>;
 
 export interface ReadEvidenceDependencies {
-  /** Check cryptographic token issuer/audience/expiry and revocation with approved IdP. */
+  /** Check cryptographic token issuer/audience/expiry AND live revocation, on each call. */
   readonly verifyBearerToken: (token: string) => Promise<VerifiedPrincipal | null>;
-  /** SERVER-side authoritative tenant membership and per-product read permission. */
+  /** Live SERVER-side authoritative membership/product read permission; called twice. */
   readonly hasEvidenceReadGrant: (subjectId: string, scope: Selection) => Promise<boolean>;
   /** Independently enforce the SAME tenant/product/limit in the backing DB query. */
   readonly listScopedReceipts: (
@@ -94,6 +94,20 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
           row.product !== selection.product)) {
         return reply(503, { error: "read_unavailable" });
       }
+      // Revalidate the SAME bearer identity and authoritative product grant just
+      // before disclosure. Revocation, expiry or tenant/product reassignment may
+      // occur while the independent restricted SQL read is in flight. These
+      // checks narrow the race; they cannot make separate stores atomic.
+      const stillVerified = await deps.verifyBearerToken(token);
+      const nowAfterRead = deps.now ? deps.now() : Date.now();
+      if (!stillVerified || stillVerified.subjectId !== principal.subjectId ||
+          stillVerified.expiresAt !== principal.expiresAt ||
+          !Number.isFinite(nowAfterRead) ||
+          Date.parse(principal.expiresAt) <= nowAfterRead) {
+        return reply(401, { error: "authentication_required" });
+      }
+      const stillGranted = await deps.hasEvidenceReadGrant(principal.subjectId, selection);
+      if (stillGranted !== true) return reply(403, { error: "access_denied" });
       const scoped = {
         identityVerifiedByServer: true as const,
         tenantMembershipVerifiedByServer: true as const,
