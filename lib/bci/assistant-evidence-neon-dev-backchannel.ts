@@ -6,7 +6,7 @@
  * the verified issuer/audience/subject/session/expiry fields. This transport
  * cannot make an untrusted endpoint authoritative. In particular Neon Auth
  * get-session cookie semantics are NOT assumed to accept bearer credentials.
- * No endpoint is supplied by default; no route or credential is provisioned.
+ * No endpoint or default network transport is supplied. The caller must inject\n * a server-owned egress-restricted transport; native fetch alone cannot enforce\n * DNS resolution pinning, private-IP denial or anti-rebinding protections.\n * No route or credential is provisioned.
  */
 import type { TrustedIntrospection, TrustedSession } from "./assistant-evidence-neon-dev-identity.ts";
 import { isIP } from "node:net";
@@ -16,6 +16,7 @@ export type BackchannelConfig = Readonly<{
   expectedOrigin: string;
   timeoutMs?: number;
 }>;
+/** Injected only: must enforce network egress/DNS/IP restrictions independently. */
 type Transport = typeof fetch;
 const MAX_BYTES = 4096;
 const MAX_TOKEN = 4096;
@@ -37,7 +38,7 @@ function isAllowedDnsHost(host: string): boolean {
 
 
 export function createBusinessOsDevBackchannel(
-  config: BackchannelConfig, transport: Transport = fetch
+  config: BackchannelConfig, transport: Transport
 ): TrustedIntrospection {
   if (!config || typeof transport !== "function") throw Error("DEV backchannel unavailable");
   let url: URL, origin: URL;
