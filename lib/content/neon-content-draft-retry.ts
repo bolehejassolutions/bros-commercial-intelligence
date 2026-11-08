@@ -21,3 +21,8 @@ export function prepareContentDraftRetry(
  if(!KEY.test(key))throw new Error('Invalid draft retry key');
  return Object.freeze({requestSignature,key});
 }
+
+/** Only the workspace that initiated a save may display its result. */
+export function isContentDraftSaveFeedbackCurrent(submittedWorkspace:string,currentWorkspace:string):boolean {
+ return UUID.test(submittedWorkspace)&&submittedWorkspace===currentWorkspace;
+}
