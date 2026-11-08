@@ -21,9 +21,10 @@ const receipt = {
 };
 
 function fixture({ revokedAtCheck, membership = true, row = receipt, throwIdp = false,
-  throwMembership = false, throwEvidence = false, expiry, changedSubject = false } = {}) {
+  throwMembership = false, throwEvidence = false, expiry, changedSubject = false, revokeMembershipAfterRead = false } = {}) {
   const calls = [];
   let checks = 0;
+  let membershipChecks = 0;
   const deps = {
     now: () => NOW, identity: { issuer, audience },
     introspect: async bearer => {
@@ -57,7 +58,8 @@ function fixture({ revokedAtCheck, membership = true, row = receipt, throwIdp = 
           principal_scope: params[0], tenant_scope: params[1], product_scope: params[2],
         }] };
         if (sql.includes("FROM bci_dev.tenant_memberships")) {
-          return { rows: membership && params[0] === P && params[1] === T && params[2] === "demand" ? [{
+          membershipChecks++;
+          return { rows: membership && !(revokeMembershipAfterRead && membershipChecks > 1) && params[0] === P && params[1] === T && params[2] === "demand" ? [{
             principal_id: P, tenant_id: T, product: "demand", active: true, revoked_at: null,
           }] : [] };
         }
@@ -158,4 +160,14 @@ test("genuinely empty scoped evidence is not falsely interpreted as zero perform
 test("missing server-owned dependencies reject at construction, not permissive fallback", () => {
   assert.throws(() => createBusinessOsDevComposedReadHandler({}));
   assert.throws(() => createBusinessOsDevComposedReadHandler(null));
+});
+
+
+test("revoked authoritative membership after evidence SQL denies disclosure at second grant check", async () => {
+  const f = fixture({ revokeMembershipAfterRead: true });
+  const response = await f.handler(request());
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "access_denied" });
+  assert.deepEqual(f.calls, ["idp", "membership-transaction", "evidence-transaction", "idp", "membership-transaction"]);
+  assert.ok(!(await response.text()).includes(E));
 });
