@@ -186,3 +186,44 @@ test("explicit injected egress-restricted transport remains functional", async (
   assert.deepEqual(await introspect("synthetic-token"), good);
   assert.equal(calls, 1);
 });
+
+test("uncooperative transport that ignores abort cannot hold the auth check open", async () => {
+  let signaled = false;
+  const transport = async (_url, options) => {
+    options.signal.addEventListener("abort", () => { signaled = true; });
+    return new Promise(() => {});
+  };
+  const introspect = createBusinessOsDevBackchannel({ ...config, timeoutMs: 100 }, transport);
+  const started = Date.now();
+  assert.equal(await introspect("opaque-token"), null);
+  assert.equal(signaled, true);
+  assert.ok(Date.now() - started < 2000, "deadline must settle without transport cooperation");
+});
+
+test("stalled streaming response is denied at the hard deadline", async () => {
+  let canceled = false;
+  const transport = async () => {
+    const stream = new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode('{"subjectId":')); },
+      cancel() { canceled = true; },
+    });
+    const response = new Response(stream, { headers: { "Content-Type": "application/json" } });
+    Object.defineProperty(response, "url", { value: endpoint });
+    return response;
+  };
+  const introspect = createBusinessOsDevBackchannel({ ...config, timeoutMs: 100 }, transport);
+  assert.equal(await introspect("opaque-token"), null);
+  // A hard deadline protects callers even if a custom stream ignores abort.
+  assert.equal(typeof canceled, "boolean");
+});
+
+test("transport that resolves after timeout cannot turn denial into success", async () => {
+  let finish;
+  const transport = async () => new Promise(resolve => { finish = resolve; });
+  const introspect = createBusinessOsDevBackchannel({ ...config, timeoutMs: 100 }, transport);
+  assert.equal(await introspect("opaque-token"), null);
+  const response = new Response(JSON.stringify(good), { headers: { "Content-Type": "application/json" } });
+  Object.defineProperty(response, "url", { value: endpoint });
+  finish(response);
+  await new Promise(resolve => setImmediate(resolve));
+});
