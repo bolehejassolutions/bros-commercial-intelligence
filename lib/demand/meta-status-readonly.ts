@@ -48,6 +48,14 @@ export async function readDemandMetaStatusSnapshot(
     if (keys.has(key)) deny();
     keys.add(key);
   }
+  // Validate the entire batch before any provider request, including late entries.
+  // This avoids avoidable network access for a malformed trailing binding.
+  for (const binding of bindings) {
+    if (!/^act_\d{5,30}$/.test(binding.accountId) ||
+      !/^\d{5,30}$/.test(binding.objectId) ||
+      !["campaign", "adset", "ad"].includes(binding.kind) ||
+      typeof binding.apiVersion !== "string" || !/^v[1-9]\d?\.\d+$/.test(binding.apiVersion)) deny();
+  }
   // Sequential reads cap concurrency and prevent partial results escaping.
   const results: Awaited<ReturnType<typeof readDemandMetaObjectStatus>>[] = [];
   for (const binding of bindings) results.push(
