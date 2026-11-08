@@ -43,7 +43,7 @@ test('verified session: workspace discovery, draft write, replay, strict readbac
  assert.equal(index.status,200);
  assert.equal(index.headers.get('cache-control'),'no-store');
  assert.equal(parseContentWorkspaceIndex(await index.json())[0].id,workspace);
- const saved=await h.save(post());
+ const saved=await h.save(post(),workspace);
  assert.equal(saved.status,201);
  assert.equal(parseContentDraftAcknowledgement(await saved.json(),saved.status).status,'draft');
  const replay=await h.save(post());
@@ -59,13 +59,13 @@ test('verified session: workspace discovery, draft write, replay, strict readbac
 test('missing session denies discovery, draft creation and read without side effects',async()=>{
  const h=harness();
  assert.equal((await h.list(get('/api/content/dev/workspaces','none'))).status,401);
- assert.equal((await h.save(post(workspace,'none'))).status,401);
+ assert.equal((await h.save(post(workspace,'none'),workspace)).status,401);
  assert.equal((await h.read(get('/api/content/dev/workspaces/'+workspace,'none'),workspace)).status,401);
  assert.deepEqual(h.counts(),{writes:0,reads:0});
 });
 test('foreign workspace denies writes and reads without data disclosure',async()=>{
  const h=harness();
- assert.equal((await h.save(post(foreign))).status,404);
+ assert.equal((await h.save(post(foreign),foreign)).status,404);
  assert.equal((await h.read(get('/api/content/dev/workspaces/'+foreign),foreign)).status,404);
  assert.deepEqual(h.counts(),{writes:0,reads:0});
 });
@@ -73,6 +73,6 @@ test('cross-origin draft POST rejected before writer invocation',async()=>{
  const h=harness();
  const req=post();
  req.headers.set('origin','https://attacker.example');
- assert.equal((await h.save(req)).status,403);
+ assert.equal((await h.save(req,workspace)).status,403);
  assert.equal(h.counts().writes,0);
 });
