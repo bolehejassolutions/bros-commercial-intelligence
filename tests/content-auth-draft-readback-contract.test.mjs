@@ -46,7 +46,7 @@ test('verified session: workspace discovery, draft write, replay, strict readbac
  const saved=await h.save(post(),workspace);
  assert.equal(saved.status,201);
  assert.equal(parseContentDraftAcknowledgement(await saved.json(),saved.status).status,'draft');
- const replay=await h.save(post());
+ const replay=await h.save(post(),workspace);
  assert.equal(replay.status,201);
  assert.equal(h.counts().writes,1,'idempotent replay must not duplicate a draft');
  const result=await h.read(get('/api/content/dev/workspaces/'+workspace),workspace);
