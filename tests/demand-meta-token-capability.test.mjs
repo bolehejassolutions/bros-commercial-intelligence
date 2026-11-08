@@ -16,9 +16,9 @@ function fixture({ scopes = ["ads_read"], permissionScopes = scopes, debugCode, 
 test("reported read-only grant is distinguished from management without enabling any write", async () => {
   const f = fixture(); const r = await inspectExistingDemandMetaToken(token, f.transport, now);
   assert.equal(r.adsRead, "GRANTED"); assert.equal(r.adsManagement, "NOT_GRANTED");
-  assert.equal(r.appBindingVerified, true); assert.equal(r.fixedAccountReadVerified, true);
+  assert.equal(r.appBindingVerified, false); assert.equal(r.fixedAccountReadVerified, true);
   assert.equal(r.executionAllowed, false); assert.equal(r.managementConnectionVerified, false);
-  assert.equal(r.credentialChanged, false); assert.equal(f.calls.length, 3);
+  assert.equal(r.credentialChanged, false); assert.equal(f.calls.length, 2);
   for (const c of f.calls) {
     assert.equal(c.init.method, "GET"); assert.equal(c.init.redirect, "error"); assert.equal(c.init.cache, "no-store");
     assert.ok(c.init.signal); assert.equal(c.init.body, undefined); assert.equal(new URL(c.url).origin, "https://graph.facebook.com");
@@ -33,7 +33,7 @@ test("a reporting variable name does not hide an already-granted management scop
 test("unsupported self-debug stays unverified while a complete permission read can still report its scopes", async () => {
   const f = fixture({ debugCode: 100 }); const r = await inspectExistingDemandMetaToken(token, f.transport, now);
   assert.equal(r.permissionReadbackVerified, true); assert.equal(r.debugReadbackVerified, false);
-  assert.equal(r.appBindingVerified, false); assert.equal(r.adsManagement, "NOT_GRANTED"); assert.equal(r.debugCode, 100);
+  assert.equal(r.appBindingVerified, false); assert.equal(r.adsManagement, "NOT_GRANTED"); assert.equal(r.debugCode, null);
 });
 test("empty, malformed, paginated and conflicting metadata never become permission proof", async () => {
   const conflict = fixture({ scopes: ["ads_read"], permissionScopes: ["ads_read", "ads_management"] });
@@ -52,4 +52,15 @@ test("missing credentials never call Meta; secret-bearing errors are fully redac
   assert.equal(missing.status, "MISSING_SERVER_CREDENTIAL");
   const denied = await inspectExistingDemandMetaToken(token, transport, now);
   assert.equal(denied.adsManagement, "UNVERIFIED"); assert.ok(!JSON.stringify(denied).includes(token));
+});
+
+test("no bearer token appears in any Meta URL, including debug_token, on success or failure", async () => {
+  const f = fixture({ scopes: ["ads_read", "ads_management"] });
+  await inspectExistingDemandMetaToken(token, f.transport, now);
+  assert.equal(f.calls.length, 2);
+  for (const c of f.calls) {
+    assert.equal(c.url.includes(token), false);
+    assert.equal(new URL(c.url).searchParams.has("input_token"), false);
+    assert.equal(new URL(c.url).pathname.endsWith("/debug_token"), false);
+  }
 });
