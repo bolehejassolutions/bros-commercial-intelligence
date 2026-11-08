@@ -14,6 +14,7 @@ import {createContentGeneratedOutputWriter} from '../../lib/content/neon-content
 import {createContentWorkspaceReader,ContentReadDenied} from '../../lib/content/neon-content-workspace-reader.ts';
 import {ContentGenerationRejected} from '../../lib/content/neon-content-generation-contract.ts';
 import {createContentWorkspaceGet} from '../../lib/content/neon-content-workspace-http.ts';
+import {createContentNeonSessionVerifier} from '../../lib/content/neon-content-session-verifier.ts';
 import {parseContentWorkspaceDetail} from '../../lib/content/neon-content-workspace-detail-response.ts';
 import {buildContentCampaignView} from '../../lib/content/neon-content-campaign-view.ts';
 import {buildContentPublishPreview} from '../../lib/content/neon-content-publish-preview.ts';
@@ -239,6 +240,52 @@ test('disposable real PostgreSQL: deterministic seven-layer preview → QC → w
   const writeMethod=await handler(request(WORKSPACE,'owner','POST'),WORKSPACE);
   assert.equal(writeMethod.status,405);
   assert.deepEqual(await tenantCounts(),baseline,'HTTP read and denial paths cannot mutate persisted rows');
+ });
+ await t.test('actual Neon Auth verifier boundary authorizes restricted PostgreSQL readback',async()=>{
+  const authBase='https://ep-ci-fixture.neonauth.c-4.ap-southeast-1.aws.neon.tech/db/auth';
+  const verifiedCookies=[];
+  // The verifier implementation is real. Only its remote Neon Auth response
+  // is replaced by deterministic fixtures; no network, live auth or secrets.
+  const verify=createContentNeonSessionVerifier(authBase,async(url,init)=>{
+   assert.equal(url,authBase+'/get-session');
+   assert.equal(init.method,'GET');
+   assert.equal(init.redirect,'error');
+   assert.equal(init.cache,'no-store');
+   assert.equal(init.headers.authorization,undefined);
+   verifiedCookies.push(init.headers.cookie);
+   const cookie=init.headers.cookie;
+   if(cookie==='better-auth.session_token=fixture-owner')
+    return Response.json({user:{id:OWNER},session:{userId:OWNER}});
+   if(cookie==='better-auth.session_token=fixture-foreign')
+    return Response.json({user:{id:OTHER},session:{userId:OTHER}});
+   if(cookie==='better-auth.session_token=fixture-mismatch')
+    return Response.json({user:{id:OWNER},session:{userId:OTHER}});
+   return new Response(null,{status:401});
+  });
+  const handler=createContentWorkspaceGet(verify,read);
+  const request=(cookie,extra={})=>new Request(
+   'https://content-ci.example.test/api/content/dev/workspaces/'+WORKSPACE,{
+    headers:{...(cookie?{cookie}:{}),...extra}
+   });
+  const baseline=await tenantCounts();
+  const ok=await handler(request('analytics=not-forwarded; better-auth.session_token=fixture-owner'),WORKSPACE);
+  assert.equal(ok.status,200);
+  const detail=parseContentWorkspaceDetail(await ok.json(),WORKSPACE);
+  assert.ok(detail.campaigns.some(row=>row.id===created.id));
+  assert.equal(verifiedCookies[0],'better-auth.session_token=fixture-owner');
+  const foreign=await handler(request('better-auth.session_token=fixture-foreign'),WORKSPACE);
+  assert.equal(foreign.status,404);
+  assert.deepEqual(await foreign.json(),{error:'not_found'});
+  const mismatch=await handler(request('better-auth.session_token=fixture-mismatch'),WORKSPACE);
+  assert.equal(mismatch.status,401);
+  const missing=await handler(request(''),WORKSPACE);
+  assert.equal(missing.status,401);
+  const duplicate=await handler(request('better-auth.session_token=fixture-owner; better-auth.session_token=fixture-owner'),WORKSPACE);
+  assert.equal(duplicate.status,401);
+  const spoof=await handler(request('better-auth.session_token=fixture-foreign',{'x-user-id':OWNER}),WORKSPACE);
+  assert.equal(spoof.status,404,'untrusted client identity header cannot override the verified session');
+  assert.equal(verifiedCookies.length,4,'missing and duplicate session cookies must not call Auth');
+  assert.deepEqual(await tenantCounts(),baseline);
  });
  await t.test('foreign tenant cannot read generated output or reuse its workspace ID',async()=>{
   await assert.rejects(read(otherPrincipal,WORKSPACE),ContentReadDenied);
