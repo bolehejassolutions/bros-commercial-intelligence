@@ -72,8 +72,9 @@ export function canonicalActionValues(input: unknown): readonly (readonly [strin
         (integerPart === 1e12 && /[1-9]/.test(fractional))) invalid();
     const trimmedFraction = fractional.replace(/0+$/, "");
     const normalized = trimmedFraction ? whole + "." + trimmedFraction : whole;
-    const previous = values.get(actionType);
-    if (previous !== undefined && previous !== normalized) invalid();
+    // Duplicate labels make a provider row ambiguous, even when values match.
+    // Reject rather than silently de-duplicating an incomplete/merged report.
+    if (values.has(actionType)) invalid();
     values.set(actionType, normalized);
   }
   return [...values.entries()].sort(([a], [b]) => a.localeCompare(b));
@@ -128,8 +129,8 @@ export function reconcileDemandMetaAdReadback(
           !/^[a-z0-9_.]{1,100}$/.test(a.action_type)) invalid();
       const value = integer(a.value);
       const actionType = a.action_type as string;
-      const previousCount = allActionCounts.get(actionType);
-      if (previousCount !== undefined && previousCount !== value) invalid();
+      // Do not silently collapse repeated action types into one signal.
+      if (allActionCounts.has(actionType)) invalid();
       allActionCounts.set(actionType, value);
       if (purchaseLabels.has(actionType)) {
         const previous = aliases.get(actionType);
