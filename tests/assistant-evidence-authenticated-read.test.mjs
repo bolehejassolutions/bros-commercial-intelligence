@@ -115,23 +115,31 @@ test("POST cannot write and is rejected before authentication", async () => {
   assert.equal(calls.length, 0);
 });
 
-test("mis-scoped database rows do not bypass tenant and product projection filters", async () => {
-  const { handler } = fixture({
-    listScopedReceipts: async () => [
-      record({ tenantId: "org-B", evidenceId: "cross-tenant" }),
-      record({ product: "content", evidenceId: "cross-product" }),
-      record(),
-    ],
-  });
-  const body = await (await handler(get())).json();
-  assert.deepEqual(body.receipts.map(row => row.evidenceId), ["evidence-1"]);
+test("repository tenant/product isolation breach fails closed without leaking any receipts", async () => {
+  for (const badRow of [
+    record({ tenantId: "org-B", evidenceId: "cross-tenant" }),
+    record({ product: "content", evidenceId: "cross-product" }),
+    null,
+  ]) {
+    const { handler } = fixture({ listScopedReceipts: async () => [record(), badRow] });
+    const response = await handler(get());
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "read_unavailable" });
+  }
 });
 
-test("other-tenant-only result is NO_ROWS_NOT_ZERO, never zero", async () => {
+test("repository wrong-scope-only result is never misreported as NO_ROWS_NOT_ZERO", async () => {
   const { handler } = fixture({ listScopedReceipts: async () => [record({ tenantId: "org-B" })] });
-  const body = await (await handler(get())).json();
-  assert.equal(body.result, "NO_ROWS_NOT_ZERO");
-  assert.deepEqual(body.receipts, []);
+  const response = await handler(get());
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "read_unavailable" });
+});
+
+test("genuinely empty scoped repository result retains NO_ROWS_NOT_ZERO", async () => {
+  const { handler } = fixture({ listScopedReceipts: async () => [] });
+  const response = await handler(get());
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).result, "NO_ROWS_NOT_ZERO");
 });
 
 test("data source error is generic 503 and never reveals provider details", async () => {
