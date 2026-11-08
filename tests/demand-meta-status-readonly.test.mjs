@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readDemandMetaObjectStatus } from "../lib/demand/meta-status-readonly.ts";
+import { readDemandMetaObjectStatus, readDemandMetaStatusSnapshot } from "../lib/demand/meta-status-readonly.ts";
 const binding = { accountId: "act_1997776120879476", objectId: "120251158023300697", kind: "campaign", apiVersion: "v26.0" };
 const token = "synthetic-token-123456789012345";
 const now = "2026-11-09T00:00:00Z";
@@ -43,4 +43,28 @@ test("bad binding, injection, invalid clock and token deny before network", asyn
   for (const ts of ["2026-11-31T00:00:00Z","2026-11-09T99:00:00Z","not-a-time"])
     await assert.rejects(read(network,binding,token,ts),denied);
   assert.equal(calls,0);
+});
+
+test("bounded snapshot rejects duplicates, mixed tenants and oversized batches before transport", async () => {
+  let calls=0;
+  const transport=async()=>{calls++;return {ok:true,json:async()=>row}};
+  const readBatch=items=>readDemandMetaStatusSnapshot(items,token,now,transport);
+  for (const items of [[],Array(21).fill(binding),[binding,binding],
+    [binding,{...binding,accountId:"act_1234567890"}]])
+    await assert.rejects(readBatch(items),denied);
+  assert.equal(calls,0);
+  const result=await readBatch([binding,{...binding,kind:"adset",objectId:"120251158023300698"}]
+    .slice(0,1));
+  assert.equal(result.rows.length,1);
+  assert.equal(result.executionAllowed,false);
+  assert.equal(Object.isFrozen(result.rows),true);
+  assert.equal(Object.isFrozen(result),true);
+});
+test("snapshot never returns partial rows after a provider failure",async()=>{
+  let calls=0;
+  const transport=async()=>{calls++;return {ok:true,json:async()=>calls===1?row:{...row,id:"invalid"}}};
+  await assert.rejects(readDemandMetaStatusSnapshot(
+    [binding,{...binding,kind:"adset",objectId:"120251158023300698"}],
+    token,now,transport),denied);
+  assert.equal(calls,2);
 });
