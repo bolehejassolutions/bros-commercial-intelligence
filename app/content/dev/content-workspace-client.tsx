@@ -10,7 +10,7 @@ import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-pre
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
 import {contentWorkspaceReadError} from '@/lib/content/neon-content-workspace-http-error';
-import {shouldResetContentDraftOnWorkspaceSwitch} from '@/lib/content/neon-content-workspace-switch';
+import {shouldResetContentDraftOnWorkspaceSwitch,reconcileContentWorkspaceSelection} from '@/lib/content/neon-content-workspace-switch';
 import {initialWorkspaceLoad,loadingWorkspace,loadedWorkspace,failedWorkspace,
  type WorkspaceLoadState} from '@/lib/content/neon-content-workspace-load-state';
 type Workspace={id:string;name:string;updated_at?:string};
@@ -130,7 +130,7 @@ export default function ContentWorkspaceClient(){
     if(res.status===401)throw new Error('Sesi tamat. Sila log masuk semula.');
     if(!res.ok)throw new Error('Senarai workspace belum dapat dibaca.');
     const next=parseContentWorkspaceIndex(await res.json());
-    if(active){setWorkspaces(next);setSelected(previous=>next.some(w=>w.id===previous)?previous:(next[0]?.id??''));setIndexError('');}
+    if(active){setWorkspaces(next);setSelected(previous=>reconcileContentWorkspaceSelection(previous,next.map(w=>w.id)));setIndexError('');}
    }catch(e){if(active){setWorkspaces([]);setSelected('');setIndexError(e instanceof Error?e.message:'Ralat memuatkan workspace.');}}
    finally{if(active)setLoading(false);}
   })();
