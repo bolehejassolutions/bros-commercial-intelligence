@@ -156,3 +156,33 @@ test("Fetch Headers normalize surrounding whitespace before Content-Length valid
   assert.deepEqual(await f.introspect("opaque-token"), good);
   assert.equal(f.calls.length, 1);
 });
+
+test("DEV backchannel refuses implicit native fetch or missing egress transport", () => {
+  assert.throws(() => createBusinessOsDevBackchannel(config), {
+    message: "DEV backchannel unavailable",
+  });
+  assert.throws(() => createBusinessOsDevBackchannel(config, null), {
+    message: "DEV backchannel unavailable",
+  });
+  assert.throws(() => createBusinessOsDevBackchannel(config, {}), {
+    message: "DEV backchannel unavailable",
+  });
+});
+
+test("explicit injected egress-restricted transport remains functional", async () => {
+  let calls = 0;
+  const restrictedTransport = async (url, options) => {
+    calls++;
+    assert.equal(url, endpoint);
+    assert.equal(options.redirect, "error");
+    assert.equal(options.credentials, "omit");
+    const response = new Response(JSON.stringify(good), {
+      headers: { "Content-Type": "application/json" },
+    });
+    Object.defineProperty(response, "url", { value: endpoint });
+    return response;
+  };
+  const introspect = createBusinessOsDevBackchannel(config, restrictedTransport);
+  assert.deepEqual(await introspect("synthetic-token"), good);
+  assert.equal(calls, 1);
+});
