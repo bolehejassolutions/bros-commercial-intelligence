@@ -2,7 +2,7 @@
  * Wiring requires a real server-side identity verifier and restricted Neon transaction.
  * Never accept a principal, tenant, or role from request body/query/headers.
  */
-import { ContentReadDenied } from './neon-content-workspace-reader.ts';
+import { ContentReadDenied,ContentReadIncomplete } from './neon-content-workspace-reader.ts';
 type Principal = Readonly<{userId:string;authenticated:true}>;
 type Reader = (principal:Principal, workspaceId:string)=>Promise<unknown>;
 type VerifySession = (request:Request)=>Promise<Principal|null>;
@@ -24,6 +24,7 @@ export function createContentWorkspaceGet(verifySession:VerifySession,readWorksp
    return response(200,{data});
   }catch(error){
    if(error instanceof ContentReadDenied)return response(404,{error:'not_found'});
+   if(error instanceof ContentReadIncomplete)return response(503,{error:'workspace_incomplete'});
    // Never expose SQL, identity or tenant details through an HTTP error.
    return response(503,{error:'workspace_unavailable'});
   }
