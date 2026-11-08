@@ -80,7 +80,7 @@ export function createBusinessOsDevBackchannel(
           response.url !== url.href ||
           response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") return null;
       const size = response.headers.get("content-length");
-      if (size && (!/^\\d+$/.test(size) || Number(size) > MAX_BYTES)) return null;
+      if (size && (!/^\d+$/.test(size) || Number(size) > MAX_BYTES)) return null;
       const reader = response.body?.getReader();
       if (!reader) return null;
       const chunks: Uint8Array[] = [];
