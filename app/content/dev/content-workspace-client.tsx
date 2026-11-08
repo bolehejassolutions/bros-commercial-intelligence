@@ -189,7 +189,11 @@ export default function ContentWorkspaceClient(){
       style={{background:gold,color:'#111b29',padding:'9px 13px',border:0,borderRadius:7,cursor:'pointer'}}>Cuba semula senarai workspace</button>
     </div>:workspaces.length===0?<p>Tiada workspace yang dipautkan kepada identiti Neon Auth ini. Semak keahlian CONTENT sebelum meneruskan.</p>:
     <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>{workspaces.map(workspace=><button key={workspace.id} type="button"
-     onClick={()=>{setDetailLoad(initialWorkspaceLoad());setSelected(workspace.id);setNotice('');}}
+     onClick={()=>{if(workspace.id===selected)return;
+      // Draft input is tenant-scoped. Never carry workspace A's unsaved fields
+      // into workspace B where they could be submitted by mistake.
+      setDraft(initialDraft);setError('');setNotice('');
+      setDetailLoad(initialWorkspaceLoad());setSelected(workspace.id);}}
      aria-pressed={selected===workspace.id}
      style={{border:'1px solid '+(selected===workspace.id?gold:'#526580'),background:selected===workspace.id?'#39432e':'#1a2b43',color:'#f4efe1',padding:'10px 16px',borderRadius:8,cursor:'pointer'}}>
      {workspace.name}</button>)}</div>}
