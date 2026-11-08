@@ -22,6 +22,31 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const id = /^[a-zA-Z0-9][a-zA-Z0-9:_-]{7,127}$/;
 const hash = /^[0-9a-f]{64}$/;
 const deny = (): never => { throw new Error("BROS_DEMAND_CREATIVE_INTAKE_DENIED"); };
+/** Validate PNG chunk framing and CRC32; a matching hash is not decoding proof. */
+function validPngChunks(data: Uint8Array): boolean {
+  const read32 = (i: number) =>
+    (data[i] * 0x1000000 + data[i + 1] * 65536 + data[i + 2] * 256 + data[i + 3]) >>> 0;
+  let offset = 8, count = 0, seenIdat = false, seenEnd = false;
+  while (offset + 12 <= data.length && count++ < 512) {
+    const length = read32(offset);
+    if (length > data.length - offset - 12) return false;
+    const type = String.fromCharCode(...data.subarray(offset + 4, offset + 8));
+    if (!/^[A-Za-z]{4}$/.test(type)) return false;
+    if (count === 1 && (type !== "IHDR" || length !== 13)) return false;
+    if (type === "IHDR" && count !== 1) return false;
+    if (type === "IDAT") seenIdat = true;
+    if (type === "IEND" && (length !== 0 || !seenIdat)) return false;
+    let crc = 0xffffffff;
+    for (let i = offset + 4; i < offset + 8 + length; i++) {
+      crc ^= data[i];
+      for (let b = 0; b < 8; b++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    if (((crc ^ 0xffffffff) >>> 0) !== read32(offset + 8 + length)) return false;
+    offset += 12 + length;
+    if (type === "IEND") { seenEnd = true; break; }
+  }
+  return seenEnd && offset === data.length;
+}
 function signature(mime: CreativeRecord["mime"], data: Uint8Array): boolean {
   if (mime === "image/png") {
     // PNG requires a complete, bounded IHDR and IEND, not merely an
@@ -33,6 +58,7 @@ function signature(mime: CreativeRecord["mime"], data: Uint8Array): boolean {
     const width = (data[16] * 0x1000000 + (data[17] << 16) + (data[18] << 8) + data[19]) >>> 0;
     const height = (data[20] * 0x1000000 + (data[21] << 16) + (data[22] << 8) + data[23]) >>> 0;
     return width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
+      validPngChunks(data) &&
       data[data.length - 12] === 0 && data[data.length - 11] === 0 &&
       data[data.length - 10] === 0 && data[data.length - 9] === 0 &&
       data[data.length - 8] === 73 && data[data.length - 7] === 69 &&
