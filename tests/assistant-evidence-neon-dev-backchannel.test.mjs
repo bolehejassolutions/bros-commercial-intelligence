@@ -125,3 +125,28 @@ test("a configured HTTPS DNS hostname remains usable with the injected test tran
   assert.deepEqual(await f.introspect("opaque-token"), good);
   assert.equal(f.calls.length, 1);
 });
+
+test("valid numeric Content-Length is accepted when bytes and schema match", async () => {
+  const payload = JSON.stringify(good);
+  const f = fixture(good, { headers: { "Content-Length": String(Buffer.byteLength(payload)) } });
+  assert.deepEqual(await f.introspect("opaque-token"), good);
+  assert.equal(f.calls.length, 1);
+});
+
+test("invalid or oversized Content-Length fails closed before reading response", async () => {
+  for (const size of ["-1", "1.5", "NaN", "4097", "999999999999999999999999", " 12", "12 ", "0x12"]) {
+    const f = fixture(good, { headers: { "Content-Length": size } });
+    assert.equal(await f.introspect("opaque-token"), null, "reject Content-Length " + size);
+  }
+});
+
+test("declared short Content-Length cannot bypass streaming byte ceiling", async () => {
+  const oversized = createBusinessOsDevBackchannel(config, async () => {
+    const response = new Response(JSON.stringify({ ...good, padding: "x".repeat(5000) }), {
+      headers: { "Content-Type": "application/json", "Content-Length": "12" },
+    });
+    Object.defineProperty(response, "url", { value: endpoint });
+    return response;
+  });
+  assert.equal(await oversized("opaque-token"), null);
+});
