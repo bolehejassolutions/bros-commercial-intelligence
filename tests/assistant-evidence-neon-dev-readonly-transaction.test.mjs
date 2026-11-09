@@ -35,9 +35,11 @@ test("pinned read-only transaction executes one client, local timeouts, rollback
     "SET LOCAL statement_timeout = '5000ms'",
     "SET LOCAL lock_timeout = '1000ms'",
     "SET LOCAL idle_in_transaction_session_timeout = '7000ms'",
+    "SET LOCAL search_path = pg_catalog",
+    "SET LOCAL row_security = on",
     "SELECT $1::text", "ROLLBACK",
   ]);
-  assert.deepEqual(f.calls[4].params, ["synthetic"]);
+  assert.deepEqual(f.calls[6].params, ["synthetic"]);
   assert.deepEqual(f.releases, [undefined]);
 });
 test("reader SQL failure rolls back, discards secrets and releases connection", async () => {
@@ -184,4 +186,30 @@ test("an awaited failed SQL cannot be caught by callback to return a success", a
     return "must-never-succeed";
   }), DevReadTransactionUnavailable);
   assert.equal(f.calls.at(-1).sql, "ROLLBACK");
+});
+
+test("a poisoned inherited search_path cannot survive the restricted transaction setup", async () => {
+  const f = fixture();
+  await f.transaction(async query => {
+    // Both settings MUST be applied before any server-owned reader SQL.
+    assert.deepEqual(f.calls.slice(4, 6).map(x => x.sql), [
+      "SET LOCAL search_path = pg_catalog", "SET LOCAL row_security = on",
+    ]);
+    await query("SELECT current_user", []);
+  });
+  assert.equal(f.calls.at(-1).sql, "ROLLBACK");
+  assert.deepEqual(f.releases, [undefined]);
+});
+
+test("failure to pin search_path or RLS posture denies all reader SQL", async () => {
+  for (const failAt of ["SET LOCAL search_path", "SET LOCAL row_security"]) {
+    const f = fixture({ failAt });
+    let reached = false;
+    await assert.rejects(() => f.transaction(async () => { reached = true; }),
+      error => error instanceof DevReadTransactionUnavailable &&
+        !error.message.includes("PRIVATE"));
+    assert.equal(reached, false);
+    assert.equal(f.calls.at(-1).sql, "ROLLBACK");
+    assert.equal(f.releases.length, 1);
+  }
 });
