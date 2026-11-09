@@ -51,7 +51,22 @@ export function createBusinessOsDevIdentityVerifier(
           !RFC3339_EXPIRY.test(session.expiresAt) ||
           !Number.isFinite(clock)) return null;
       const expiry = Date.parse(session.expiresAt);
-      if (!Number.isFinite(expiry) || expiry <= clock ||
+      // Date.parse may normalize impossible calendar dates (e.g. February 30).
+      // Round-trip the declared wall-clock fields in their explicit UTC offset.
+      const match = /^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$/.exec(session.expiresAt);
+      if (!match) return null;
+      const [, year, month, day, hour, minute, second, zone] = match;
+      const offsetMinutes = zone === "Z" ? 0 :
+        (zone[0] === "+" ? 1 : -1) * (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6)));
+      const wallClock = new Date(expiry + offsetMinutes * 60_000);
+      if (!Number.isFinite(expiry) ||
+          wallClock.getUTCFullYear() !== Number(year) ||
+          wallClock.getUTCMonth() + 1 !== Number(month) ||
+          wallClock.getUTCDate() !== Number(day) ||
+          wallClock.getUTCHours() !== Number(hour) ||
+          wallClock.getUTCMinutes() !== Number(minute) ||
+          wallClock.getUTCSeconds() !== Number(second)) return null;
+      if (expiry <= clock ||
           expiry - clock > MAX_TTL_MS) return null;
       return Object.freeze({ subjectId: session.subjectId, sessionId: session.sessionId, expiresAt: session.expiresAt });
     } catch {
