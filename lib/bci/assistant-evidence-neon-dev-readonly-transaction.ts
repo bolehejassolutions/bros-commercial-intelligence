@@ -52,16 +52,31 @@ export function createBusinessOsDevReadOnlyTransaction(
       await client.query("SET LOCAL statement_timeout = '5000ms'", []);
       await client.query("SET LOCAL lock_timeout = '1000ms'", []);
       await client.query("SET LOCAL idle_in_transaction_session_timeout = '7000ms'", []);
+      // A reader may accidentally retain the query callback. Its authority
+      // must expire when the transaction callback returns, before ROLLBACK.
+      let accepting = true;
+      const inFlight = new Set<Promise<DevReadSqlResult>>();
       const query = async (sql: string, params: readonly DevReadSqlValue[]) => {
+        if (!accepting) deny();
         if (typeof sql !== "string" || !sql.trim() || !Array.isArray(params) ||
             params.some(p => p !== null &&
               typeof p !== "string" && typeof p !== "boolean" &&
               (typeof p !== "number" || !Number.isFinite(p)))) deny();
         // SQL is provided exclusively by server-owned allowlisted readers.
         // This guard does NOT sanitize arbitrary caller SQL or authorize it.
-        return await client!.query(sql, params);
+        const pending = client!.query(sql, params);
+        inFlight.add(pending);
+        try { return await pending; }
+        finally { inFlight.delete(pending); }
       };
-      const value = await callback(query);
+      let value: Awaited<ReturnType<typeof callback>>;
+      try { value = await callback(query); }
+      finally {
+        // Stop all new queries before any rollback, even on callback failure.
+        accepting = false;
+        // Never return a connection to the pool while detached SQL is running.
+        await Promise.allSettled([...inFlight]);
+      }
       await client.query("ROLLBACK", []);
       began = false;
       healthy = true;
