@@ -141,3 +141,47 @@ test("detached SQL must settle before rollback and connection release", async ()
   assert.deepEqual(events.slice(-2), ["ROLLBACK", "RELEASE"]);
   assert.ok(!events.includes("SELECT after-callback"));
 });
+
+
+test("detached SQL rejection after callback returns poisons result and rolls back", async () => {
+  const events = [];
+  let rejectDetached;
+  const pool = { async connect() {
+    return {
+      async query(sql) {
+        events.push(sql);
+        if (sql === "SELECT delayed failure") {
+          return await new Promise((_, reject) => { rejectDetached = reject; });
+        }
+        return { rows: [] };
+      },
+      release(error) { events.push(error ? "DISCARD" : "RELEASE"); },
+    };
+  }};
+  const transaction = createBusinessOsDevReadOnlyTransaction(pool);
+  const result = transaction(async query => {
+    // Detached query deliberately has its own rejection observer. A real
+    // driver may reject even after the callback has already returned.
+    void query("SELECT delayed failure", []).catch(() => {});
+    return "must-never-succeed";
+  });
+  for (let i = 0; i < 20 && !rejectDetached; i++) {
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(typeof rejectDetached, "function");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(!events.includes("ROLLBACK"));
+  rejectDetached(Error("PRIVATE_DB_CREDENTIAL"));
+  await assert.rejects(result, e =>
+    e instanceof DevReadTransactionUnavailable && !e.message.includes("PRIVATE"));
+  assert.deepEqual(events.slice(-2), ["ROLLBACK", "RELEASE"]);
+});
+
+test("an awaited failed SQL cannot be caught by callback to return a success", async () => {
+  const f = fixture({ failAt: "SELECT denied" });
+  await assert.rejects(() => f.transaction(async query => {
+    try { await query("SELECT denied", []); } catch { /* swallow */ }
+    return "must-never-succeed";
+  }), DevReadTransactionUnavailable);
+  assert.equal(f.calls.at(-1).sql, "ROLLBACK");
+});
