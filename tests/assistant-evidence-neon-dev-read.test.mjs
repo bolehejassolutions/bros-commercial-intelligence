@@ -166,6 +166,34 @@ test("malformed timestamps/metrics or overlapping time windows never become clea
   }
 });
 
+test("invalid calendar dates and noncanonical UTC provenance never become trusted receipts", async () => {
+  // PostgreSQL to_char normally emits canonical UTC. A malformed adapter,
+  // unexpected driver value or synthetic row must still fail closed.
+  for (const field of ["collectedAt", "observedAt", "windowStart", "windowEnd"]) {
+    for (const timestamp of [
+      "2026-02-30T03:59:00.000Z", // Date.parse silently normalizes this.
+      "2026-11-31T03:59:00.000Z",
+      "2026-13-01T03:59:00.000Z",
+      "2026-11-08T24:00:00.000Z",
+      "2026-11-08T03:59:00.000+00:00", // reject noncanonical offset.
+      "2026-11-08T03:59:00Z", // reject non-millisecond representation.
+    ]) {
+      const f = fixture({ rows: [receipt({ [field]: timestamp })] });
+      await assert.rejects(f.read(selection), BusinessOsDevSqlDenied);
+      assert.equal(f.rolledBack, true);
+    }
+  }
+  // Leap-day validity must not be accidentally rejected by hard-coded ranges.
+  const leap = fixture({ rows: [receipt({
+    collectedAt: "2024-02-29T12:00:00.000Z",
+    observedAt: "2024-02-29T11:59:00.000Z",
+    windowStart: "2024-02-28T00:00:00.000Z",
+    windowEnd: "2024-02-29T23:59:59.000Z",
+  })] });
+  const [row] = await leap.read(selection);
+  assert.equal(row.provenance.collectedAt, "2024-02-29T12:00:00.000Z");
+});
+
 test("duplicate evidence ID, oversized responses and malformed result objects are denied", async () => {
   for (const rows of [
     [receipt(), receipt()], Array.from({ length: 21 }, (_, i) =>
