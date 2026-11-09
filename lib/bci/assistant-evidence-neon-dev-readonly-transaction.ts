@@ -98,7 +98,11 @@ export function createBusinessOsDevReadOnlyTransaction(
         }
         // SQL is provided exclusively by server-owned allowlisted readers.
         // This guard does NOT sanitize arbitrary caller SQL or authorize it.
-        const pending = client!.query(sql, params);
+        // A driver can throw synchronously before returning a Promise. Treat
+        // that as a failed SQL operation even if the reader catches it.
+        let pending: Promise<DevReadSqlResult>;
+        try { pending = Promise.resolve(client!.query(sql, params)); }
+        catch { detachedQueryFailed = true; deny(); }
         inFlight.add(pending);
         try {
           const result = await pending;
