@@ -27,6 +27,11 @@ export class DevReadTransactionUnavailable extends Error {
   }
 }
 const deny = (): never => { throw new DevReadTransactionUnavailable(); };
+// Both fixed restricted readers execute exactly four SQL statements. Leave a
+// small explicit budget for future reviewed reads, never unlimited queries.
+const MAX_READER_QUERIES = 8;
+const MAX_SQL_BYTES = 4096;
+const MAX_BOUND_PARAMS = 3;
 
 /**
  * Builds a transaction callback compatible with BOTH restricted SQL readers.
@@ -65,12 +70,18 @@ export function createBusinessOsDevReadOnlyTransaction(
       // A callback can launch a query and return without awaiting it. Its
       // rejection must still invalidate the entire read, not become a success.
       let detachedQueryFailed = false;
+      let readerQueries = 0;
       const query = async (sql: string, params: readonly DevReadSqlValue[]) => {
         if (!accepting) deny();
-        if (typeof sql !== "string" || !sql.trim() || !Array.isArray(params) ||
+        if (typeof sql !== "string" || !sql.trim() ||
+            Buffer.byteLength(sql, "utf8") > MAX_SQL_BYTES ||
+            !Array.isArray(params) || params.length > MAX_BOUND_PARAMS ||
             params.some(p => p !== null &&
               typeof p !== "string" && typeof p !== "boolean" &&
               (typeof p !== "number" || !Number.isFinite(p)))) deny();
+        // Count BEFORE dispatch: concurrent/detached calls share the same
+        // transaction budget and cannot bypass it through races.
+        if (++readerQueries > MAX_READER_QUERIES) deny();
         // SQL is provided exclusively by server-owned allowlisted readers.
         // This guard does NOT sanitize arbitrary caller SQL or authorize it.
         const pending = client!.query(sql, params);
