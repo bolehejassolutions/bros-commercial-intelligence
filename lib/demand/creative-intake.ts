@@ -108,6 +108,15 @@ function signature(mime: CreativeRecord["mime"], data: Uint8Array): boolean {
 export function prepareDemandCreativeIntake(
   tenantId: string, record: CreativeRecord, media: Uint8Array,
 ) {
+  // Reject untrusted accessor/prototype/extra-key envelopes before reading any
+  // attestation. This is a structural check, not independent approval proof.
+  const expectedKeys = "aiDisclosure,approvalEvidenceId,assetId,brandInstanceId,bytes,claimsEvidence,creativeVersion,editorialQa,logoEvidence,mediaQa,mime,presetId,presetVersion,sha256,status,tenantId";
+  if (!record || typeof record !== "object" ||
+      Object.getPrototypeOf(record) !== Object.prototype ||
+      Object.keys(record).sort().join(",") !== expectedKeys ||
+      Reflect.ownKeys(record).length !== 16 ||
+      Object.values(Object.getOwnPropertyDescriptors(record)).some(d =>
+        !Object.hasOwn(d, "value") || !d.enumerable)) deny();
   if (!uuid.test(tenantId) || !record || !uuid.test(record.tenantId) ||
       record.tenantId.toLowerCase() !== tenantId.toLowerCase() ||
       ![record.assetId, record.creativeVersion, record.brandInstanceId,
