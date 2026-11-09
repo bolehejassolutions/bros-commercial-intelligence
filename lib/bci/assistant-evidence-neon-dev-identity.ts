@@ -24,6 +24,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const BEARER = /^[A-Za-z0-9._~+/-]+={0,2}$/;
 const SAFE = /^[A-Za-z0-9_.:-]{1,256}$/;
 const MAX_TTL_MS = 24 * 60 * 60 * 1000;
+// Reject locale-dependent or timezone-free dates from a purported trusted IdP.
+const RFC3339_EXPIRY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d)$/;
 
 export function createBusinessOsDevIdentityVerifier(
   introspect: TrustedIntrospection,
@@ -46,6 +48,7 @@ export function createBusinessOsDevIdentityVerifier(
           typeof session.sessionId !== "string" || !SAFE.test(session.sessionId) ||
           session.issuer !== config.issuer || session.audience !== config.audience ||
           session.revoked !== false || typeof session.expiresAt !== "string" ||
+          !RFC3339_EXPIRY.test(session.expiresAt) ||
           !Number.isFinite(clock)) return null;
       const expiry = Date.parse(session.expiresAt);
       if (!Number.isFinite(expiry) || expiry <= clock ||
