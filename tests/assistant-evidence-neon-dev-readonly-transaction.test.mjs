@@ -213,3 +213,29 @@ test("failure to pin search_path or RLS posture denies all reader SQL", async ()
     assert.equal(f.releases.length, 1);
   }
 });
+
+
+test("caught driver rejection immediately revokes follow-up SQL capability", async () => {
+  const f = fixture({ failAt: "SELECT denied" });
+  await assert.rejects(() => f.transaction(async query => {
+    await assert.rejects(() => query("SELECT denied", []));
+    await assert.rejects(() => query("SELECT should-not-dispatch", []),
+      DevReadTransactionUnavailable);
+    return "must-never-succeed";
+  }), DevReadTransactionUnavailable);
+  assert.equal(f.calls.some(x => x.sql === "SELECT should-not-dispatch"), false);
+  assert.equal(f.calls.at(-1).sql, "ROLLBACK");
+});
+
+test("invalid SQL poisons the query capability even if caller swallows denial", async () => {
+  const f = fixture();
+  await assert.rejects(() => f.transaction(async query => {
+    await assert.rejects(() => query("SELECT 1; SELECT 2", []),
+      DevReadTransactionUnavailable);
+    await assert.rejects(() => query("SELECT should-not-dispatch", []),
+      DevReadTransactionUnavailable);
+    return "must-never-succeed";
+  }), DevReadTransactionUnavailable);
+  assert.equal(f.calls.some(x => x.sql === "SELECT should-not-dispatch"), false);
+  assert.equal(f.calls.at(-1).sql, "ROLLBACK");
+});
