@@ -209,3 +209,52 @@ test("PNG repeated palette chunks are rejected even with valid CRC and matching 
   assert.equal(prepareDemandCreativeIntake(tenantId, record(once), once).metaUploadAllowed, false);
   assert.throws(() => prepareDemandCreativeIntake(tenantId, record(twice), twice), denied);
 });
+
+
+test("PNG palette rules reject indexed images without PLTE, oversized indexed palettes and grayscale PLTE", () => {
+  const crc32 = bytes => {
+    let crc = 0xffffffff;
+    for (const value of bytes) {
+      crc ^= value;
+      for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const write32 = (out, offset, value) => {
+    out[offset] = (value >>> 24) & 255;
+    out[offset + 1] = (value >>> 16) & 255;
+    out[offset + 2] = (value >>> 8) & 255;
+    out[offset + 3] = value & 255;
+  };
+  const chunk = (type, payload) => {
+    const out = new Uint8Array(12 + payload.length);
+    write32(out, 0, payload.length);
+    out.set([...type].map(c => c.charCodeAt(0)), 4);
+    out.set(payload, 8);
+    write32(out, out.length - 4, crc32(out.subarray(4, out.length - 4)));
+    return out;
+  };
+  const changeHeader = (depth, type) => {
+    const bytes = Uint8Array.from(media);
+    bytes[24] = depth; bytes[25] = type;
+    write32(bytes, 29, crc32(bytes.subarray(12, 29)));
+    return bytes;
+  };
+  const withPalette = (bytes, entries) => Uint8Array.from([
+    ...bytes.subarray(0, 33), ...chunk("PLTE", new Uint8Array(entries * 3)),
+    ...bytes.subarray(33),
+  ]);
+  const record = bytes => ({
+    ...approved, bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+  const indexed = changeHeader(1, 3);
+  const grayscale = changeHeader(8, 0);
+  for (const bytes of [
+    indexed,
+    withPalette(indexed, 3),
+    withPalette(grayscale, 1),
+  ]) assert.throws(() => prepareDemandCreativeIntake(tenantId, record(bytes), bytes), denied);
+  const validIndexedStructure = withPalette(indexed, 2);
+  assert.equal(prepareDemandCreativeIntake(tenantId, record(validIndexedStructure), validIndexedStructure).metaUploadAllowed, false);
+});
