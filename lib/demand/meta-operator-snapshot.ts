@@ -65,7 +65,7 @@ export async function readDemandOperatorSnapshot(
     finalScope.permission!=="DEMAND_META_READ"||
     !(finishedAt instanceof Date)||!Number.isFinite(finishedAt.getTime())||
     typeof finalScope.verifiedAt!=="string"||
-    !/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{3})?Z$/.test(finalScope.verifiedAt)||
+    !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:[.][0-9]{3})?Z$/.test(finalScope.verifiedAt)||
     !Number.isFinite(Date.parse(finalScope.verifiedAt))||
     finishedAt.getTime()-Date.parse(finalScope.verifiedAt)>60000||
     Date.parse(finalScope.verifiedAt)>finishedAt.getTime()+5000)fail();
