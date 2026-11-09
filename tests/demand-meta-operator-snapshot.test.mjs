@@ -105,3 +105,16 @@ test("post-read fresh canonical membership succeeds, malformed timestamp fails c
   assert.equal(checks,2);
  }
 });
+
+test("post-read membership timestamp regression and backwards clock deny release",async()=>{
+ const h=harness();let checks=0;
+ const newer={...scope,verifiedAt:"2026-11-09T02:00:30.000Z"};
+ const older={...scope,verifiedAt:"2026-11-09T02:00:00.000Z"};
+ await assert.rejects(readDemandOperatorSnapshot(request,async()=>++checks===1?newer:older,h.secret,h.transport,
+  ()=>new Date("2026-11-09T02:00:30.000Z")),denied);
+ assert.equal(checks,2);
+ const clockHarness=harness();let ticks=0;
+ await assert.rejects(readDemandOperatorSnapshot(request,clockHarness.resolver,clockHarness.secret,clockHarness.transport,
+  ()=>new Date(++ticks===1?"2026-11-09T02:00:10.000Z":"2026-11-09T02:00:09.000Z")),denied);
+ assert.equal(ticks,2);
+});
