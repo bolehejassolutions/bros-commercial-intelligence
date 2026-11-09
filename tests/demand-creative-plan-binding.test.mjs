@@ -19,3 +19,15 @@ test("forged grants, missing admission, malformed scope and extra fields fail cl
   for(const [i,p] of [[{...intake,metaUploadAllowed:true},plan],[{...intake,campaignExecutionAllowed:true},plan],[{...intake,admissionChecksApplied:false},plan],[{...intake,approvalRecheckedAfterRead:false},plan],[{...intake,approvalIndependentlyAttested:true},plan],[intake,{...plan,tenantId:"other"}],[intake,{...plan,accountId:"123"}],[intake,{...plan,campaignPlanDigest:"bad"}],[intake,{...plan,ownerApproved:true}]])
     assert.throws(()=>bindDemandCreativeForReview(i,p),deny);
 });
+
+test("rejects unexpected creative permissions, prototype pollution and accessor attestations",()=> {
+  assert.throws(()=>bindDemandCreativeForReview({...intake, providerApproved:true},plan),deny);
+  assert.throws(()=>bindDemandCreativeForReview(Object.assign(Object.create(null),intake),plan),deny);
+  assert.throws(()=>bindDemandCreativeForReview(intake,Object.assign(Object.create(null),plan)),deny);
+  const accessor={...intake};
+  Object.defineProperty(accessor,"admissionChecksApplied",{enumerable:true,get(){throw Error("getter executed");}});
+  assert.throws(()=>bindDemandCreativeForReview(accessor,plan),deny);
+  const planAccessor={...plan};
+  Object.defineProperty(planAccessor,"accountId",{enumerable:true,get(){throw Error("getter executed");}});
+  assert.throws(()=>bindDemandCreativeForReview(intake,planAccessor),deny);
+});
