@@ -11,7 +11,7 @@ const ownKeys=(value:object,expected:readonly string[])=>{
  return keys.length===expected.length && keys.every(k=>expected.includes(k));
 };
 const validDate=(value:unknown):value is string=>
- typeof value==="string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+ typeof value==="string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
  Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10)===value;
 
 /** resolveScope must independently authenticate the principal and freshly verify tenant membership.
