@@ -45,3 +45,19 @@ test("provider error returns no partial snapshot and redacts provider message",a
  await assert.rejects(readDemandOperatorSnapshot(request,h.resolver,h.secret,broken,clock),e=>e.message==="BROS_DEMAND_OPERATOR_READ_DENIED");
  assert.equal(count,2);
 });
+test("malformed calendar windows and unexpected request fields deny before secrets",async()=>{
+ const cases=[
+  {...request,since:"2026-02-30"},
+  {...request,until:"2026-13-01"},
+  {...request,since:"2026-11-08",until:"2026-11-07"},
+  {...request,since:"2026-01-01",until:"2026-02-03"},
+  {...request,unexpectedTenant:"tenant_12345"},
+  {...request,objects:[{...request.objects[0],approved:true}]},
+  {...request,objects:[null]},
+ ];
+ for(const candidate of cases){
+  const h=harness();
+  await assert.rejects(readDemandOperatorSnapshot(candidate,h.resolver,h.secret,h.transport,clock),denied);
+  assert.deepEqual(h.counts(),{credentials:0,network:0});
+ }
+});
