@@ -6,6 +6,13 @@ export type VerifiedDemandScope = Readonly<{principalId:string;tenantId:string;a
 export type DemandOperatorRead = Readonly<{accountId:string;apiVersion:string;since:string;until:string;objects:readonly Readonly<{objectId:string;kind:"campaign"|"adset"|"ad"}>[]}>;
 const fail=():never=>{throw Error("BROS_DEMAND_OPERATOR_READ_DENIED");};
 const validId=(x:unknown):x is string=>typeof x==="string" && /^[a-zA-Z0-9_-]{8,128}$/.test(x);
+const ownKeys=(value:object,expected:readonly string[])=>{
+ const keys=Object.keys(value);
+ return keys.length===expected.length && keys.every(k=>expected.includes(k));
+};
+const validDate=(value:unknown):value is string=>
+ typeof value==="string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+ Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10)===value;
 
 /** resolveScope must independently authenticate the principal and freshly verify tenant membership.
  * Never pass caller-supplied scope or browser credentials as trusted server authority. */
@@ -16,6 +23,7 @@ export async function readDemandOperatorSnapshot(
 ){
  try {
   if(!request||typeof request!=="object"||Array.isArray(request)||
+    !ownKeys(request,["accountId","apiVersion","since","until","objects"])||
     typeof resolveScope!=="function"||typeof getServerToken!=="function"||
     typeof transport!=="function"||typeof now!=="function")fail();
   const scope=await resolveScope();
@@ -27,10 +35,14 @@ export async function readDemandOperatorSnapshot(
     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(scope.verifiedAt)||
     timestamp.getTime()-Date.parse(scope.verifiedAt)>60000||
     Date.parse(scope.verifiedAt)>timestamp.getTime()+5000)fail();
-  if(!Array.isArray(request.objects)||request.objects.length<1||request.objects.length>20||
+  if(!validDate(request.since)||!validDate(request.until)||request.since>request.until||
+    (Date.parse(request.until)-Date.parse(request.since))/86400000>31||
+    !Array.isArray(request.objects)||request.objects.length<1||request.objects.length>20||
     typeof request.apiVersion!=="string"||typeof request.since!=="string"||
     typeof request.until!=="string")fail();
   const observedAt=timestamp.toISOString();
+  if(request.objects.some(item=>!item||typeof item!=="object"||Array.isArray(item)||
+    !ownKeys(item,["objectId","kind"])))fail();
   const bindings:MetaStatusBinding[]=request.objects.map(item=>({
     accountId:scope.accountId,apiVersion:request.apiVersion,objectId:item?.objectId,kind:item?.kind
   }));
