@@ -61,3 +61,13 @@ test("malformed calendar windows and unexpected request fields deny before secre
   assert.deepEqual(h.counts(),{credentials:0,network:0});
  }
 });
+
+test("canonical leap-day date is accepted while invalid leap-day is denied before credentials",async()=>{
+ const h=harness();
+ const accepted=await readDemandOperatorSnapshot({...request,since:"2024-02-29",until:"2024-03-01"},h.resolver,h.secret,h.transport,clock);
+ assert.equal(accepted.executionAllowed,false);
+ assert.deepEqual(h.counts(),{credentials:1,network:2});
+ const invalid=harness();
+ await assert.rejects(readDemandOperatorSnapshot({...request,since:"2025-02-29",until:"2025-03-01"},invalid.resolver,invalid.secret,invalid.transport,clock),denied);
+ assert.deepEqual(invalid.counts(),{credentials:0,network:0});
+});
