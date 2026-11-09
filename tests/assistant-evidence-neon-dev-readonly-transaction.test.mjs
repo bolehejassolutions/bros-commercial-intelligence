@@ -87,3 +87,57 @@ test("connection failure does not leak private driver error", async () => {
   await assert.rejects(() => transaction(async () => null),
     e => e instanceof DevReadTransactionUnavailable && !e.message.includes("PRIVATE"));
 });
+
+
+test("escaped query capability is revoked after successful callback and pool release", async () => {
+  const f = fixture();
+  let escaped;
+  await f.transaction(async query => { escaped = query; return "ok"; });
+  const before = f.calls.length;
+  await assert.rejects(() => escaped("SELECT $1", ["outside-transaction"]), DevReadTransactionUnavailable);
+  assert.equal(f.calls.length, before);
+  assert.deepEqual(f.releases, [undefined]);
+});
+test("escaped query capability is revoked after callback exception", async () => {
+  const f = fixture();
+  let escaped;
+  await assert.rejects(() => f.transaction(async query => {
+    escaped = query;
+    throw Error("private-error");
+  }), DevReadTransactionUnavailable);
+  const before = f.calls.length;
+  await assert.rejects(() => escaped("SELECT 42", []), DevReadTransactionUnavailable);
+  assert.equal(f.calls.length, before);
+});
+test("detached SQL must settle before rollback and connection release", async () => {
+  const events = [];
+  let finishQuery;
+  const pool = { async connect() {
+    return {
+      async query(sql) {
+        events.push(sql);
+        if (sql === "SELECT slow") return await new Promise(resolve => { finishQuery = resolve; });
+        return { rows: [] };
+      },
+      release() { events.push("RELEASE"); },
+    };
+  }};
+  const transaction = createBusinessOsDevReadOnlyTransaction(pool);
+  let escaped;
+  const operation = transaction(async query => {
+    escaped = query;
+    void query("SELECT slow", []);
+    return "ok";
+  });
+  // Let the callback return and the detached SQL become pending.
+  for (let i = 0; i < 20 && !finishQuery; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(typeof finishQuery, "function");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(!events.includes("ROLLBACK"));
+  assert.ok(!events.includes("RELEASE"));
+  await assert.rejects(() => escaped("SELECT after-callback", []), DevReadTransactionUnavailable);
+  finishQuery({ rows: [] });
+  assert.equal(await operation, "ok");
+  assert.deepEqual(events.slice(-2), ["ROLLBACK", "RELEASE"]);
+  assert.ok(!events.includes("SELECT after-callback"));
+});
