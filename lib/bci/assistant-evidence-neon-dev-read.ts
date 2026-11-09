@@ -24,9 +24,14 @@ const PROVIDERS = new Set<EvidenceProvider>(["meta_ads", "buffer", "ga4", "manua
 const COMPLETENESS = new Set<EvidenceCompleteness>(["complete", "partial", "unverified"]);
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
-const validTime = (value: unknown, optional = false): value is string | null =>
-  (optional && value === null) || (typeof value === "string" &&
-    ISO.test(value) && Number.isFinite(Date.parse(value)));
+// Date.parse normalizes impossible calendar dates (e.g. February 30).
+// Require exact canonical millisecond UTC round-trip before trusting provenance.
+const validTime = (value: unknown, optional = false): value is string | null => {
+  if (optional && value === null) return true;
+  if (typeof value !== "string" || !ISO.test(value)) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+};
 
 const ROLE_SQL = [
   "SELECT current_user AS role_name, session_user AS session_role_name,",
