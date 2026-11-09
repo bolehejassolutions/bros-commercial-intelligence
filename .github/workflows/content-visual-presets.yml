@@ -1,0 +1,23 @@
+name: CONTENT visual preset provenance tests
+on:
+  pull_request:
+    paths:
+      - 'lib/visual-presets/**'
+      - 'tests/visual-presets.test.mjs'
+      - '.github/workflows/content-visual-presets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  visual-preset-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify scoped creative brief provenance gates (no provider calls)
+        run: node --test tests/visual-presets.test.mjs
