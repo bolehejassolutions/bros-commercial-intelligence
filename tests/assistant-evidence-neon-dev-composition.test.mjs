@@ -21,7 +21,7 @@ const receipt = {
 };
 
 function fixture({ revokedAtCheck, membership = true, row = receipt, throwIdp = false,
-  throwMembership = false, throwEvidence = false, expiry, changedSubject = false, revokeMembershipAfterRead = false } = {}) {
+  throwMembership = false, throwEvidence = false, expiry, changedSubject = false, changedSession = false, revokeMembershipAfterRead = false } = {}) {
   const calls = [];
   let checks = 0;
   let membershipChecks = 0;
@@ -34,7 +34,7 @@ function fixture({ revokedAtCheck, membership = true, row = receipt, throwIdp = 
       checks++;
       return {
         subjectId: changedSubject && checks > 1 ? OTHER : P,
-        sessionId: "server-session", issuer, audience,
+        sessionId: changedSession && checks > 1 ? "replacement-session" : "server-session", issuer, audience,
         expiresAt: expiry ?? "2026-11-08T12:10:00Z",
         revoked: revokedAtCheck === checks,
       };
@@ -170,4 +170,14 @@ test("revoked authoritative membership after evidence SQL denies disclosure at s
   assert.deepEqual(await response.json(), { error: "access_denied" });
   assert.deepEqual(f.calls, ["idp", "membership-transaction", "evidence-transaction", "idp", "membership-transaction"]);
   assert.ok(!JSON.stringify({ error: "access_denied" }).includes(E));
+});
+
+
+test("session replacement with unchanged subject after SQL denies disclosure", async () => {
+  const f = fixture({ changedSession: true });
+  const response = await f.handler(request());
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
+  assert.deepEqual(f.calls, ["idp", "membership-transaction", "evidence-transaction", "idp"]);
+  assert.ok(!(await response.clone().text()).includes(E));
 });
