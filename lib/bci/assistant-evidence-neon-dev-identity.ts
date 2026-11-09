@@ -53,7 +53,7 @@ export function createBusinessOsDevIdentityVerifier(
       const expiry = Date.parse(session.expiresAt);
       // Date.parse may normalize impossible calendar dates (e.g. February 30).
       // Round-trip the declared wall-clock fields in their explicit UTC offset.
-      const match = /^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$/.exec(session.expiresAt);
+      const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/.exec(session.expiresAt);
       if (!match) return null;
       const [, year, month, day, hour, minute, second, zone] = match;
       const offsetMinutes = zone === "Z" ? 0 :
