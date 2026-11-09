@@ -18,9 +18,24 @@ export function prepareContentDraftRetry(
  // Keep arrays ordered: platform order is part of the submitted draft.
  let payload:string;
  try {
-  const source=draft as Record<string,unknown>;
-  const canonical=Object.fromEntries(Object.keys(source).sort().map(k=>[k,source[k]]));
-  payload=JSON.stringify(canonical);
+  // JSONB ignores property insertion order at every object depth, not just root.
+  // Arrays remain ordered. Reject cycles and non-JSON values before key issuance.
+  const seen=new WeakSet<object>();
+  const canonicalize=(value:unknown):unknown=>{
+   if(value===null||typeof value==='string'||typeof value==='boolean')return value;
+   if(typeof value==='number'&&Number.isFinite(value))return value;
+   if(!value||typeof value!=='object')throw new Error('Invalid JSON draft value');
+   if(seen.has(value))throw new Error('Cyclic draft value');
+   seen.add(value);
+   try {
+    if(Array.isArray(value))return value.map(canonicalize);
+    if(Object.getPrototypeOf(value)!==Object.prototype&&Object.getPrototypeOf(value)!==null)
+     throw new Error('Invalid draft object');
+    const source=value as Record<string,unknown>;
+    return Object.fromEntries(Object.keys(source).sort().map(k=>[k,canonicalize(source[k])]));
+   } finally {seen.delete(value);}
+  };
+  payload=JSON.stringify(canonicalize(draft));
  } catch { throw new Error('Invalid draft payload'); }
  if(!payload||payload.length>18000)throw new Error('Invalid draft payload');
  const requestSignature=workspaceId+'\u0000'+payload;
