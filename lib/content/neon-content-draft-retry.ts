@@ -13,7 +13,15 @@ export function prepareContentDraftRetry(
 ):ContentDraftAttempt {
  if(!UUID.test(workspaceId)||!draft||typeof draft!=='object'||Array.isArray(draft)||
     typeof createKey!=='function')throw new Error('Invalid draft retry state');
- const payload=JSON.stringify(draft);
+ // JSONB draft persistence is insensitive to object property insertion order.
+ // Preserve retry identity when the UI reconstructs the same brief in a new order.
+ // Keep arrays ordered: platform order is part of the submitted draft.
+ let payload:string;
+ try {
+  const source=draft as Record<string,unknown>;
+  const canonical=Object.fromEntries(Object.keys(source).sort().map(k=>[k,source[k]]));
+  payload=JSON.stringify(canonical);
+ } catch { throw new Error('Invalid draft payload'); }
  if(!payload||payload.length>18000)throw new Error('Invalid draft payload');
  const requestSignature=workspaceId+'\u0000'+payload;
  if(previous?.requestSignature===requestSignature&&KEY.test(previous.key))return previous;
