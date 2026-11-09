@@ -71,3 +71,13 @@ test("misconfigured verifier fails during construction", () => {
     { issuer, audience: "a b" },
   ]) assert.throws(() => createBusinessOsDevIdentityVerifier(async () => session, config));
 });
+
+test("timezone-free, locale-dependent and malformed session expiry are denied", async () => {
+  for (const expiresAt of [
+    "2026-11-08T12:10:00", "2026-11-08 12:10:00Z",
+    "11/08/2026 12:10:00", "Sun, 08 Nov 2026 12:10:00 GMT",
+    "2026-11-08T12:10:00+15:00", "2026-11-08T12:10:00Z ",
+  ]) assert.equal(await fixture({ expiresAt }).verify("opaque-token"), null);
+  assert.deepEqual(await fixture({ expiresAt: "2026-11-08T12:10:00+00:00" }).verify("opaque-token"),
+    { subjectId: P, sessionId: "session-1", expiresAt: "2026-11-08T12:10:00+00:00" });
+});
