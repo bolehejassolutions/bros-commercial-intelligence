@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { prepareDemandCreativeIntake } from "../lib/demand/creative-intake.ts";
+import { prepareDemandCreativeIntake, bindDemandCreativeForReview } from "../lib/demand/creative-intake.ts";
 
 const tenantId = "11111111-1111-4111-8111-111111111111";
 // Valid, independently encoded 1x1 RGBA PNG: IHDR + IDAT + IEND with CRCs.
@@ -257,4 +257,31 @@ test("PNG palette rules reject indexed images without PLTE, oversized indexed pa
   ]) assert.throws(() => prepareDemandCreativeIntake(tenantId, record(bytes), bytes), denied);
   const validIndexedStructure = withPalette(indexed, 2);
   assert.equal(prepareDemandCreativeIntake(tenantId, record(validIndexedStructure), validIndexedStructure).metaUploadAllowed, false);
+});
+
+test("operator review binds exact tenant/account/plan/media and never grants Meta execution", () => {
+  const intake = prepareDemandCreativeIntake(tenantId, approved, media);
+  const scope = {tenantId, accountId:"act_1997776120879476", assetId:approved.assetId, mediaSha256:sha256};
+  const plan = {...scope, planId:"plan:review:001"};
+  const a = bindDemandCreativeForReview(intake, scope, plan);
+  const b = bindDemandCreativeForReview(intake, scope, plan);
+  assert.equal(a.reviewFingerprint, b.reviewFingerprint);
+  assert.equal(a.state, "OPERATOR_REVIEW_ONLY");
+  assert.equal(a.metaUploadAllowed, false);
+  assert.equal(a.campaignExecutionAllowed, false);
+  assert.equal(Object.isFrozen(a), true);
+  assert.notEqual(a.reviewFingerprint,
+    bindDemandCreativeForReview(intake, scope, {...plan, planId:"plan:review:002"}).reviewFingerprint);
+  for (const [s,p] of [
+    [{...scope, tenantId:"22222222-2222-4222-8222-222222222222"}, plan],
+    [scope, {...plan, tenantId:"22222222-2222-4222-8222-222222222222"}],
+    [{...scope, accountId:"act_999999999"}, plan],
+    [scope, {...plan, accountId:"act_999999999"}],
+    [scope, {...plan, assetId:"asset:foreign:002"}],
+    [scope, {...plan, mediaSha256:"0".repeat(64)}],
+    [{...scope, metaWriteApproved:true}, plan],
+    [scope, {...plan, ownerApproved:true}],
+  ]) assert.throws(() => bindDemandCreativeForReview(intake,s,p), denied);
+  assert.throws(() => bindDemandCreativeForReview({...intake,metaUploadAllowed:true},scope,plan),denied);
+  assert.throws(() => bindDemandCreativeForReview({...intake},scope,plan),denied);
 });
