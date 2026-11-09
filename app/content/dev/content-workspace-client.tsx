@@ -175,7 +175,11 @@ export default function ContentWorkspaceClient(){
     body:submitted
    });
    if(!response.ok)throw new Error(response.status===401?'Sesi tamat. Sila log masuk semula.':
-    response.status===404?'Akses workspace tidak dibenarkan.':'Draf tidak dapat disimpan. Sila cuba lagi.');
+    response.status===403||response.status===404?'Akses workspace tidak dibenarkan.':
+    response.status===409?'Draf ini bercanggah dengan cubaan terdahulu. Semak semula kandungan sebelum cuba lagi.':
+    response.status===400||response.status===422?'Butiran draf tidak sah. Semak maklumat yang dimasukkan.':
+    response.status===429?'Terlalu banyak permintaan. Tunggu sebentar sebelum cuba lagi.':
+    'Draf tidak dapat disimpan. Sila cuba lagi.');
    const receipt=parseContentDraftAcknowledgement(await response.json(),response.status);
    // A 201 receipt alone is not proof that the draft is independently readable.
    // Preserve the idempotency key on readback failure for a safe retry.
