@@ -78,10 +78,16 @@ export function createBusinessOsDevReadOnlyTransaction(
             !Array.isArray(params) || params.length > MAX_BOUND_PARAMS ||
             params.some(p => p !== null &&
               typeof p !== "string" && typeof p !== "boolean" &&
-              (typeof p !== "number" || !Number.isFinite(p)))) deny();
+              (typeof p !== "number" || !Number.isFinite(p)))) {
+          detachedQueryFailed = true;
+          deny();
+        }
         // Count BEFORE dispatch: concurrent/detached calls share the same
         // transaction budget and cannot bypass it through races.
-        if (++readerQueries > MAX_READER_QUERIES) deny();
+        if (++readerQueries > MAX_READER_QUERIES) {
+          detachedQueryFailed = true;
+          deny();
+        }
         // SQL is provided exclusively by server-owned allowlisted readers.
         // This guard does NOT sanitize arbitrary caller SQL or authorize it.
         const pending = client!.query(sql, params);
