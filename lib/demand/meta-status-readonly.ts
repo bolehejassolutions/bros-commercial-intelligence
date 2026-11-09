@@ -23,7 +23,8 @@ export async function readDemandMetaObjectStatus(binding: MetaStatusBinding, tok
       signal: AbortSignal.timeout(8000), redirect: "error", cache: "no-store" });
     if (!response || response.ok !== true) deny();
     const body = await response.json();
-    if (!object(body) || Object.hasOwn(body, "error") || body.id !== binding.objectId ||
+    if (!object(body)) return deny();
+    if (Object.hasOwn(body, "error") || body.id !== binding.objectId ||
       body.account_id !== binding.accountId.slice(4) ||
       typeof body.configured_status !== "string" || !statuses.has(body.configured_status) ||
       typeof body.effective_status !== "string" || !statuses.has(body.effective_status)) deny();
