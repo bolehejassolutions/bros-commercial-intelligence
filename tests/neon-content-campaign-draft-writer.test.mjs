@@ -205,3 +205,21 @@ test('exact seven-field draft contract remains writable',async()=>{
  assert.deepEqual(await writer(principal,W,{...draft},key),{id:C,status:'draft'});
  assert.equal(calls.filter(x=>x.sql.includes('INSERT INTO content_dev.campaigns')).length,1);
 });
+
+test('inherited required draft values cannot be persisted as incomplete JSONB',async()=>{
+ const inherited=Object.create({product_service:draft.product_service});
+ Object.assign(inherited,Object.fromEntries(Object.entries(draft).filter(([k])=>k!=='product_service')));
+ const {writer,calls}=fixture();
+ await assert.rejects(writer(principal,W,inherited,key),ContentReadDenied);
+ assert.equal(calls.length,0);
+});
+test('accessor and symbol draft fields fail before database connection',async()=>{
+ const getter={...draft};
+ Object.defineProperty(getter,'audience',{enumerable:true,get(){return 'Owners';}});
+ const symbol={...draft,[Symbol('secret')]:'not persisted'};
+ for(const payload of [getter,symbol,Object.assign(Object.create(null),draft)]){
+  const {writer,calls}=fixture();
+  await assert.rejects(writer(principal,W,payload,key),ContentReadDenied);
+  assert.equal(calls.length,0);
+ }
+});
