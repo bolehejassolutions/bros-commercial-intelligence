@@ -56,6 +56,19 @@ export async function readDemandOperatorSnapshot(
     since:request.since,until:request.until,observedAt};
   const insights=await readDemandMetaAccountInsights(insightsRequest,token,transport);
   const status=await readDemandMetaStatusSnapshot(bindings,token,observedAt,transport);
+  // Membership can be revoked while sequential provider reads are in flight.
+  // Revalidate before releasing any observation; never return partial results.
+  const finalScope=await resolveScope();
+  const finishedAt=now();
+  if(!finalScope||finalScope.principalId!==scope.principalId||
+    finalScope.tenantId!==scope.tenantId||finalScope.accountId!==scope.accountId||
+    finalScope.permission!=="DEMAND_META_READ"||
+    !(finishedAt instanceof Date)||!Number.isFinite(finishedAt.getTime())||
+    typeof finalScope.verifiedAt!=="string"||
+    !/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{3})?Z$/.test(finalScope.verifiedAt)||
+    !Number.isFinite(Date.parse(finalScope.verifiedAt))||
+    finishedAt.getTime()-Date.parse(finalScope.verifiedAt)>60000||
+    Date.parse(finalScope.verifiedAt)>finishedAt.getTime()+5000)fail();
   return Object.freeze({tenantId:scope.tenantId,accountId:scope.accountId,
     observedAt,insights,status,executionAllowed:false as const});
  }catch{fail();}
