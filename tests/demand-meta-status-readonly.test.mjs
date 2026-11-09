@@ -51,6 +51,8 @@ test("bounded snapshot rejects duplicates, mixed tenants and oversized batches b
   const readBatch=items=>readDemandMetaStatusSnapshot(items,token,now,transport);
   for (const items of [[],Array(21).fill(binding),[binding,binding],
     [binding,{...binding,accountId:"act_1234567890"}],
+    [binding,{...binding,kind:"adset"}],
+    [binding,{...binding,objectId:"120251158023300698",apiVersion:"v25.0"}],
     [binding,{...binding,apiVersion:"v26.0?fields=unsafe",objectId:"120251158023300698"}],
     [binding,{...binding,kind:"creative",objectId:"120251158023300698"}],
     [binding,{...binding,objectId:"1/insights"}]])
