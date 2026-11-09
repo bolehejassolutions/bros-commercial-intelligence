@@ -38,3 +38,16 @@ test('deduplication never mutates source scene array and leaves output frozen',(
  assert.equal(rows[0].scenes.length,1);
  assert.equal(Object.isFrozen(rows[0].scenes),true);
 });
+
+test('ambiguous item IDs claimed by another campaign fail closed',()=>{
+ const rows=scopeContentCampaignItems(a,[{id:'shared',campaign_id:a},{id:'shared',campaign_id:b},{id:'safe',campaign_id:a}],[
+  {id:'ambiguous-scene',content_item_id:'shared',scene_number:1},
+  {id:'safe-scene',content_item_id:'safe',scene_number:2}
+ ]);
+ assert.deepEqual(rows.map(row=>row.item.id),['safe']);
+ assert.deepEqual(rows[0].scenes.map(scene=>scene.id),['safe-scene']);
+});
+test('repeated item IDs within the same campaign remain deduplicated',()=>{
+ const rows=scopeContentCampaignItems(a,[{id:'one',campaign_id:a},{id:'one',campaign_id:a}],[{id:'scene',content_item_id:'one'}]);
+ assert.equal(rows.length,1);assert.equal(rows[0].scenes.length,1);
+});
