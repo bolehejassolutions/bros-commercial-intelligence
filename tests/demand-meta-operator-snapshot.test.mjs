@@ -91,3 +91,17 @@ test("membership revalidation failure is sanitized and does not leak observation
  },h.secret,h.transport,clock),e=>e.message==="BROS_DEMAND_OPERATOR_READ_DENIED");
  assert.equal(calls,2);
 });
+
+test("post-read fresh canonical membership succeeds, malformed timestamp fails closed",async()=>{
+ const h=harness();let calls=0;
+ const resolver=async()=>{calls++;return {...scope,verifiedAt:now};};
+ const result=await readDemandOperatorSnapshot(request,resolver,h.secret,h.transport,clock);
+ assert.equal(calls,2);
+ assert.equal(result.insights.state,"NO_ROWS_NOT_ZERO");
+ assert.equal(result.executionAllowed,false);
+ for(const malformed of ["2026-11-09T02:00:00ZEXTRA","2026-11-09T02:00:00+00:00","2026-11-09T02:00:00.000Z\\n"]){
+  let checks=0;const fixture=harness();
+  await assert.rejects(readDemandOperatorSnapshot(request,async()=>++checks===1?scope:{...scope,verifiedAt:malformed},fixture.secret,fixture.transport,clock),denied);
+  assert.equal(checks,2);
+ }
+});
