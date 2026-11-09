@@ -22,3 +22,19 @@ test('orphan scenes and invalid campaign selection are not rendered',()=>{
  [{id:'orphan',content_item_id:'missing'}]);assert.equal(rows[0].scenes.length,0);
  assert.deepEqual(scopeContentCampaignItems('',[{id:'one',campaign_id:a}],[]),[]);
 });
+test('duplicate scene IDs display once and prefer earliest numbered occurrence',()=>{
+ const rows=scopeContentCampaignItems(a,[{id:'one',campaign_id:a}],[
+  {id:'same',content_item_id:'one',scene_number:5},
+  {id:'same',content_item_id:'one',scene_number:1},
+  {id:'other',content_item_id:'one',scene_number:2}
+ ]);
+ assert.deepEqual(rows[0].scenes.map(s=>s.id),['same','other']);
+ assert.equal(rows[0].scenes[0].scene_number,1);
+});
+test('deduplication never mutates source scene array and leaves output frozen',()=>{
+ const scenes=[{id:'same',content_item_id:'one',scene_number:3},{id:'same',content_item_id:'one',scene_number:1}];
+ const rows=scopeContentCampaignItems(a,[{id:'one',campaign_id:a}],scenes);
+ assert.equal(scenes[0].scene_number,3);
+ assert.equal(rows[0].scenes.length,1);
+ assert.equal(Object.isFrozen(rows[0].scenes),true);
+});
