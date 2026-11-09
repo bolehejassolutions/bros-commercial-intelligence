@@ -100,7 +100,7 @@ export function createBusinessOsDevReadOnlyTransaction(
         // This guard does NOT sanitize arbitrary caller SQL or authorize it.
         // A driver can throw synchronously before returning a Promise. Treat
         // that as a failed SQL operation even if the reader catches it.
-        let pending: Promise<DevReadSqlResult>;
+        let pending!: Promise<DevReadSqlResult>;
         try { pending = Promise.resolve(client!.query(sql, params)); }
         catch { detachedQueryFailed = true; deny(); }
         inFlight.add(pending);
