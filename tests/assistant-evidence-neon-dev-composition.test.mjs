@@ -177,7 +177,8 @@ test("session replacement with unchanged subject after SQL denies disclosure", a
   const f = fixture({ changedSession: true });
   const response = await f.handler(request());
   assert.equal(response.status, 401);
-  assert.deepEqual(await response.json(), { error: "authentication_required" });
+  const body = await response.text();
+  assert.deepEqual(JSON.parse(body), { error: "authentication_required" });
   assert.deepEqual(f.calls, ["idp", "membership-transaction", "evidence-transaction", "idp"]);
-  assert.ok(!(await response.clone().text()).includes(E));
+  assert.ok(!body.includes(E));
 });
