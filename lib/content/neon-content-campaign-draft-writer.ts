@@ -17,7 +17,12 @@ function validDraft(value:unknown):value is Draft {
  // Persist only the validated draft contract. Unknown keys would otherwise enter
  // the idempotency JSONB payload without field-size or provenance checks.
  const allowedKeys=new Set(['product_service','audience','description','problem','objective','duration_days','platforms']);
- if(Object.keys(value).some(k=>!allowedKeys.has(k)))return false;
+ // Reject inherited fields and accessors: otherwise validation can succeed on
+ // prototype values while JSON.stringify omits the required submitted fields.
+ if(Object.getPrototypeOf(value)!==Object.prototype) return false;
+ const keys=Reflect.ownKeys(value);
+ if(keys.length!==allowedKeys.size || keys.some(k=>typeof k!=='string'||!allowedKeys.has(k)))return false;
+ if(keys.some(k=>{const d=Object.getOwnPropertyDescriptor(value,k);return !d||!('value' in d);}))return false;
  const d=value as Partial<Draft>;
  const fields:[unknown,number,boolean][]=[
   [d.product_service,200,true],[d.audience,2000,true],
