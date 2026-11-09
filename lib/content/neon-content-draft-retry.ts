@@ -28,11 +28,24 @@ export function prepareContentDraftRetry(
    if(seen.has(value))throw new Error('Cyclic draft value');
    seen.add(value);
    try {
-    if(Array.isArray(value))return value.map(canonicalize);
+    if(Array.isArray(value)){
+     if(Object.getPrototypeOf(value)!==Array.prototype)throw new Error('Invalid draft array');
+     const descriptors=Object.getOwnPropertyDescriptors(value);
+     for(let i=0;i<value.length;i++){
+      const field=descriptors[String(i)];
+      if(!field||!('value' in field))throw new Error('Invalid draft array element');
+     }
+     return Array.from({length:value.length},(_,i)=>canonicalize(descriptors[String(i)].value));
+    }
     if(Object.getPrototypeOf(value)!==Object.prototype&&Object.getPrototypeOf(value)!==null)
      throw new Error('Invalid draft object');
-    const source=value as Record<string,unknown>;
-    return Object.fromEntries(Object.keys(source).sort().map(k=>[k,canonicalize(source[k])]));
+    // Inspect descriptors without invoking user-defined getters during retry identity.
+    const descriptors=Object.getOwnPropertyDescriptors(value);
+    return Object.fromEntries(Object.keys(descriptors).sort().map(k=>{
+     const field=descriptors[k];
+     if(!('value' in field))throw new Error('Invalid draft accessor');
+     return [k,canonicalize(field.value)];
+    }));
    } finally {seen.delete(value);}
   };
   payload=JSON.stringify(canonicalize(draft));

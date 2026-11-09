@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {prepareContentDraftRetry} from '../lib/content/neon-content-draft-retry.ts';
+const w='22222222-2222-4222-8222-222222222222';
+const key=()=> 'valid-idempotency-key-123';
+const run=d=>prepareContentDraftRetry(null,w,d,key);
+test('nested accessor rejected without executing getter',()=>{let calls=0;const d={a:{get secret(){calls++;return 'x';}}};assert.throws(()=>run(d),/Invalid draft payload/);assert.equal(calls,0);});
+test('root accessor rejected without executing getter',()=>{let calls=0;const d={get secret(){calls++;return 'x';}};assert.throws(()=>run(d));assert.equal(calls,0);});
+test('sparse arrays rejected instead of silently converting holes to null',()=>assert.throws(()=>run({a:[,1]})));
+test('array index accessor rejected without executing getter',()=>{let calls=0;const a=[1];Object.defineProperty(a,'0',{get(){calls++;return 1;}});assert.throws(()=>run({a}));assert.equal(calls,0);});
+test('ordinary reordered nested fields reuse retry identity',()=>{const a=run({z:{b:2,a:1},arr:[1,2]});const b=prepareContentDraftRetry(a,w,{arr:[1,2],z:{a:1,b:2}},()=>{throw Error('should reuse')});assert.equal(a,b);});
+test('array order still changes signature',()=>assert.notEqual(run({a:[1,2]}).requestSignature,run({a:[2,1]}).requestSignature));
