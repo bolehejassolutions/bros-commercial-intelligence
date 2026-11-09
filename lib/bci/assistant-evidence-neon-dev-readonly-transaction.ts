@@ -100,7 +100,16 @@ export function createBusinessOsDevReadOnlyTransaction(
         // This guard does NOT sanitize arbitrary caller SQL or authorize it.
         const pending = client!.query(sql, params);
         inFlight.add(pending);
-        try { return await pending; }
+        try {
+          const result = await pending;
+          // A malformed or partial driver result is not valid evidence. Do not
+          // let a caller accidentally treat missing rows as a zero-row read.
+          if (!result || !Array.isArray(result.rows)) {
+            detachedQueryFailed = true;
+            deny();
+          }
+          return result;
+        }
         catch (error) { detachedQueryFailed = true; throw error; }
         finally { inFlight.delete(pending); }
       };
