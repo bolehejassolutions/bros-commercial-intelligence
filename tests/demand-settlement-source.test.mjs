@@ -16,3 +16,21 @@ test('accessor-backed response rejected without invoking getter',async()=>{let i
 test('future settlement relative to provider snapshot fails closed even when before evaluation time',async()=>{await assert.rejects(call({readSettlements:async()=>({...payload,orders:[{...order,settledAt:'2026-11-10T00:09:30.000Z'}]})}),/UNVERIFIED/)});
 test('settlement exactly at snapshot boundary is allowed but remains unverified',async()=>{const v=await call({readSettlements:async()=>({...payload,orders:[{...order,settledAt:payload.retrievedAt}]})});assert.equal(v.settledRevenueMinor,10000);assert.equal(v.state,'SERVER_ADAPTER_EVIDENCE_UNVERIFIED_PROVIDER')});
 test('future settlement does not get counted alongside a valid settlement',async()=>{await assert.rejects(call({readSettlements:async()=>({...payload,orders:[order,{...order,orderRef:'order_87654321',providerOrderId:'hitpay_87654321',settledAt:'2026-11-10T00:09:01.000Z'}]})}),/UNVERIFIED/)});
+
+// Hostile provider adapters must not leak thrown messages from Proxy traps.
+test('proxy ownKeys and prototype traps fail closed without leaking adapter secrets',async()=>{
+ for(const trap of ['ownKeys','getPrototypeOf']){
+  const bad=new Proxy({...payload},{[trap](){throw Error('adapter-secret-leak')}});
+  await assert.rejects(call({readSettlements:async()=>bad}),e=>e.message==='DEMAND_SETTLEMENT_SOURCE_UNVERIFIED');
+ }
+});
+test('proxy order traps fail closed without leaking adapter secrets',async()=>{
+ for(const trap of ['ownKeys','getPrototypeOf']){
+  const badOrder=new Proxy({...order},{[trap](){throw Error('order-secret-leak')}});
+  await assert.rejects(call({readSettlements:async()=>({...payload,orders:[badOrder]})}),e=>e.message==='DEMAND_SETTLEMENT_SOURCE_UNVERIFIED');
+ }
+});
+test('proxy order-list iteration traps fail closed without leaking adapter secrets',async()=>{
+ const orders=new Proxy([order],{get(target,key,receiver){if(key===Symbol.iterator)throw Error('iterator-secret-leak');return Reflect.get(target,key,receiver)}});
+ await assert.rejects(call({readSettlements:async()=>({...payload,orders})}),e=>e.message==='DEMAND_SETTLEMENT_SOURCE_UNVERIFIED');
+});
