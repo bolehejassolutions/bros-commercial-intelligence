@@ -347,3 +347,21 @@ test("invalid verified session ID fails closed before returning receipts", async
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: "authentication_required" });
 });
+
+test("malformed verified session identifiers are denied before membership and SQL", async () => {
+  for (const sessionId of ["", "../../untrusted", "bad session", 17, null, "x".repeat(129)]) {
+    let grants = 0, reads = 0;
+    const { handler } = fixture({
+      verifyBearerToken: async () => ({
+        subjectId: "user-1", expiresAt: "2026-11-08T06:00:00Z", sessionId,
+      }),
+      hasEvidenceReadGrant: async () => { grants++; return true; },
+      listScopedReceipts: async () => { reads++; return [record()]; },
+    });
+    const response = await handler(get());
+    assert.equal(response.status, 401, "invalid session must deny");
+    assert.deepEqual(await response.json(), { error: "authentication_required" });
+    assert.equal(grants, 0, "membership lookup must not run");
+    assert.equal(reads, 0, "evidence query must not run");
+  }
+});
