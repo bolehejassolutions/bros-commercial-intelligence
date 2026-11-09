@@ -10,3 +10,8 @@ test('failed and refunded orders are not revenue',()=>{for(const status of ['FAI
 test('reordering inputs does not alter digest',()=>{const p2={...pixel,eventId:'pixel_87654321'};assert.equal(reconcile(scope,[pixel,p2],[paid]).evidenceDigest,reconcile(scope,[p2,pixel],[paid]).evidenceDigest)});
 test('reject cross tenant and duplicate provider evidence',()=>{assert.throws(()=>reconcile(scope,[{...pixel,tenantId:'tenant_87654321'}],[]));assert.throws(()=>reconcile(scope,[pixel,pixel],[]));assert.throws(()=>reconcile(scope,[],[paid,paid]));});
 test('reject malformed and spoofed evidence',()=>{assert.throws(()=>reconcile(scope,[{...pixel,extra:'spoof'}],[]));assert.throws(()=>reconcile(scope,[],[{...paid,amountMinor:NaN}]));assert.throws(()=>reconcile(scope,[],[{...paid,settledAt:null}]));assert.throws(()=>reconcile(scope,[],[{...paid,tenantId:'tenant_87654321'}]));});
+
+test('reject two order references sharing a HitPay provider ID',()=>{
+  const duplicate={...paid,orderRef:'order_87654321'};
+  assert.throws(()=>reconcile(scope,[],[paid,duplicate]),/DEMAND_ATTRIBUTION_EVIDENCE_DENIED/);
+});
