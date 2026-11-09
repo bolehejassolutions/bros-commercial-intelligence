@@ -21,8 +21,8 @@ const object = (v: unknown): v is Record<string, unknown> =>
 const ROLE_SQL = [
   "SELECT current_user AS role_name, session_user AS session_role_name,",
   "rolbypassrls AS bypass_rls, rolsuper AS superuser, rolcanlogin AS can_login,",
-  "rolinherit AS inherits_roles, rolcreaterole AS can_manage_roles,
-  "rolcreatedb AS can_create_database, rolreplication AS can_replicate,"",
+  "rolinherit AS inherits_roles, rolcreaterole AS can_manage_roles,",
+  "rolcreatedb AS can_create_database, rolreplication AS can_replicate,",
   "(SELECT COUNT(*)::integer FROM pg_auth_members m WHERE m.member=pg_roles.oid) AS parent_role_count",
   "FROM pg_roles WHERE rolname=current_user"
 ].join(" ");
@@ -33,7 +33,16 @@ const POSTURE_SQL = [
   "has_table_privilege(current_user,'bci_dev.tenant_memberships','INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') AS can_write_membership,",
   "has_table_privilege(current_user,'bci_dev.evidence','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') AS can_access_evidence,",
   "has_schema_privilege(current_user,'bci_dev','CREATE') AS can_create_schema_objects,",
-  "has_database_privilege(current_user,current_database(),'CREATE') AS can_create_database_objects,",\n  "(SELECT NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace",\n  "WHERE p.prosecdef AND has_function_privilege(current_user,p.oid,'EXECUTE')",\n  "AND n.nspname NOT IN ('pg_catalog','information_schema')",\n  "AND LEFT(n.nspname,3)<>'pg_')) AS no_definer_exec,",\n  "(SELECT NOT EXISTS (SELECT 1 FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace",\n  "WHERE n.nspname <> 'bci_dev' AND n.nspname <> 'information_schema'",\n  "AND LEFT(n.nspname,3)<>'pg_' AND t.relkind IN ('r','p','v','m','f')",\n  "AND has_table_privilege(current_user,t.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'))",\n  ") AS no_external_table_access",
+  "has_database_privilege(current_user,current_database(),'CREATE') AS can_create_database_objects,",
+  "(SELECT NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace",
+  "WHERE p.prosecdef AND has_function_privilege(current_user,p.oid,'EXECUTE')",
+  "AND n.nspname NOT IN ('pg_catalog','information_schema')",
+  "AND LEFT(n.nspname,3)<>'pg_')) AS no_definer_exec,",
+  "(SELECT NOT EXISTS (SELECT 1 FROM pg_class t JOIN pg_namespace n ON n.oid=t.relnamespace",
+  "WHERE n.nspname <> 'bci_dev' AND n.nspname <> 'information_schema'",
+  "AND LEFT(n.nspname,3)<>'pg_' AND t.relkind IN ('r','p','v','m','f')",
+  "AND has_table_privilege(current_user,t.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'))",
+  ") AS no_external_table_access",
   "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace",
   "WHERE n.nspname='bci_dev' AND c.relname='tenant_memberships' AND c.relkind IN ('r','p')"
 ].join(" ");
