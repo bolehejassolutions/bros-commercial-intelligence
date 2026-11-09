@@ -44,7 +44,10 @@ export async function readDemandMetaStatusSnapshot(
   for (const binding of bindings) {
     if (!object(binding) || binding.accountId !== accountId ||
       typeof binding.objectId !== "string" || typeof binding.kind !== "string") deny();
-    const key = binding.kind + ":" + binding.objectId;
+    // Meta object IDs are globally unique; mixed kinds must not bypass duplicate protection.
+    // One snapshot must use one API version to preserve a coherent observation contract.
+    if (binding.apiVersion !== bindings[0]?.apiVersion) deny();
+    const key = binding.objectId;
     if (keys.has(key)) deny();
     keys.add(key);
   }
