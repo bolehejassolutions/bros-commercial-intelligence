@@ -48,3 +48,39 @@ test('PostgreSQL: failed final draft reservation link rolls back both inserts', 
     client.release();
   }
 });
+
+test('PostgreSQL: actual foreign-key failure aborts transaction and rollback permits same-key retry', async()=>{
+  const client=await pool.connect();
+  const id='55555555-5555-4555-8555-555555555555';
+  const missing='66666666-6666-4666-8666-666666666666';
+  try {
+    await client.query('BEGIN');
+    await client.query('CREATE TEMP TABLE fk_campaigns (id uuid PRIMARY KEY, brief text NOT NULL) ON COMMIT PRESERVE ROWS');
+    await client.query('CREATE TEMP TABLE fk_reservations (key text PRIMARY KEY, campaign_id uuid REFERENCES fk_campaigns(id)) ON COMMIT PRESERVE ROWS');
+    await client.query('COMMIT');
+
+    await client.query('BEGIN');
+    await client.query('INSERT INTO fk_reservations(key) VALUES ($1)', ['fk-retry-key']);
+    await client.query('INSERT INTO fk_campaigns(id,brief) VALUES ($1,$2)', [id,'original brief']);
+    await assert.rejects(
+      client.query('UPDATE fk_reservations SET campaign_id=$1 WHERE key=$2', [missing,'fk-retry-key']),
+      (error)=>error.code==='23503'
+    );
+    await assert.rejects(client.query('SELECT count(*) FROM fk_campaigns'), (error)=>error.code==='25P02');
+    await client.query('ROLLBACK');
+
+    const empty=await client.query('SELECT (SELECT count(*)::int FROM fk_campaigns) campaigns, (SELECT count(*)::int FROM fk_reservations) reservations');
+    assert.deepEqual(empty.rows[0], {campaigns:0,reservations:0});
+
+    await client.query('BEGIN');
+    await client.query('INSERT INTO fk_reservations(key) VALUES ($1)', ['fk-retry-key']);
+    await client.query('INSERT INTO fk_campaigns(id,brief) VALUES ($1,$2)', [id,'original brief']);
+    await client.query('UPDATE fk_reservations SET campaign_id=$1 WHERE key=$2', [id,'fk-retry-key']);
+    await client.query('COMMIT');
+    const saved=await client.query('SELECT (SELECT count(*)::int FROM fk_campaigns) campaigns, (SELECT count(*)::int FROM fk_reservations WHERE campaign_id=$1) linked', [id]);
+    assert.deepEqual(saved.rows[0], {campaigns:1,linked:1});
+  } finally {
+    await client.query('ROLLBACK').catch(()=>{});
+    client.release();
+  }
+});
