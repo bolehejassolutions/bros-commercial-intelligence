@@ -170,3 +170,19 @@ test("PNG rejects illegal IHDR modes and unknown critical chunks even with valid
   assert.equal(result.metaUploadAllowed, false);
   assert.equal(result.campaignExecutionAllowed, false);
 });
+
+test("untrusted creative records reject accessors, inherited fields and extra grants", () => {
+  assert.throws(() => prepareDemandCreativeIntake(tenantId, {...approved, metaUploadAllowed:true}, media), denied);
+  assert.throws(() => prepareDemandCreativeIntake(tenantId, Object.assign(Object.create(null),approved), media), denied);
+  const inherited=Object.create(approved);
+  assert.throws(() => prepareDemandCreativeIntake(tenantId, inherited, media), denied);
+  const accessor={...approved};
+  Object.defineProperty(accessor,"editorialQa",{enumerable:true,get(){throw Error("MUST_NOT_EXECUTE");}});
+  assert.throws(() => prepareDemandCreativeIntake(tenantId,accessor,media), denied);
+  const hidden={...approved};
+  Object.defineProperty(hidden,"ownerApproved",{value:true,enumerable:false});
+  assert.throws(() => prepareDemandCreativeIntake(tenantId,hidden,media), denied);
+  const symbol={...approved};
+  symbol[Symbol("privilege")]=true;
+  assert.throws(() => prepareDemandCreativeIntake(tenantId,symbol,media), denied);
+});
