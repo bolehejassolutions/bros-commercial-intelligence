@@ -10,3 +10,8 @@ test('sparse arrays rejected instead of silently converting holes to null',()=>a
 test('array index accessor rejected without executing getter',()=>{let calls=0;const a=[1];Object.defineProperty(a,'0',{get(){calls++;return 1;}});assert.throws(()=>run({a}));assert.equal(calls,0);});
 test('ordinary reordered nested fields reuse retry identity',()=>{const a=run({z:{b:2,a:1},arr:[1,2]});const b=prepareContentDraftRetry(a,w,{arr:[1,2],z:{a:1,b:2}},()=>{throw Error('should reuse')});assert.equal(a,b);});
 test('array order still changes signature',()=>assert.notEqual(run({a:[1,2]}).requestSignature,run({a:[2,1]}).requestSignature));
+
+test('array custom string properties are rejected',()=>{const a=[1];a.extra='hidden';assert.throws(()=>run({a}),/Invalid draft payload/);});
+test('array symbol properties are rejected',()=>{const a=[1];a[Symbol('hidden')]=2;assert.throws(()=>run({a}),/Invalid draft payload/);});
+test('nested object symbol properties are rejected',()=>{const a={value:1};a[Symbol('hidden')]=2;assert.throws(()=>run({a}),/Invalid draft payload/);});
+test('ordinary dense arrays and plain nested objects remain valid',()=>assert.equal(typeof run({a:[1,{value:2}]}).key,'string'));

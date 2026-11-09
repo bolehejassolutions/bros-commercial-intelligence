@@ -31,6 +31,10 @@ export function prepareContentDraftRetry(
     if(Array.isArray(value)){
      if(Object.getPrototypeOf(value)!==Array.prototype)throw new Error('Invalid draft array');
      const descriptors=Object.getOwnPropertyDescriptors(value);
+     // JSON.stringify ignores extra array keys and symbols; reject them rather than
+     // allowing distinct caller objects to share one retry identity.
+     if(Reflect.ownKeys(value).some(k=>typeof k!=='string'||(k!=='length'&&(!/^(0|[1-9][0-9]*)$/.test(k)||Number(k)>=value.length))))
+      throw new Error('Invalid draft array property');
      for(let i=0;i<value.length;i++){
       const field=descriptors[String(i)];
       if(!field||!('value' in field))throw new Error('Invalid draft array element');
@@ -40,6 +44,7 @@ export function prepareContentDraftRetry(
     if(Object.getPrototypeOf(value)!==Object.prototype&&Object.getPrototypeOf(value)!==null)
      throw new Error('Invalid draft object');
     // Inspect descriptors without invoking user-defined getters during retry identity.
+    if(Object.getOwnPropertySymbols(value).length)throw new Error('Invalid draft symbol property');
     const descriptors=Object.getOwnPropertyDescriptors(value);
     return Object.fromEntries(Object.keys(descriptors).sort().map(k=>{
      const field=descriptors[k];
