@@ -18,16 +18,23 @@ function sameStoredBrief(row:Record<string,unknown>,expected:Draft){
   stored.every((p,i)=>p===expectedPlatforms[i]);
 }
 export function confirmContentDraftReadback(payload:unknown,workspaceId:string,campaignId:string,expected:Draft){
- if(!UUID.test(workspaceId)||!UUID.test(campaignId)||!expected||
-  !Array.isArray(expected.platforms)||
-  !['product_service','audience','description','problem','objective'].every(k=>typeof expected[k as keyof Draft]==='string')||
-  !Number.isInteger(expected.duration_days)||
-  !expected.platforms.every(p=>typeof p==='string'))throw new ContentDraftReadbackUnverified();
  let detail:ReturnType<typeof parseContentWorkspaceDetail>;
- try{detail=parseContentWorkspaceDetail(payload,workspaceId);}
- catch{throw new ContentDraftReadbackUnverified();}
- const matching=detail.campaigns.filter(row=>row.id===campaignId&&row.status==='draft');
- if(matching.length!==1||!sameStoredBrief(matching[0],expected))
+ try {
+  if(typeof workspaceId!=='string'||typeof campaignId!=='string'||
+   !UUID.test(workspaceId)||!UUID.test(campaignId)||
+   !expected||typeof expected!=='object'||Array.isArray(expected)||
+   !Array.isArray(expected.platforms)||
+   !['product_service','audience','description','problem','objective'].every(k=>typeof expected[k as keyof Draft]==='string')||
+   !Number.isInteger(expected.duration_days)||
+   !expected.platforms.every(p=>typeof p==='string'))throw new ContentDraftReadbackUnverified();
+  detail=parseContentWorkspaceDetail(payload,workspaceId);
+  const matching=detail.campaigns.filter(row=>row.id===campaignId&&row.status==='draft');
+  if(matching.length!==1||!sameStoredBrief(matching[0],expected))
+   throw new ContentDraftReadbackUnverified();
+ } catch {
+  // Untrusted expected values (including getters/proxies) and malformed reader
+  // payloads must never escape as incidental JS exceptions or confirm a write.
   throw new ContentDraftReadbackUnverified();
+ }
  return detail;
 }

@@ -81,3 +81,23 @@ test('malformed expected draft fields fail closed with unverified error, never a
   assert.throws(()=>confirm([stored()],bad),ContentDraftReadbackUnverified);
  }
 });
+
+test('malformed identifier types fail closed with controlled unverified error',()=>{
+ for(const id of [null,undefined,42,{},[],Symbol('invalid')]){
+  assert.throws(()=>confirmContentDraftReadback(payload([stored()]),id,campaign,submitted),ContentDraftReadbackUnverified);
+  assert.throws(()=>confirmContentDraftReadback(payload([stored()]),workspace,id,submitted),ContentDraftReadbackUnverified);
+ }
+});
+test('throwing expected getters cannot escape readback as incidental exceptions',()=>{
+ for(const field of ['product_service','audience','description','problem','objective','duration_days','platforms']){
+  const bad={...submitted};
+  Object.defineProperty(bad,field,{enumerable:true,get(){throw new Error('untrusted accessor')}});
+  assert.throws(()=>confirm([stored()],bad),ContentDraftReadbackUnverified,field);
+ }
+});
+test('proxy failures and malformed platform access fail closed',()=>{
+ const throwing=new Proxy(submitted,{get(){throw new Error('untrusted proxy')}});
+ assert.throws(()=>confirm([stored()],throwing),ContentDraftReadbackUnverified);
+ const platforms=new Proxy(['facebook','tiktok'],{get(){throw new Error('untrusted array proxy')}});
+ assert.throws(()=>confirm([stored()],{...submitted,platforms}),ContentDraftReadbackUnverified);
+});
