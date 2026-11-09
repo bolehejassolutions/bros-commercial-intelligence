@@ -28,6 +28,7 @@ function validPngChunks(data: Uint8Array): boolean {
     (data[i] * 0x1000000 + data[i + 1] * 65536 + data[i + 2] * 256 + data[i + 3]) >>> 0;
   let offset = 8, count = 0, seenIdat = false, seenEnd = false;
   let idatClosed = false, seenPlte = false;
+  let colorType = -1, bitDepth = -1;
   while (offset + 12 <= data.length && count++ < 512) {
     const length = read32(offset);
     if (length > data.length - offset - 12) return false;
@@ -35,6 +36,7 @@ function validPngChunks(data: Uint8Array): boolean {
     if (!/^[A-Za-z]{4}$/.test(type)) return false;
     if (count === 1 && (type !== "IHDR" || length !== 13)) return false;
     if (type === "IHDR" && count !== 1) return false;
+    if (type === "IHDR") { bitDepth = data[offset + 8 + 8]; colorType = data[offset + 8 + 9]; }
     // Reject unknown critical chunks, repeated IHDR, and noncontiguous IDAT.
     // Ancillary chunks may be present, but cannot interrupt an IDAT sequence
     // that later resumes. These are PNG structural rules, not decode proof.
@@ -46,10 +48,12 @@ function validPngChunks(data: Uint8Array): boolean {
     } else if (seenIdat) idatClosed = true;
     if (type === "PLTE") {
       if (seenPlte || seenIdat || length === 0 || length % 3 !== 0 ||
-          length > 768) return false;
+          length > 768 || colorType === 0 || colorType === 4 ||
+          (colorType === 3 && length / 3 > 2 ** bitDepth)) return false;
       seenPlte = true;
     }
-    if (type === "IEND" && (length !== 0 || !seenIdat)) return false;
+    if (type === "IEND" && (length !== 0 || !seenIdat ||
+        (colorType === 3 && !seenPlte))) return false;
     let crc = 0xffffffff;
     for (let i = offset + 4; i < offset + 8 + length; i++) {
       crc ^= data[i];
