@@ -47,7 +47,7 @@ export function createDemandCreativeAdmission(deps: Dependencies) {
           record.creativeVersion !== request.creativeVersion ||
           record.tenantId.toLowerCase() !== tenantId) return deny();
       const bytes = await deps.mediaFor(tenantId, request.assetId, request.creativeVersion);
-      if (!(bytes instanceof Uint8Array)) deny();
+      if (!(bytes instanceof Uint8Array)) return deny();
       const candidate = prepareDemandCreativeIntake(tenantId, record, bytes);
       // Re-read membership and immutable metadata after potentially slow storage I/O.
       if (tenant(await deps.membershipsFor(principal.userId), principal.userId) !== tenantId) deny();
