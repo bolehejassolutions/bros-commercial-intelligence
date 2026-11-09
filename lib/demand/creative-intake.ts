@@ -27,7 +27,7 @@ function validPngChunks(data: Uint8Array): boolean {
   const read32 = (i: number) =>
     (data[i] * 0x1000000 + data[i + 1] * 65536 + data[i + 2] * 256 + data[i + 3]) >>> 0;
   let offset = 8, count = 0, seenIdat = false, seenEnd = false;
-  let idatClosed = false;
+  let idatClosed = false, seenPlte = false;
   while (offset + 12 <= data.length && count++ < 512) {
     const length = read32(offset);
     if (length > data.length - offset - 12) return false;
@@ -44,8 +44,11 @@ function validPngChunks(data: Uint8Array): boolean {
       if (idatClosed || length === 0) return false;
       seenIdat = true;
     } else if (seenIdat) idatClosed = true;
-    if (type === "PLTE" && (seenIdat || length === 0 || length % 3 !== 0 ||
-        length > 768)) return false;
+    if (type === "PLTE") {
+      if (seenPlte || seenIdat || length === 0 || length % 3 !== 0 ||
+          length > 768) return false;
+      seenPlte = true;
+    }
     if (type === "IEND" && (length !== 0 || !seenIdat)) return false;
     let crc = 0xffffffff;
     for (let i = offset + 4; i < offset + 8 + length; i++) {
