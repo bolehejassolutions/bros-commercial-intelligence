@@ -77,7 +77,10 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
       const principal = await deps.verifyBearerToken(token);
       const now = deps.now ? deps.now() : Date.now();
       if (!principal || typeof principal.subjectId !== "string" ||
-          !ID.test(principal.subjectId) || typeof principal.expiresAt !== "string" ||
+          !ID.test(principal.subjectId) ||
+          (principal.sessionId !== undefined &&
+            (typeof principal.sessionId !== "string" || !ID.test(principal.sessionId))) ||
+          typeof principal.expiresAt !== "string" ||
           !Number.isFinite(Date.parse(principal.expiresAt)) ||
           !Number.isFinite(now) || Date.parse(principal.expiresAt) <= now) {
         return reply(401, { error: "authentication_required" });
