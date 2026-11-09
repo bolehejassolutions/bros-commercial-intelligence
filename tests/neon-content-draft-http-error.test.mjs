@@ -8,6 +8,8 @@ const cases=[
  [409,'Draf ini bercanggah dengan cubaan terdahulu. Semak semula kandungan sebelum cuba lagi.'],
  [400,'Butiran draf tidak sah. Semak maklumat yang dimasukkan.'],
  [422,'Butiran draf tidak sah. Semak maklumat yang dimasukkan.'],
+ [413,'Draf terlalu besar. Ringkaskan kandungan sebelum cuba lagi.'],
+ [415,'Format permintaan tidak disokong. Muat semula halaman dan cuba lagi.'],
  [429,'Terlalu banyak permintaan. Tunggu sebentar sebelum cuba lagi.']
 ];
 for(const [status,message] of cases){
