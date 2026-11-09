@@ -56,6 +56,9 @@ export function createBusinessOsDevReadOnlyTransaction(
       // must expire when the transaction callback returns, before ROLLBACK.
       let accepting = true;
       const inFlight = new Set<Promise<DevReadSqlResult>>();
+      // A callback can launch a query and return without awaiting it. Its
+      // rejection must still invalidate the entire read, not become a success.
+      let detachedQueryFailed = false;
       const query = async (sql: string, params: readonly DevReadSqlValue[]) => {
         if (!accepting) deny();
         if (typeof sql !== "string" || !sql.trim() || !Array.isArray(params) ||
@@ -67,6 +70,7 @@ export function createBusinessOsDevReadOnlyTransaction(
         const pending = client!.query(sql, params);
         inFlight.add(pending);
         try { return await pending; }
+        catch (error) { detachedQueryFailed = true; throw error; }
         finally { inFlight.delete(pending); }
       };
       let value: Awaited<ReturnType<typeof callback>>;
@@ -77,6 +81,9 @@ export function createBusinessOsDevReadOnlyTransaction(
         // Never return a connection to the pool while detached SQL is running.
         await Promise.allSettled([...inFlight]);
       }
+      // Any SQL rejection (including a detached, later-settling query) poisons
+      // the transaction result even when the callback returned a value.
+      if (detachedQueryFailed) deny();
       await client.query("ROLLBACK", []);
       began = false;
       healthy = true;
