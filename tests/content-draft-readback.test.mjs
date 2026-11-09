@@ -65,3 +65,19 @@ test('the captured request snapshot cannot silently confirm a different persiste
  editable.problem='Updated after request dispatch';
  assert.throws(()=>confirm([stored({problem:'Unexpected server mutation'})],snapshot),ContentDraftReadbackUnverified);
 });
+
+test('malformed expected draft fields fail closed with unverified error, never a TypeError',()=>{
+ for(const bad of [
+  {...submitted,product_service:null},
+  {...submitted,audience:42},
+  {...submitted,description:undefined},
+  {...submitted,problem:{}},
+  {...submitted,objective:[]},
+  {...submitted,duration_days:'7'},
+  {...submitted,duration_days:7.5},
+  {...submitted,platforms:['facebook',null]},
+  {...submitted,platforms:['facebook',4]}
+ ]){
+  assert.throws(()=>confirm([stored()],bad),ContentDraftReadbackUnverified);
+ }
+});

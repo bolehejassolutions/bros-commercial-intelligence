@@ -19,7 +19,10 @@ function sameStoredBrief(row:Record<string,unknown>,expected:Draft){
 }
 export function confirmContentDraftReadback(payload:unknown,workspaceId:string,campaignId:string,expected:Draft){
  if(!UUID.test(workspaceId)||!UUID.test(campaignId)||!expected||
-  !Array.isArray(expected.platforms))throw new ContentDraftReadbackUnverified();
+  !Array.isArray(expected.platforms)||
+  !['product_service','audience','description','problem','objective'].every(k=>typeof expected[k as keyof Draft]==='string')||
+  !Number.isInteger(expected.duration_days)||
+  !expected.platforms.every(p=>typeof p==='string'))throw new ContentDraftReadbackUnverified();
  let detail:ReturnType<typeof parseContentWorkspaceDetail>;
  try{detail=parseContentWorkspaceDetail(payload,workspaceId);}
  catch{throw new ContentDraftReadbackUnverified();}
