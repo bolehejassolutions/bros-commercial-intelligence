@@ -76,7 +76,8 @@ export function createBusinessOsDevMembershipChecker(transaction: MembershipTran
             role.session_role_name !== "bci_dev_membership_reader" ||
             role.bypass_rls !== false || role.superuser !== false ||
             role.can_login !== true || role.inherits_roles !== false ||
-            role.can_manage_roles !== false || role.can_create_database !== false ||\n            role.can_replicate !== false || role.parent_role_count !== 0) deny();
+            role.can_manage_roles !== false || role.can_create_database !== false ||
+            role.can_replicate !== false || role.parent_role_count !== 0) deny();
 
         const postureResult = await query(POSTURE_SQL, []);
         if (!Array.isArray(postureResult?.rows) || postureResult.rows.length !== 1 ||
@@ -87,7 +88,8 @@ export function createBusinessOsDevMembershipChecker(transaction: MembershipTran
             posture.rls_forced !== true || posture.can_read_membership !== true ||
             posture.can_write_membership !== false || posture.can_access_evidence !== false ||
             posture.can_create_schema_objects !== false ||
-            posture.can_create_database_objects !== false ||\n            posture.no_definer_exec !== true || posture.no_external_table_access !== true) deny();
+            posture.can_create_database_objects !== false ||
+            posture.no_definer_exec !== true || posture.no_external_table_access !== true) deny();
 
         // RLS uses these transaction-local scopes as a SECOND independent
         // filter. All identity and scope values are bound, never interpolated.
