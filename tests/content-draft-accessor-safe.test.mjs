@@ -15,3 +15,19 @@ test('array custom string properties are rejected',()=>{const a=[1];a.extra='hid
 test('array symbol properties are rejected',()=>{const a=[1];a[Symbol('hidden')]=2;assert.throws(()=>run({a}),/Invalid draft payload/);});
 test('nested object symbol properties are rejected',()=>{const a={value:1};a[Symbol('hidden')]=2;assert.throws(()=>run({a}),/Invalid draft payload/);});
 test('ordinary dense arrays and plain nested objects remain valid',()=>assert.equal(typeof run({a:[1,{value:2}]}).key,'string'));
+
+test('hidden non-enumerable draft fields are rejected without issuing a retry key',()=>{
+ const draft={title:'Campaign'};
+ Object.defineProperty(draft,'hidden',{value:'private',enumerable:false});
+ let issued=0;
+ assert.throws(()=>prepareContentDraftRetry(null,w,draft,()=>{issued++;return key();}),/Invalid draft payload/);
+ assert.equal(issued,0);
+});
+test('hidden nested draft fields are rejected',()=>{
+ const nested={value:1};
+ Object.defineProperty(nested,'hidden',{value:2,enumerable:false});
+ assert.throws(()=>run({nested}),/Invalid draft payload/);
+});
+test('ordinary enumerable draft fields remain valid',()=>{
+ assert.equal(run({nested:{value:1,other:2}}).key,key());
+});
