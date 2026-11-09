@@ -52,6 +52,12 @@ export function createBusinessOsDevReadOnlyTransaction(
       await client.query("SET LOCAL statement_timeout = '5000ms'", []);
       await client.query("SET LOCAL lock_timeout = '1000ms'", []);
       await client.query("SET LOCAL idle_in_transaction_session_timeout = '7000ms'", []);
+      // Do not inherit a pool/session's caller-controlled name resolution or
+      // row-security posture. Both readers use schema-qualified bci_dev tables;
+      // unqualified PostgreSQL built-ins must resolve from pg_catalog only.
+      // SET LOCAL ensures these settings disappear at ROLLBACK.
+      await client.query("SET LOCAL search_path = pg_catalog", []);
+      await client.query("SET LOCAL row_security = on", []);
       // A reader may accidentally retain the query callback. Its authority
       // must expire when the transaction callback returns, before ROLLBACK.
       let accepting = true;
