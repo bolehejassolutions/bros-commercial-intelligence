@@ -32,6 +32,13 @@ const deny = (): never => { throw new DevReadTransactionUnavailable(); };
 const MAX_READER_QUERIES = 8;
 const MAX_SQL_BYTES = 4096;
 const MAX_BOUND_PARAMS = 3;
+// All four SQL calls in both approved restricted readers are fixed SELECTs.
+// Reject transaction-control/role changes, extra statements and SQL comments
+// before reaching a driver. This is defense in depth, NOT a SQL parser or a
+// replacement for the server-owned fixed query/role allowlists.
+const FIXED_READ_STATEMENT = /^SELECT\\s/i;
+const FORBIDDEN_SQL_TOKENS = /;|--|\\/\\*|\\*\\//;
+
 
 /**
  * Builds a transaction callback compatible with BOTH restricted SQL readers.
@@ -73,7 +80,8 @@ export function createBusinessOsDevReadOnlyTransaction(
       let readerQueries = 0;
       const query = async (sql: string, params: readonly DevReadSqlValue[]) => {
         if (!accepting) deny();
-        if (typeof sql !== "string" || !sql.trim() ||
+        if (typeof sql !== "string" || !FIXED_READ_STATEMENT.test(sql) ||
+            FORBIDDEN_SQL_TOKENS.test(sql) ||
             Buffer.byteLength(sql, "utf8") > MAX_SQL_BYTES ||
             !Array.isArray(params) || params.length > MAX_BOUND_PARAMS ||
             params.some(p => p !== null &&
