@@ -71,3 +71,23 @@ test("canonical leap-day date is accepted while invalid leap-day is denied befor
  await assert.rejects(readDemandOperatorSnapshot({...request,since:"2025-02-29",until:"2025-03-01"},invalid.resolver,invalid.secret,invalid.transport,clock),denied);
  assert.deepEqual(invalid.counts(),{credentials:0,network:0});
 });
+
+test("revoked, replaced or stale membership after provider reads never releases a snapshot",async()=>{
+ for(const replacement of [null,{...scope,permission:"REVOKED"},
+   {...scope,tenantId:"tenant_other"}, {...scope,principalId:"principal_other"},
+   {...scope,verifiedAt:"2026-11-09T01:58:00.000Z"}]){
+  const h=harness();let calls=0;
+  const resolver=async()=>++calls===1?scope:replacement;
+  await assert.rejects(readDemandOperatorSnapshot(request,resolver,h.secret,h.transport,clock),denied);
+  assert.equal(calls,2);
+  assert.deepEqual(h.counts(),{credentials:1,network:2});
+ }
+});
+test("membership revalidation failure is sanitized and does not leak observations",async()=>{
+ const h=harness();let calls=0;
+ await assert.rejects(readDemandOperatorSnapshot(request,async()=>{
+  if(++calls===1)return scope;
+  throw Error("PRIVATE_MEMBERSHIP_DRIVER_DETAILS");
+ },h.secret,h.transport,clock),e=>e.message==="BROS_DEMAND_OPERATOR_READ_DENIED");
+ assert.equal(calls,2);
+});
