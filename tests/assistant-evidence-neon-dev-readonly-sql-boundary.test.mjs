@@ -40,7 +40,7 @@ test("SQL control statements and extra statements never reach the driver", async
     const f = fixture();
     await assert.rejects(() => f.run(async query => query(sql, [])),
       e => e.name === "DevReadTransactionUnavailable", sql);
-    assert.equal(f.sqls.includes(sql), false, sql);
+    assert.equal(f.sqls.slice(0, -1).includes(sql), false, sql); // exclude mandatory cleanup ROLLBACK
     assert.equal(f.sqls.at(-1), "ROLLBACK");
     assert.equal(f.released.length, 1);
   }
