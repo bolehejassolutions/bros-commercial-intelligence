@@ -21,7 +21,7 @@ export async function readDemandMetaAccountInsights(req:InsightsRequest,token:st
   if (!response || response.ok!==true) deny();
   const body=await response.json() as Record<string,unknown>;
   if (!obj(body) || Object.hasOwn(body,"error") || !Array.isArray(body.data) || body.data.length>1 ||
-   (obj(body.paging) && (body.paging.next!==undefined || body.paging.previous!==undefined))) deny();
+   (Object.hasOwn(body,"paging") && (!obj(body.paging) || Object.hasOwn(body.paging,"next") || Object.hasOwn(body.paging,"previous") || Object.keys(body.paging).some(k=>k!=="cursors") || (Object.hasOwn(body.paging,"cursors") && (!obj(body.paging.cursors) || Object.keys(body.paging.cursors).some(k=>!["before","after"].includes(k)) || Object.values(body.paging.cursors).some(v=>typeof v!=="string")))))) deny();
   const rows=body.data as unknown[];
   if (rows.length===0) return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,
    accountId:req.accountId,since:req.since,until:req.until,state:"NO_ROWS_NOT_ZERO" as const,spend:null,impressions:null,clicks:null,executionAllowed:false as const});
