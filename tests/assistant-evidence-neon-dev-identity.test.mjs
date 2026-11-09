@@ -88,6 +88,7 @@ test("impossible calendar dates are denied without locale normalization", async 
     "2026-13-08T12:10:00Z", "2026-11-08T25:10:00Z",
     "2026-11-08T12:60:00Z", "2026-11-08T12:10:60Z",
   ]) assert.equal(await fixture({ expiresAt }).verify("opaque-token"), null);
+  assert.equal(await fixture({ expiresAt: "2026-11-08T24:10:00Z" }, { now: Date.parse("2026-11-08T23:00:00Z") }).verify("opaque-token"), null);
   assert.deepEqual(await fixture({ expiresAt: "2026-11-08T13:10:00+01:00" }).verify("opaque-token"),
     { subjectId: P, sessionId: "session-1", expiresAt: "2026-11-08T13:10:00+01:00" });
 });
