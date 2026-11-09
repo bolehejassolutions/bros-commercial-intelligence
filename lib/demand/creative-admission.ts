@@ -40,12 +40,12 @@ export function createDemandCreativeAdmission(deps: Dependencies) {
           !ID.test(request.assetId) || !ID.test(request.creativeVersion)) deny();
       const principal = await deps.authenticate();
       if (!principal || principal.authenticated !== true ||
-          typeof principal.userId !== "string" || !UUID.test(principal.userId)) deny();
+          typeof principal.userId !== "string" || !UUID.test(principal.userId)) return deny();
       const tenantId = tenant(await deps.membershipsFor(principal.userId), principal.userId);
       const record = await deps.approvedRecordFor(tenantId, request.assetId, request.creativeVersion);
       if (!record || record.assetId !== request.assetId ||
           record.creativeVersion !== request.creativeVersion ||
-          record.tenantId.toLowerCase() !== tenantId) deny();
+          record.tenantId.toLowerCase() !== tenantId) return deny();
       const bytes = await deps.mediaFor(tenantId, request.assetId, request.creativeVersion);
       if (!(bytes instanceof Uint8Array)) deny();
       const candidate = prepareDemandCreativeIntake(tenantId, record, bytes);
