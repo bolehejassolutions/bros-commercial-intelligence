@@ -9,13 +9,15 @@ const selection = { tenantId: T, product: "demand" };
 const role = {
   role_name: "bci_dev_membership_reader", session_role_name: "bci_dev_membership_reader",
   bypass_rls: false, superuser: false, can_login: true,
-  inherits_roles: false, can_manage_roles: false, can_create_database: false,\n  can_replicate: false, parent_role_count: 0,
+  inherits_roles: false, can_manage_roles: false, can_create_database: false,
+  can_replicate: false, parent_role_count: 0,
 };
 const posture = {
   database_name: "bros_intelligence_dev", read_only_mode: "on",
   rls_enabled: true, rls_forced: true, can_read_membership: true,
   can_write_membership: false, can_access_evidence: false,
-  can_create_schema_objects: false, can_create_database_objects: false,\n  no_definer_exec: true, no_external_table_access: true,
+  can_create_schema_objects: false, can_create_database_objects: false,
+  no_definer_exec: true, no_external_table_access: true,
 };
 const granted = { principal_id: P, tenant_id: T, product: "demand", active: true, revoked_at: null };
 function fixture(options = {}) {
@@ -82,7 +84,8 @@ test("admin SET ROLE and any role privilege drift fail before scoped SQL", async
   for (const change of [
     { session_role_name: "BROS" }, { role_name: "BROS" },
     { bypass_rls: true }, { superuser: true }, { can_login: false },
-    { inherits_roles: true }, { can_manage_roles: true },\n    { can_create_database: true }, { can_replicate: true }, { parent_role_count: 1 },
+    { inherits_roles: true }, { can_manage_roles: true },
+    { can_create_database: true }, { can_replicate: true }, { parent_role_count: 1 },
   ]) {
     const f = fixture({ role: { ...role, ...change } });
     await assert.rejects(f.check(P, selection), BusinessOsMembershipUnavailable);
@@ -96,7 +99,8 @@ test("RLS, read-only, database and membership/evidence privileges must match", a
     { rls_enabled: false }, { rls_forced: false },
     { can_read_membership: false }, { can_write_membership: true },
     { can_access_evidence: true }, { can_create_schema_objects: true },
-    { can_create_database_objects: true }, { no_definer_exec: false },\n    { no_external_table_access: false },
+    { can_create_database_objects: true }, { no_definer_exec: false },
+    { no_external_table_access: false },
   ]) {
     const f = fixture({ posture: { ...posture, ...change } });
     await assert.rejects(f.check(P, selection), BusinessOsMembershipUnavailable);
