@@ -79,7 +79,7 @@ export function createBusinessOsDevReadOnlyTransaction(
       let detachedQueryFailed = false;
       let readerQueries = 0;
       const query = async (sql: string, params: readonly DevReadSqlValue[]) => {
-        if (!accepting) deny();
+        // A failed query permanently revokes this transaction's query capability.\n        // Never dispatch follow-up SQL after a swallowed driver failure.\n        if (!accepting || detachedQueryFailed) deny();
         if (typeof sql !== "string" || !FIXED_READ_STATEMENT.test(sql) ||
             FORBIDDEN_SQL_TOKENS.test(sql) ||
             Buffer.byteLength(sql, "utf8") > MAX_SQL_BYTES ||
