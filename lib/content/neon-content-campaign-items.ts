@@ -7,7 +7,17 @@ export function scopeContentCampaignItems<I extends Item,S extends Scene>(
  campaignId:string,items:readonly I[],scenes:readonly S[]
 ):ReadonlyArray<Readonly<{item:I;scenes:readonly S[]}>>{
  if(!campaignId||!Array.isArray(items)||!Array.isArray(scenes))return Object.freeze([]);
- const owned=items.filter(i=>i&&i.campaign_id===campaignId&&typeof i.id==='string'&&i.id.length>0);
+ // A scene carries only content_item_id. If the same item ID is claimed by
+ // another campaign, its scene ownership cannot be established safely.
+ const ambiguous=new Set<string>();
+ const ownership=new Map<string,string>();
+ for(const item of items){
+  if(!item||typeof item.id!=='string'||!item.id.length||typeof item.campaign_id!=='string')continue;
+  const prior=ownership.get(item.id);
+  if(prior!==undefined&&prior!==item.campaign_id)ambiguous.add(item.id);
+  else ownership.set(item.id,item.campaign_id);
+ }
+ const owned=items.filter(i=>i&&i.campaign_id===campaignId&&typeof i.id==='string'&&i.id.length>0&&!ambiguous.has(i.id));
  const unique=new Set<string>();
  return Object.freeze(owned.filter(i=>{if(unique.has(i.id))return false;unique.add(i.id);return true;})
   .map(item=>{
