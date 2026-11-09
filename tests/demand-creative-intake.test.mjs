@@ -186,3 +186,26 @@ test("untrusted creative records reject accessors, inherited fields and extra gr
   symbol[Symbol("privilege")]=true;
   assert.throws(() => prepareDemandCreativeIntake(tenantId,symbol,media), denied);
 });
+
+test("PNG repeated palette chunks are rejected even with valid CRC and matching media hash", () => {
+  const crc32 = bytes => {
+    let crc = 0xffffffff;
+    for (const value of bytes) {
+      crc ^= value;
+      for (let bit = 0; bit < 8; bit++)
+        crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const palette = Uint8Array.of(0, 0, 0, 3, 80, 76, 84, 69, 1, 2, 3, 0, 0, 0, 0);
+  const crc = crc32(palette.subarray(4, 11));
+  palette.set([(crc >>> 24) & 255, (crc >>> 16) & 255, (crc >>> 8) & 255, crc & 255], 11);
+  const once = Uint8Array.from([...media.subarray(0, 33), ...palette, ...media.subarray(33)]);
+  const twice = Uint8Array.from([...media.subarray(0, 33), ...palette, ...palette, ...media.subarray(33)]);
+  const record = bytes => ({
+    ...approved, bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+  assert.equal(prepareDemandCreativeIntake(tenantId, record(once), once).metaUploadAllowed, false);
+  assert.throws(() => prepareDemandCreativeIntake(tenantId, record(twice), twice), denied);
+});
