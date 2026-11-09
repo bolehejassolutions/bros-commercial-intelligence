@@ -36,8 +36,8 @@ const MAX_BOUND_PARAMS = 3;
 // Reject transaction-control/role changes, extra statements and SQL comments
 // before reaching a driver. This is defense in depth, NOT a SQL parser or a
 // replacement for the server-owned fixed query/role allowlists.
-const FIXED_READ_STATEMENT = /^SELECT\\s/i;
-const FORBIDDEN_SQL_TOKENS = /;|--|\\/\\*|\\*\\//;
+const FIXED_READ_STATEMENT = /^SELECT\s/i;
+const FORBIDDEN_SQL_TOKENS = /;|--|\/\*|\*\//;
 
 
 /**
