@@ -186,3 +186,22 @@ test('failed link propagates rejection through transaction adapter without a suc
 });
 // This adapter-level simulation does not establish real PostgreSQL rollback.
 // Database-level atomicity requires an isolated PostgreSQL integration run.
+
+test('unrecognized draft fields cannot bypass validation into idempotency JSONB',async()=>{
+ for(const extra of [
+  {unexpected:'x'.repeat(100000)},
+  {customer_secret:{email:'synthetic@example.invalid'}},
+  {visual_preset_id:'SELL_MANGA_STORY'},
+  {__proto__:null,unsafe_nested_payload:{arbitrary:true}}
+ ]){
+  const {writer,calls}=fixture();
+  await assert.rejects(writer(principal,W,{...draft,...extra},key),ContentReadDenied);
+  assert.equal(calls.length,0,'reject before connecting or writing');
+ }
+});
+
+test('exact seven-field draft contract remains writable',async()=>{
+ const {writer,calls}=fixture({insert:[{id:C}]});
+ assert.deepEqual(await writer(principal,W,{...draft},key),{id:C,status:'draft'});
+ assert.equal(calls.filter(x=>x.sql.includes('INSERT INTO content_dev.campaigns')).length,1);
+});
