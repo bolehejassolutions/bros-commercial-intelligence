@@ -17,6 +17,11 @@ const ACCOUNT = /^act_[0-9]{5,25}$/;
 const denied = (): never => { throw new Error("BROS_DEMAND_CREATIVE_BINDING_DENIED"); };
 export function bindDemandCreativeForReview(intake: Intake, plan: Plan) {
   if (!intake || !plan || typeof intake !== "object" || typeof plan !== "object" ||
+      Object.getPrototypeOf(intake) !== Object.prototype ||
+      Object.getPrototypeOf(plan) !== Object.prototype ||
+      Object.keys(intake).sort().join(",") !== "admissionChecksApplied,approvalEvidenceId,approvalIndependentlyAttested,approvalRecheckedAfterRead,assetId,brandInstanceId,campaignExecutionAllowed,creativeVersion,mediaSha256,membershipRecheckedAfterRead,metaUploadAllowed,state" ||
+      Object.values(Object.getOwnPropertyDescriptors(intake)).some(d => !Object.hasOwn(d, "value")) ||
+      Object.values(Object.getOwnPropertyDescriptors(plan)).some(d => !Object.hasOwn(d, "value")) ||
       Object.keys(plan).sort().join(",") !== "accountId,campaignPlanDigest,tenantId" ||
       !UUID.test(plan.tenantId) || !ACCOUNT.test(plan.accountId) ||
       !HEX.test(plan.campaignPlanDigest) || !HEX.test(intake.mediaSha256) ||
