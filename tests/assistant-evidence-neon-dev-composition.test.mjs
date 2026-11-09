@@ -46,13 +46,14 @@ function fixture({ revokedAtCheck, membership = true, row = receipt, throwIdp = 
         if (sql.includes("current_user AS role_name")) return { rows: [{
           role_name: "bci_dev_membership_reader", session_role_name: "bci_dev_membership_reader",
           bypass_rls: false, superuser: false, can_login: true, inherits_roles: false,
-          can_manage_roles: false, parent_role_count: 0,
+          can_manage_roles: false, can_create_database: false, can_replicate: false, parent_role_count: 0,
         }] };
         if (sql.includes("current_database()")) return { rows: [{
           database_name: "bros_intelligence_dev", read_only_mode: "on",
           rls_enabled: true, rls_forced: true, can_read_membership: true,
           can_write_membership: false, can_access_evidence: false,
           can_create_schema_objects: false, can_create_database_objects: false,
+          no_definer_exec: true, no_external_table_access: true,
         }] };
         if (sql.includes("set_config")) return { rows: [{
           principal_scope: params[0], tenant_scope: params[1], product_scope: params[2],
