@@ -63,6 +63,8 @@ export async function readDemandOperatorSnapshot(
   if(!finalScope||finalScope.principalId!==scope.principalId||
     finalScope.tenantId!==scope.tenantId||finalScope.accountId!==scope.accountId||
     finalScope.permission!=="DEMAND_META_READ"||
+    Date.parse(finalScope.verifiedAt)<Date.parse(scope.verifiedAt)||
+    finishedAt.getTime()<timestamp.getTime()||
     !(finishedAt instanceof Date)||!Number.isFinite(finishedAt.getTime())||
     typeof finalScope.verifiedAt!=="string"||
     !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:[.][0-9]{3})?Z$/.test(finalScope.verifiedAt)||
