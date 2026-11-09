@@ -46,6 +46,10 @@ export function prepareContentDraftRetry(
     // Inspect descriptors without invoking user-defined getters during retry identity.
     if(Object.getOwnPropertySymbols(value).length)throw new Error('Invalid draft symbol property');
     const descriptors=Object.getOwnPropertyDescriptors(value);
+    // JSONB cannot preserve non-enumerable own properties. Reject hidden values
+    // instead of assigning an identical retry key to semantically distinct inputs.
+    if(Reflect.ownKeys(value).some(k=>typeof k!=='string'||!descriptors[k].enumerable))
+     throw new Error('Invalid draft hidden property');
     return Object.fromEntries(Object.keys(descriptors).sort().map(k=>{
      const field=descriptors[k];
      if(!('value' in field))throw new Error('Invalid draft accessor');
