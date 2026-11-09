@@ -7,6 +7,7 @@ import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,shouldClearCo
 import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
 import {confirmContentDraftReadback} from '@/lib/content/neon-content-draft-readback';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
+import {scopeContentCampaignItems} from '@/lib/content/neon-content-campaign-items';
 import {buildContentCampaignBrief} from '@/lib/content/neon-content-campaign-brief';
 import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-preview';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
@@ -233,7 +234,8 @@ export default function ContentWorkspaceClient(){
       </div>:
       detailLoad.data.campaigns.length===0?<p>Belum ada kempen dalam workspace ini.</p>:
      <div style={{display:'grid',gap:12}}>{detailLoad.data.campaigns.map(c=>{
-      const items=detailLoad.data.contentItems.filter(i=>i.campaign_id===c.id);
+      const scopedItems=scopeContentCampaignItems(c.id,detailLoad.data.contentItems,detailLoad.data.scenes);
+      const items=scopedItems.map(row=>row.item);
       return <article key={c.id} style={{borderTop:'1px solid #34445c',paddingTop:12}}>
        <p style={{fontSize:11,letterSpacing:1,color:gold,margin:'0 0 6px'}}>{safeText(c.status).toUpperCase()} · {items.length} KANDUNGAN</p>
        <h3 style={{fontSize:17,margin:'4px 0 8px'}}>{safeText(c.product_service)}</h3>
@@ -247,8 +249,7 @@ export default function ContentWorkspaceClient(){
        </details>
        <CampaignLayers campaign={c}/>
        {items.length>0&&<details><summary style={{cursor:'pointer',color:gold}}>Lihat skrip, visual dan scene</summary>
-        <div style={{display:'grid',gap:10,marginTop:10}}>{items.map(item=>{
-         const scenes=detailLoad.data.scenes.filter(s=>s.content_item_id===item.id);
+        <div style={{display:'grid',gap:10,marginTop:10}}>{scopedItems.map(({item,scenes})=>{
          return <div key={item.id} style={{background:'#0d1c2e',padding:12,borderRadius:8}}>
           <p style={{fontSize:11,color:'#b6c1cf'}}>{safeText(item.type)}</p>
           <strong>{safeText(item.title)}</strong><ItemBody item={item}/>
