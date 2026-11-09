@@ -65,3 +65,48 @@ test("detached rejected SQL poisons transaction even when callback returns", asy
   assert.equal(f.sqls.some(x => x.includes("DROP TABLE")), false);
   assert.equal(f.sqls.at(-1), "ROLLBACK");
 });
+
+test("synchronous driver failure poisons transaction even when reader catches it", async () => {
+  const sqls = [];
+  const releases = [];
+  const run = createBusinessOsDevReadOnlyTransaction({
+    async connect() {
+      return {
+        query(sql) {
+          sqls.push(sql);
+          if (sql === "SELECT 1") throw new Error("private driver details");
+          return Promise.resolve({ rows: [] });
+        },
+        release(error) { releases.push(error); },
+      };
+    },
+  });
+  await assert.rejects(() => run(async query => {
+    try { await query("SELECT 1", []); } catch {}
+    return "must not succeed";
+  }), error => error.name === "DevReadTransactionUnavailable" &&
+    !error.message.includes("private driver details"));
+  assert.equal(sqls.at(-1), "ROLLBACK");
+  assert.equal(releases.length, 1);
+});
+
+test("synchronous driver failure cannot be hidden in a detached read", async () => {
+  const sqls = [];
+  const run = createBusinessOsDevReadOnlyTransaction({
+    async connect() {
+      return {
+        query(sql) {
+          sqls.push(sql);
+          if (sql === "SELECT 1") throw new Error("private driver details");
+          return Promise.resolve({ rows: [] });
+        },
+        release() {},
+      };
+    },
+  });
+  await assert.rejects(() => run(async query => {
+    void query("SELECT 1", []).catch(() => {});
+    return "must not succeed";
+  }), error => error.name === "DevReadTransactionUnavailable");
+  assert.equal(sqls.at(-1), "ROLLBACK");
+});
