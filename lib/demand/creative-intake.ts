@@ -149,3 +149,46 @@ export function prepareDemandCreativeIntake(
     metaUploadAllowed: false as const, campaignExecutionAllowed: false as const,
   });
 }
+
+/**
+ * Review-only operator projection. The caller must supply an authenticated,
+ * authoritative tenant/account scope; this function does not infer access
+ * from a creative's self-attested metadata. No Meta provider mutation exists.
+ */
+export function bindDemandCreativeForReview(
+  intake: ReturnType<typeof prepareDemandCreativeIntake>,
+  scope: Readonly<{ tenantId: string; accountId: string; assetId: string; mediaSha256: string }>,
+  plan: Readonly<{ tenantId: string; accountId: string; planId: string; assetId: string; mediaSha256: string }>,
+) {
+  const exactKeys = (value: unknown, keys: string) =>
+    value !== null && typeof value === "object" &&
+    Object.getPrototypeOf(value) === Object.prototype &&
+    Object.keys(value).sort().join(",") === keys &&
+    Reflect.ownKeys(value).length === keys.split(",").length &&
+    Object.values(Object.getOwnPropertyDescriptors(value)).every(d =>
+      Object.hasOwn(d, "value") && d.enumerable);
+  if (!exactKeys(scope, "accountId,assetId,mediaSha256,tenantId") ||
+      !exactKeys(plan, "accountId,assetId,mediaSha256,planId,tenantId") ||
+      !intake || intake.state !== "INTAKE_VERIFIED_NOT_AD_APPROVED" ||
+      intake.metaUploadAllowed !== false || intake.campaignExecutionAllowed !== false ||
+      !Object.isFrozen(intake) || !uuid.test(scope.tenantId) ||
+      scope.tenantId !== plan.tenantId ||
+      !/^act_[0-9]{5,30}$/.test(scope.accountId) ||
+      scope.accountId !== plan.accountId ||
+      !id.test(plan.planId) ||
+      scope.assetId !== plan.assetId || scope.assetId !== intake.assetId ||
+      !hash.test(scope.mediaSha256) ||
+      scope.mediaSha256 !== plan.mediaSha256 ||
+      scope.mediaSha256 !== intake.mediaSha256) deny();
+  const fingerprint = createHash("sha256").update(JSON.stringify([
+    "BROS_DEMAND_CREATIVE_REVIEW_V1", scope.tenantId, scope.accountId,
+    plan.planId, intake.assetId, intake.creativeVersion,
+    intake.mediaSha256, intake.approvalEvidenceId,
+  ])).digest("hex");
+  return Object.freeze({
+    planId: plan.planId, accountId: scope.accountId,
+    assetId: intake.assetId, mediaSha256: intake.mediaSha256,
+    reviewFingerprint: fingerprint, state: "OPERATOR_REVIEW_ONLY" as const,
+    metaUploadAllowed: false as const, campaignExecutionAllowed: false as const,
+  });
+}
