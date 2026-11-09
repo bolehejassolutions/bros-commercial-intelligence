@@ -14,6 +14,10 @@ const validText=(value:unknown,max:number,required=true)=>typeof value==='string
 const allowedPlatforms=new Set(['facebook','instagram','tiktok','youtube','linkedin','whatsapp','threads','x']);
 function validDraft(value:unknown):value is Draft {
  if(value===null||typeof value!=='object'||Array.isArray(value))return false;
+ // Persist only the validated draft contract. Unknown keys would otherwise enter
+ // the idempotency JSONB payload without field-size or provenance checks.
+ const allowedKeys=new Set(['product_service','audience','description','problem','objective','duration_days','platforms']);
+ if(Object.keys(value).some(k=>!allowedKeys.has(k)))return false;
  const d=value as Partial<Draft>;
  const fields:[unknown,number,boolean][]=[
   [d.product_service,200,true],[d.audience,2000,true],
