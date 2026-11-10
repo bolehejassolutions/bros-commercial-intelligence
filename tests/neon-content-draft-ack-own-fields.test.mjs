@@ -29,3 +29,21 @@ test('inherited replay flag does not change fresh receipt',()=>{
  const data=Object.assign(Object.create({replayed:true}),{id,status:'draft'});
  assert.deepEqual(parseContentDraftAcknowledgement({data},201),{id,status:'draft',replayed:false});
 });
+
+test('revoked proxy receipt is rejected as a sanitized invalid acknowledgement',()=>{
+ const {proxy,revoke}=Proxy.revocable({data:{id,status:'draft'}},{});
+ revoke();
+ reject(proxy);
+});
+test('hostile reflection traps never escape as raw errors or certify persistence',()=>{
+ let traps=0;
+ const hostile=new Proxy({data:{id,status:'draft'}},{
+  getOwnPropertyDescriptor(){traps++;throw Error('private reflection failure');}
+ });
+ reject(hostile);
+ const data=new Proxy({id,status:'draft'},{
+  getOwnPropertyDescriptor(){traps++;throw Error('private nested failure');}
+ });
+ reject({data});
+ assert.equal(traps,2);
+});
