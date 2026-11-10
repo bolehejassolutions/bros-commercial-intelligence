@@ -15,7 +15,7 @@ test('rejects unauthenticated requests without invoking writer',async()=>{
 });
 test('binds verified principal and rejects body identity injection',async()=>{
  let calls=0;
- const handler=createContentCampaignDraftPost(async()=>({userId:user,authenticated:true}),async(p,w,d,k)=>{calls++;assert.equal(p.userId,user);assert.equal(w,workspace);assert.equal(k,key);return {id:'draft'};});
+ const handler=createContentCampaignDraftPost(async()=>({userId:user,authenticated:true}),async(p,w,d,k)=>{calls++;assert.equal(p.userId,user);assert.equal(w,workspace);assert.equal(k,key);return {id:'33333333-3333-4333-8333-333333333333',status:'draft'};});
  assert.equal((await handler(request({...valid,tenant_id:workspace}),workspace)).status,400);
  assert.equal((await handler(request(valid),workspace)).status,201);
  assert.equal(calls,1);
@@ -41,7 +41,7 @@ test('foreign tenant denial and database failure reveal no details',async()=>{
 
 test('rejects unsupported media types and multibyte oversized JSON before writer',async()=>{
  let calls=0;
- const handler=createContentCampaignDraftPost(async()=>({userId:user,authenticated:true}),async()=>{calls++;return {id:'draft'};});
+ const handler=createContentCampaignDraftPost(async()=>({userId:user,authenticated:true}),async()=>{calls++;return {id:'33333333-3333-4333-8333-333333333333',status:'draft'};});
  assert.equal((await handler(request(valid,{'content-type':'text/plain'}),workspace)).status,415);
  const oversized={...valid,description:'界'.repeat(5500)};
  assert.equal((await handler(request(oversized),workspace)).status,413);
@@ -53,7 +53,7 @@ test('HTTP draft validation matches writer platform and text constraints',async(
  const handler=createContentCampaignDraftPost(async()=>({userId:user,authenticated:true}),async(_p,_w,d)=>{
   calls++;
   assert.deepEqual(d.platforms,['facebook','instagram']);
-  return {id:'draft'};
+  return {id:'33333333-3333-4333-8333-333333333333',status:'draft'};
  });
  for(const body of [
   {...valid,platforms:[]},
@@ -68,7 +68,7 @@ test('HTTP draft validation matches writer platform and text constraints',async(
 
 test('rejects cross-origin draft requests before session verification or database access',async()=>{
  let verified=0,written=0;
- const handler=createContentCampaignDraftPost(async()=>{verified++;return {userId:user,authenticated:true};},async()=>{written++;return {};});
+ const handler=createContentCampaignDraftPost(async()=>{verified++;return {userId:user,authenticated:true};},async()=>{written++;return {id:'33333333-3333-4333-8333-333333333333',status:'draft'};});
  for(const headers of [
   {origin:'https://attacker.invalid'},
   {'sec-fetch-site':'cross-site'},
