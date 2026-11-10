@@ -73,5 +73,5 @@ export async function readDemandOperatorSnapshot(
     Date.parse(finalScope.verifiedAt)>finishedAt.getTime()+5000)fail();
   return Object.freeze({tenantId:scope.tenantId,accountId:scope.accountId,
     observedAt,insights,status,executionAllowed:false as const});
- }catch{fail();}
+ }catch{return fail();}
 }
