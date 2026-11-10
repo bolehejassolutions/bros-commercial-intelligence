@@ -47,3 +47,15 @@ test('bounded cursor-only continuation remains read-only',async()=>{
  }});
  assert.equal(calls,2);assert.equal(result.rows.length,1);
 });
+
+test('reject oversized, unsafe, or fragment-bearing pagination cursors before second fetch',async()=>{
+ const first='https://graph.facebook.com/v22.0/act_'+accountId+'/ads?fields=id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time&limit=100';
+ for(const suffix of ['&after='+('A'.repeat(513)),'&after=cursor%2Funsafe','&after=cursor%20space','&after=cursor#fragment']){
+  let calls=0;
+  await assert.rejects(readDemandMetaAds({...base,fetchImpl:async()=>{
+   calls++;
+   return {ok:true,json:async()=>({data:[],paging:{next:first+suffix}})};
+  }}),/DEMAND_META_READ_UNVERIFIED/);
+  assert.equal(calls,1,'invalid cursor must not trigger another provider call');
+ }
+});
