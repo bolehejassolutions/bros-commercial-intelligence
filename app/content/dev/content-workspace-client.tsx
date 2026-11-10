@@ -3,6 +3,7 @@
  * No generative, credit, billing, campaign launch or publishing controls.
  */
 import {useEffect,useRef,useState,type FormEvent} from 'react';
+import {createContentDetailReadGuard} from '@/lib/content/content-detail-read-guard';
 import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,shouldClearContentDraftAttempt,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
 import {confirmContentDraftReadback} from '@/lib/content/neon-content-draft-readback';
@@ -115,7 +116,7 @@ export default function ContentWorkspaceClient(){
  const[refresh,setRefresh]=useState(0);
  const pendingDraftAttempt=useRef<ContentDraftAttempt|null>(null);
  // Invalidate older campaign GET responses after a verified draft POST readback.
- const detailReadEpoch=useRef(0);
+ const detailReadGuard=useRef(createContentDetailReadGuard());
  // Keep the currently selected tenant visible to asynchronous save completions.
  const selectedWorkspaceRef=useRef(selected);
  selectedWorkspaceRef.current=selected;
@@ -146,14 +147,14 @@ export default function ContentWorkspaceClient(){
  },[indexRefresh]);
  useEffect(()=>{
   if(!selected){setDetailLoad(initialWorkspaceLoad());return;}
-  let active=true;const readEpoch=++detailReadEpoch.current;setDetailLoad(loadingWorkspace());
+  let active=true;const readEpoch=detailReadGuard.current.beginRead();setDetailLoad(loadingWorkspace());
   (async()=>{
    try{
     const res=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected),{cache:'no-store',credentials:'same-origin'});
     if(!res.ok)throw new Error(contentWorkspaceReadError(res.status));
     const detail=parseContentWorkspaceDetail(await res.json(),selected);
-    if(active&&readEpoch===detailReadEpoch.current)setDetailLoad(loadedWorkspace(detail));
-   }catch(e){if(active&&readEpoch===detailReadEpoch.current)setDetailLoad(failedWorkspace(e instanceof Error?e.message:'Ralat memuatkan data.'));}
+    if(active&&detailReadGuard.current.isCurrent(readEpoch))setDetailLoad(loadedWorkspace(detail));
+   }catch(e){if(active&&detailReadGuard.current.isCurrent(readEpoch))setDetailLoad(failedWorkspace(e instanceof Error?e.message:'Ralat memuatkan data.'));}
   
   })();
   return()=>{active=false;};
@@ -188,7 +189,7 @@ export default function ContentWorkspaceClient(){
    if(!readback.ok)throw new Error('Draf diterima tetapi bacaan semula gagal. Cuba semula dengan selamat.');
    const verified=confirmContentDraftReadback(await readback.json(),selected,receipt.id,submittedDraft);
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current)){
-    ++detailReadEpoch.current;
+    detailReadGuard.current.supersedeWithVerifiedDraft();
     setDetailLoad(loadedWorkspace(verified));
     setNotice('Draf kempen disimpan dan disahkan melalui bacaan semula Neon DEV. Tiada kandungan dijana atau diterbitkan.');
    }
