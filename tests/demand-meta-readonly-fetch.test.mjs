@@ -135,3 +135,20 @@ test('accept documented non-active Meta effective statuses without declaring ad 
   assert.equal(r.metaWriteAllowed,false);
  }
 });
+
+test('reject numeric identifiers before JavaScript string coercion',async()=>{
+ for (const bad of [
+  {...base,accountId:Number(accountId)},
+  {...base,campaignId:Number(campaignId)}
+ ]) {
+  let calls=0;
+  await assert.rejects(readDemandMetaAds({...bad,fetchImpl:async()=>{calls++;return {ok:true,json:async()=>({data:[]})}}}),/DEMAND_META_READ_UNVERIFIED/);
+  assert.equal(calls,0);
+ }
+ for (const changed of [
+  {id:Number(row.id)},
+  {adset_id:Number(row.adset_id)}
+ ]) {
+  await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,...changed}]})}),/DEMAND_META_READ_UNVERIFIED/);
+ }
+});
