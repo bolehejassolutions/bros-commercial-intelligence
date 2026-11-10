@@ -34,3 +34,17 @@ test("rejects identical synthetic tenant and cross-tenant scope", () => {
 test("rejects reused membership/evidence database login configuration", () => {
   rejectBeforeDatabase({ BOS_EVIDENCE_DSN: fixture.BOS_MEMBERSHIP_DSN });
 });
+
+
+test("rejects malformed synthetic fixture identifiers without echoing them", () => {
+  const invalid = "private-fixture-identifier-not-a-uuid";
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", script], {
+    env: { ...fixture, BOS_TEST_SUBJECT: invalid }, encoding: "utf8", timeout: 10000,
+  });
+  assert.notEqual(result.status, 0);
+  assert.equal(result.stdout, "");
+  assert.doesNotMatch(result.stderr, /private-fixture-identifier-not-a-uuid/);
+  assert.doesNotMatch(result.stderr, /synthetic-(membership|evidence)-placeholder/);
+  assert.doesNotMatch(result.stderr, /Install pg locally/, "Reject before loading driver");
+  assert.doesNotMatch(result.stderr, /PASS: restricted role posture/);
+});
