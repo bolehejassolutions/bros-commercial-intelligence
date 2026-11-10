@@ -3,7 +3,7 @@ import type { InsightsTransport } from "./meta-insights-readonly.ts";
 
 type Deps = Readonly<{
  enabled:()=>boolean;
- accountId:string; campaignId:string; apiVersion:string;
+ accountId:string; campaignId:string; adsetId?:string; adId?:string; apiVersion:string;
  authorize:(jwt:string)=>Promise<{tenantId:string;principalId:string}>;
  readToken:()=>string|null;
  now:()=>Date;
@@ -36,7 +36,9 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
    const result=await readDemandOperatorSnapshot({
     accountId:deps.accountId,apiVersion:deps.apiVersion,
     since:url.searchParams.get("since")??"",until:url.searchParams.get("until")??"",
-    objects:[{kind:"campaign",objectId:deps.campaignId}]
+    objects:[{kind:"campaign" as const,objectId:deps.campaignId},
+      ...(deps.adsetId?[{kind:"adset" as const,objectId:deps.adsetId}]:[]),
+      ...(deps.adId?[{kind:"ad" as const,objectId:deps.adId}]:[])]
    },resolveScope,async()=>{
     const token=deps.readToken();if(!token)throw Error("NO_SERVER_TOKEN");return token;
    },deps.transport,deps.now);
