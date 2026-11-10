@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {verifyDemandCreativeBytes} from '../lib/demand/meta-creative-bytes.mjs';
+const scope={tenantId:'tenant-123',brandInstanceId:'bros-sell'};
+const bytes=Buffer.alloc(2048,0);
+Buffer.from([137,80,78,71,13,10,26,10]).copy(bytes);
+const hash=v=>createHash('sha256').update(v).digest('hex');
+const fixture=()=>({tenantId:scope.tenantId,brandInstanceId:scope.brandInstanceId,assetId:'asset-001',creativeVersion:'version-001',media:{sha256:hash(bytes),mime:'image/png',bytes:bytes.length,width:1080,height:1920,verifiedAt:'2026-11-10T10:00:00.000Z',qaStatus:'PASSED'},editorial:{reviewId:'review-001',reviewedAt:'2026-11-10T10:01:00.000Z',status:'APPROVED',disclosureChecked:true,productTruthChecked:true},logo:{used:false,approvedAssetSha256:null},hypothesis:{id:'hypothesis-001',copyLocale:'ms-MY',threeSecondCheck:true,spokenMalayCheck:true,benefitCheck:true,claimEvidenceCheck:true}});
+test('matching bytes remain non-authorizing',()=>{const result=verifyDemandCreativeBytes(fixture(),scope,bytes);assert.equal(result.byteDigestVerified,true);assert.equal(result.metaWriteAllowed,false);assert.equal(result.spendApproved,false);assert.equal(result.providerMediaVerified,false);assert.ok(Object.isFrozen(result))});
+test('rejects changed bytes despite identical declared metadata',()=>{const changed=Buffer.from(bytes);changed[40]=1;assert.throws(()=>verifyDemandCreativeBytes(fixture(),scope,changed),/BYTES_UNVERIFIED/)});
+test('rejects truncated media',()=>assert.throws(()=>verifyDemandCreativeBytes(fixture(),scope,bytes.subarray(0,2047)),/BYTES_UNVERIFIED/));
+test('rejects wrong signature even with matching digest',()=>{const bad=Buffer.alloc(2048,1);const input=fixture();input.media.sha256=hash(bad);assert.throws(()=>verifyDemandCreativeBytes(input,scope,bad),/BYTES_UNVERIFIED/)});
+test('rejects spoofed MIME with matching digest',()=>{const input=fixture();input.media.mime='image/jpeg';assert.throws(()=>verifyDemandCreativeBytes(input,scope,bytes),/BYTES_UNVERIFIED/)});
+test('rejects non-byte payload and foreign tenant',()=>{assert.throws(()=>verifyDemandCreativeBytes(fixture(),scope,'fake'),/BYTES_UNVERIFIED/);const input=fixture();input.tenantId='other-tenant';assert.throws(()=>verifyDemandCreativeBytes(input,scope,bytes),/UNVERIFIED/)});
