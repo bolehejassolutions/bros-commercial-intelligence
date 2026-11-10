@@ -69,3 +69,33 @@ test("missing server token denies before any Meta GET",async()=>{
  const h=build({readToken:()=>null});const response=await h.handler(req());
  assert.equal(response.status,403);assert.equal(h.counts().reads,0);
 });
+
+test("server-pinned campaign, ad set and ad are observed together with no caller-controlled IDs",async()=>{
+ const campaign="120251345756090697",adset="120251345761440697",ad="120251348178960697";
+ const seen=[];
+ const h=build({adsetId:adset,adId:ad,transport:async(u,init)=>{
+  assert.equal(init.method,"GET");assert.equal(init.redirect,"error");seen.push(u);
+  if(u.includes("/insights?"))return {ok:true,json:async()=>({data:[]})};
+  const objectId=new URL(u).pathname.split("/").at(-1);
+  assert.ok([campaign,adset,ad].includes(objectId));
+  return {ok:true,json:async()=>({id:objectId,account_id:"1997776120879476",configured_status:"PAUSED",effective_status:"PAUSED"})};
+ }});
+ const response=await h.handler(req());const body=await response.json();
+ assert.equal(response.status,200);
+ assert.deepEqual(body.status.rows.map(x=>[x.kind,x.objectId]),[["campaign",campaign],["adset",adset],["ad",ad]]);
+ assert.equal(body.insights.state,"NO_ROWS_NOT_ZERO");assert.equal(body.executionAllowed,false);
+ assert.equal(seen.length,4);
+});
+test("invalid server-pinned ad object fails closed before any provider request",async()=>{
+ const h=build({adsetId:"invalid"});
+ const response=await h.handler(req());
+ assert.equal(response.status,403);assert.deepEqual(await response.json(),{error:"DEMAND_STATUS_DENIED"});
+ assert.deepEqual(h.counts(),{reads:0,auth:1,tokenReads:0});
+});
+test("caller cannot override server-pinned ad set or ad IDs",async()=>{
+ const h=build({adsetId:"120251345761440697",adId:"120251348178960697"});
+ for(const extra of ["adset_id=999999999","ad_id=999999999"]){
+  const response=await h.handler(req(url+"&"+extra));assert.equal(response.status,400);
+ }
+ assert.deepEqual(h.counts(),{reads:0,auth:0,tokenReads:0});
+});
