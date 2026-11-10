@@ -52,6 +52,10 @@ export function createContentCampaignDraftPost(verify:Verify,create:Create) {
    duration_days:(v.duration_days as number)||7,platforms:(v.platforms as string[]).map(p=>p.toLowerCase())};
   try{
    const data=await create(Object.freeze({userId:principal.userId,authenticated:true}),workspaceId,Object.freeze(draft),key);
+   // Never acknowledge a saved draft unless the restricted writer returns a persisted draft identity.
+   if(!data||typeof data!=='object'||Array.isArray(data)||
+      !UUID.test(String((data as {id?:unknown}).id??''))||
+      (data as {status?:unknown}).status!=='draft')return reply(503,'draft_unavailable');
    return new Response(JSON.stringify({data}),{status:201,headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'}});
   }catch(error){
    if(error instanceof ContentReadDenied)return reply(404,'not_found');
