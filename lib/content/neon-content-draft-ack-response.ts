@@ -16,7 +16,7 @@ export function parseContentDraftAcknowledgement(
  if(httpStatus!==201||!object(payload)||!object(payload.data)||
   !UUID.test(String(payload.data.id??''))||
   payload.data.status!=='draft'||
-  ('replayed' in payload.data&&payload.data.replayed!==true))
+  ('replayed' in payload.data&&typeof payload.data.replayed!=='boolean'))
   throw new ContentDraftAcknowledgementInvalid();
  return Object.freeze({id:payload.data.id as string,status:'draft',
   replayed:payload.data.replayed===true});
