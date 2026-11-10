@@ -129,7 +129,7 @@ test('reject unknown or malformed effective_status without coercion',async()=>{
  }
 });
 test('accept documented non-active Meta effective statuses without declaring ad activation',async()=>{
- for(const effective_status of ['PAUSED','CAMPAIGN_PAUSED','ADSET_PAUSED','WITH_ISSUES','PENDING_REVIEW']){
+ for(const effective_status of ['PAUSED','CAMPAIGN_PAUSED','ADSET_PAUSED','WITH_ISSUES','PENDING_REVIEW','IN_PROCESS','PENDING_BILLING_CAMPAIGN','PENDING_BILLING_ADSET']){
   const r=await readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,effective_status}]})});
   assert.equal(r.rows[0].effectiveStatus,effective_status);
   assert.equal(r.metaWriteAllowed,false);
