@@ -107,3 +107,17 @@ test('accept complete single-row Insights while retaining observed metrics',asyn
  assert.equal(r.impressions,12);
  assert.equal(r.spendMinor,500);
 });
+
+// Graph Insights metrics are documented as decimal strings. Coercion would accept
+// numbers, booleans and arrays, masking malformed provider responses.
+test('reject non-string Meta Insights metrics instead of coercing values',async()=>{
+ for(const metrics of [
+  {impressions:12,spend:'5.00'},
+  {impressions:'12',spend:5},
+  {impressions:true,spend:'5.00'},
+  {impressions:['12'],spend:'5.00'},
+  {impressions:'12',spend:['5.00']}
+ ]){
+  await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,insights:{data:[metrics]}}]})}),/DEMAND_META_READ_UNVERIFIED/);
+ }
+});
