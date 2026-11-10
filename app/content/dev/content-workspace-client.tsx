@@ -114,6 +114,8 @@ export default function ContentWorkspaceClient(){
  const[notice,setNotice]=useState('');
  const[refresh,setRefresh]=useState(0);
  const pendingDraftAttempt=useRef<ContentDraftAttempt|null>(null);
+ // Invalidate older campaign GET responses after a verified draft POST readback.
+ const detailReadEpoch=useRef(0);
  // Keep the currently selected tenant visible to asynchronous save completions.
  const selectedWorkspaceRef=useRef(selected);
  selectedWorkspaceRef.current=selected;
@@ -144,14 +146,14 @@ export default function ContentWorkspaceClient(){
  },[indexRefresh]);
  useEffect(()=>{
   if(!selected){setDetailLoad(initialWorkspaceLoad());return;}
-  let active=true;setDetailLoad(loadingWorkspace());
+  let active=true;const readEpoch=++detailReadEpoch.current;setDetailLoad(loadingWorkspace());
   (async()=>{
    try{
     const res=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected),{cache:'no-store',credentials:'same-origin'});
     if(!res.ok)throw new Error(contentWorkspaceReadError(res.status));
     const detail=parseContentWorkspaceDetail(await res.json(),selected);
-    if(active)setDetailLoad(loadedWorkspace(detail));
-   }catch(e){if(active)setDetailLoad(failedWorkspace(e instanceof Error?e.message:'Ralat memuatkan data.'));}
+    if(active&&readEpoch===detailReadEpoch.current)setDetailLoad(loadedWorkspace(detail));
+   }catch(e){if(active&&readEpoch===detailReadEpoch.current)setDetailLoad(failedWorkspace(e instanceof Error?e.message:'Ralat memuatkan data.'));}
   
   })();
   return()=>{active=false;};
@@ -186,6 +188,7 @@ export default function ContentWorkspaceClient(){
    if(!readback.ok)throw new Error('Draf diterima tetapi bacaan semula gagal. Cuba semula dengan selamat.');
    const verified=confirmContentDraftReadback(await readback.json(),selected,receipt.id,submittedDraft);
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current)){
+    ++detailReadEpoch.current;
     setDetailLoad(loadedWorkspace(verified));
     setNotice('Draf kempen disimpan dan disahkan melalui bacaan semula Neon DEV. Tiada kandungan dijana atau diterbitkan.');
    }
@@ -227,7 +230,7 @@ export default function ContentWorkspaceClient(){
      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
       <h2 style={{fontSize:20,marginTop:0}}>Kempen sedia ada</h2>
       <button type="button" aria-label="Muat semula kempen workspace ini"
-       disabled={detailLoad.status==='loading'||!isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)}
+       disabled={saving||detailLoad.status==='loading'||!isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)}
        onClick={()=>setRefresh(value=>value+1)}
        style={{background:'#1a2b43',color:gold,border:'1px solid #526580',padding:'8px 12px',borderRadius:7,cursor:'pointer'}}>
        Muat semula kempen
