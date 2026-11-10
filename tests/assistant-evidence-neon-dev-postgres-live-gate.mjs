@@ -47,7 +47,29 @@ if (required.some(k => !process.env[k])) {
     max: 1, connectionTimeoutMillis: 5000, idleTimeoutMillis: 1000,
     ssl: { rejectUnauthorized: true },
   });
+  // Independently prove SQL permission denials with the actual restricted LOGINs.
+  // Posture metadata alone is insufficient: an accidental grant must fail this gate.
+  const assertTableSelectDenied = async (pool, table) => {
+    const client = await pool.connect();
+    let began = false;
+    try {
+      await client.query("BEGIN TRANSACTION READ ONLY");
+      began = true;
+      let denied = false;
+      try { await client.query("SELECT 1 FROM " + table + " LIMIT 1"); }
+      catch (error) { denied = error?.code === "42501"; }
+      assert.equal(denied, true, "Restricted LOGIN must receive SQLSTATE 42501");
+    } finally {
+      if (began) {
+        try { await client.query("ROLLBACK"); }
+        catch { client.release(new Error("Discard failed DEV test transaction")); return; }
+      }
+      client.release();
+    }
+  };
   try {
+    await assertTableSelectDenied(membershipPool, "bci_dev.evidence");
+    await assertTableSelectDenied(evidencePool, "bci_dev.tenant_memberships");
     const membership = createBusinessOsDevMembershipChecker(
       createBusinessOsDevReadOnlyTransaction(membershipPool));
     const evidence = createBusinessOsDevScopedEvidenceReader(
