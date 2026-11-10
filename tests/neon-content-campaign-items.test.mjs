@@ -51,3 +51,21 @@ test('repeated item IDs within the same campaign remain deduplicated',()=>{
  const rows=scopeContentCampaignItems(a,[{id:'one',campaign_id:a},{id:'one',campaign_id:a}],[{id:'scene',content_item_id:'one'}]);
  assert.equal(rows.length,1);assert.equal(rows[0].scenes.length,1);
 });
+
+test('scene ID claimed by different items is suppressed for both owners',()=>{
+ const rows=scopeContentCampaignItems(a,[{id:'one',campaign_id:a},{id:'two',campaign_id:a}],[
+  {id:'shared-scene',content_item_id:'one',scene_number:1},
+  {id:'shared-scene',content_item_id:'two',scene_number:2},
+  {id:'valid-one',content_item_id:'one',scene_number:3},
+  {id:'valid-two',content_item_id:'two',scene_number:4}
+ ]);
+ assert.deepEqual(rows.map(r=>r.scenes.map(s=>s.id)),[['valid-one'],['valid-two']]);
+});
+test('same scene ID repeated under one item retains earliest numbered occurrence',()=>{
+ const rows=scopeContentCampaignItems(a,[{id:'one',campaign_id:a}],[
+  {id:'replayed',content_item_id:'one',scene_number:4},
+  {id:'replayed',content_item_id:'one',scene_number:1}
+ ]);
+ assert.equal(rows[0].scenes.length,1);
+ assert.equal(rows[0].scenes[0].scene_number,1);
+});
