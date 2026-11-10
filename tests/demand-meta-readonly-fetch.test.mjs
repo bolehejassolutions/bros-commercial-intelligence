@@ -27,3 +27,23 @@ test('reject impossible Meta calendar date and timestamp later than snapshot',as
  for (const updated_time of ['2026-02-30T08:59:00+0800','2026-11-10T10:59:00+0800'])
   await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,updated_time}]})}),/UNVERIFIED/);
 });
+
+test('pagination cannot change projection fields, page size, or inject provider parameters',async()=>{
+ const root='https://graph.facebook.com/v22.0/act_'+accountId+'/ads';
+ const fields='id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time';
+ for(const suffix of ['?after=cursor','?fields='+encodeURIComponent(fields)+'&limit=1&after=cursor','?fields='+encodeURIComponent(fields)+'&limit=100&after=cursor&filtering=secret','?fields='+encodeURIComponent(fields)+'&limit=100&after=cursor&after=second','?fields='+encodeURIComponent(fields)+'&limit=100']) {
+  let calls=0;
+  await assert.rejects(readDemandMetaAds({...base,fetchImpl:async()=>{calls++;return {ok:true,json:async()=>({data:[],paging:calls===1?{next:root+suffix}:undefined})}}}),/UNVERIFIED/);
+  assert.equal(calls,1);
+ }
+});
+test('bounded cursor-only continuation remains read-only',async()=>{
+ const first='https://graph.facebook.com/v22.0/act_'+accountId+'/ads?fields=id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time&limit=100';
+ let calls=0;
+ const result=await readDemandMetaAds({...base,fetchImpl:async(url,opts)=>{
+  assert.equal(opts.method,'GET');calls++;
+  if(calls===2)assert.equal(new URL(url).searchParams.get('after'),'cursor123');
+  return {ok:true,json:async()=>calls===1?{data:[],paging:{next:first+'&after=cursor123'}}:{data:[row]}};
+ }});
+ assert.equal(calls,2);assert.equal(result.rows.length,1);
+});
