@@ -52,6 +52,7 @@ if (required.some(k => !process.env[k])) {
   const assertTableSelectDenied = async (pool, table) => {
     const client = await pool.connect();
     let began = false;
+    let discard = false;
     try {
       await client.query("BEGIN TRANSACTION READ ONLY");
       began = true;
@@ -62,9 +63,14 @@ if (required.some(k => !process.env[k])) {
     } finally {
       if (began) {
         try { await client.query("ROLLBACK"); }
-        catch { client.release(new Error("Discard failed DEV test transaction")); throw new Error("DEV test transaction rollback failed"); }
+        catch {
+          discard = true;
+          // A broken transaction must not be returned to the pool.
+          // Never leak driver details or release the same client twice.
+        }
       }
-      client.release();
+      client.release(discard ? new Error("Discard failed DEV test transaction") : undefined);
+      if (discard) throw new Error("DEV test transaction rollback failed");
     }
   };
   try {
