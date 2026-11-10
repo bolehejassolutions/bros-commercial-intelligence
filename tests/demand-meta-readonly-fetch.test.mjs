@@ -81,3 +81,18 @@ test('pagination cannot switch campaign filtering or remove it',async()=>{
   assert.equal(calls,1);
  }
 });
+
+// Provider pagination may repeat an ad when its status changes between page reads.
+// Never double-count impressions or spend in a supposedly complete snapshot.
+test('reject duplicate ad IDs across pages rather than double-counting spend',async()=>{
+ const first='https://graph.facebook.com/v22.0/act_'+accountId+'/ads?fields=id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time&limit=100&filtering='+encodeURIComponent(JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]));
+ let calls=0;
+ await assert.rejects(readDemandMetaAds({...base,fetchImpl:async(url,opts)=>{
+  assert.equal(opts.method,'GET');calls++;
+  return {ok:true,json:async()=>calls===1?{data:[row],paging:{next:first+'&after=cursor123'}}:{data:[{...row,insights:{data:[{impressions:'99',spend:'9.00'}]}}]}};
+ }}),/DEMAND_META_READ_UNVERIFIED/);
+ assert.equal(calls,2);
+});
+test('reject duplicate ad IDs within one provider page',async()=>{
+ await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[row,{...row}]})}),/DEMAND_META_READ_UNVERIFIED/);
+});
