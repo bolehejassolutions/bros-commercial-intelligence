@@ -4,7 +4,9 @@ const allowed=new Set(['facebook','instagram','tiktok','youtube','linkedin','wha
 export type ContentPublishPreview=Readonly<{day:number;platform:string;contentType:string;objective:string;caption:string|null;captionAvailable:boolean;mediaVerified:false;publishAuthorized:false}>;
 export function buildContentPublishPreview(campaign:unknown):ReadonlyArray<ContentPublishPreview>{
  const view=buildContentCampaignView(campaign);
- const captions=new Map(view.captions.map(row=>[row.platform,row.caption]));
+ // Normalize historical caption platform labels consistently with publish-plan labels.
+ // Only exact, single supported platforms may receive a caption; never infer combined labels.
+ const captions=new Map(view.captions.map(row=>[row.platform.trim().toLowerCase(),row.caption]));
  return Object.freeze(view.publishPlan.map(row=>{
   const platform=row.platform.trim().toLowerCase();
   // Multi-platform historical labels are not safe to infer or auto-match.
