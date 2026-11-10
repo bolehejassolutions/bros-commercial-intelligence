@@ -10,7 +10,7 @@ const request=()=>new Request('https://content.example.test/api/content/dev/work
  method:'POST',headers:{'content-type':'application/json','origin':'https://content.example.test','idempotency-key':'retry_key_123456789'},
  body:JSON.stringify({product_service:'BROS SELL',audience:'Peniaga Malaysia',platforms:['facebook']})
 });
-const verify=async()=>({userId:user,authenticated:true as const});
+const verify=async()=>({userId:user,authenticated:true});
 
 for(const result of [undefined,null,{},[],{id:'not-a-uuid',status:'draft'},{id:campaign,status:'pending'},{id:campaign}]) {
  test('rejects unverified writer acknowledgement: '+JSON.stringify(result),async()=>{
