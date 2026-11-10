@@ -224,7 +224,15 @@ export default function ContentWorkspaceClient(){
    </section>
    {indexReady&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,420px),1fr))',gap:20,alignItems:'start'}}>
     <section style={card}>
-     <h2 style={{fontSize:20,marginTop:0}}>Kempen sedia ada</h2>
+     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+      <h2 style={{fontSize:20,marginTop:0}}>Kempen sedia ada</h2>
+      <button type="button" aria-label="Muat semula kempen workspace ini"
+       disabled={detailLoad.status==='loading'||!isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)}
+       onClick={()=>setRefresh(value=>value+1)}
+       style={{background:'#1a2b43',color:gold,border:'1px solid #526580',padding:'8px 12px',borderRadius:7,cursor:'pointer'}}>
+       Muat semula kempen
+      </button>
+     </div>
      {detailLoad.status==='loading'||detailLoad.status==='idle'||(detailLoad.status==='ready'&&!isContentWorkspaceDetailCurrent(selected,detailLoad))?<p role="status">Memuatkan kempen…</p>:
       detailLoad.status!=='ready'?<div role="alert" style={{border:'1px solid #ad665d',padding:12,borderRadius:8}}>
        <p style={{color:'#ffd0cb'}}>{detailLoad.error}</p>
