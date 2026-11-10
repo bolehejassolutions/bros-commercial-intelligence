@@ -49,6 +49,7 @@ test('writer failure is sanitized and non-cacheable',async()=>{
  const response=await handler(request(payload),workspace);
  assert.equal(response.status,503);
  assert.equal(response.headers.get('cache-control'),'no-store');
- assert.deepEqual(await response.json(),{error:'draft_unavailable'});
- assert.doesNotMatch(await response.clone().text().catch(()=>''),/SECRET/);
+ const body=await response.text();
+ assert.deepEqual(JSON.parse(body),{error:'draft_unavailable'});
+ assert.doesNotMatch(body,/SECRET/);
 });
