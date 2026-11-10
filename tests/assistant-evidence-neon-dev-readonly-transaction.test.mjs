@@ -239,3 +239,16 @@ test("invalid SQL poisons the query capability even if caller swallows denial", 
   assert.equal(f.calls.some(x => x.sql === "SELECT should-not-dispatch"), false);
   assert.equal(f.calls.at(-1).sql, "ROLLBACK");
 });
+
+test("rollback failure after swallowed SQL rejection cannot certify a successful read", async () => {
+  const f = fixture({ failAt: "SELECT denied", rollbackFails: true });
+  await assert.rejects(() => f.transaction(async query => {
+    try { await query("SELECT denied", []); } catch { /* intentionally swallowed */ }
+    return "must-never-succeed";
+  }), error => error instanceof DevReadTransactionUnavailable &&
+    !error.message.includes("PRIVATE"));
+  assert.equal(f.calls.filter(call => call.sql === "ROLLBACK").length, 1);
+  assert.equal(f.releases.length, 1);
+  assert.ok(f.releases[0] instanceof Error, "failed rollback must discard connection");
+  assert.ok(!f.releases[0].message.includes("PRIVATE"));
+});
