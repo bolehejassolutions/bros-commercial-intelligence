@@ -34,7 +34,7 @@ test('same retry key with changed normalized payload fails closed without leakin
  const handler=createContentCampaignDraftPost(principal,async(_p,_w,d)=>{
   attempts++;const current=JSON.stringify(d);
   if(original&&original!==current)throw Error('database secret or conflicting payload');
-  original=current;return {id:'33333333-3333-4333-8333-333333333333'};
+  original=current;return {id:'33333333-3333-4333-8333-333333333333',status:'draft'};
  });
  assert.equal((await handler(make(),workspace)).status,201);
  const response=await handler(make({...draft,audience:'Different audience'}),workspace);
@@ -45,7 +45,7 @@ test('same retry key with changed normalized payload fails closed without leakin
 
 test('retry keys are scoped to workspace and cannot create a cross-workspace cache hit',async()=>{
  const scopes=[];const handler=createContentCampaignDraftPost(principal,async(p,w,_d,key)=>{
-  scopes.push([p.userId,w,key]);return {id:w};
+  scopes.push([p.userId,w,key]);return {id:w,status:'draft'};
  });
  assert.equal((await handler(make(),workspace)).status,201);
  assert.equal((await handler(make(draft,'retry_key_123456789',otherWorkspace),otherWorkspace)).status,201);
