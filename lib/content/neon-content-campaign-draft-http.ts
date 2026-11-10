@@ -56,7 +56,10 @@ export function createContentCampaignDraftPost(verify:Verify,create:Create) {
    if(!data||typeof data!=='object'||Array.isArray(data)||
       !UUID.test(String((data as {id?:unknown}).id??''))||
       (data as {status?:unknown}).status!=='draft')return reply(503,'draft_unavailable');
-   return new Response(JSON.stringify({data}),{status:201,headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'}});
+   const persisted=data as {id:string;status:'draft';replayed?:unknown};
+   // Do not reflect arbitrary writer fields (including internal DB metadata) to HTTP clients.
+   const publicData={id:persisted.id,status:'draft',replayed:persisted.replayed===true};
+   return new Response(JSON.stringify({data:publicData}),{status:201,headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'}});
   }catch(error){
    if(error instanceof ContentReadDenied)return reply(404,'not_found');
    return reply(503,'draft_unavailable');
