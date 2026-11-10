@@ -28,7 +28,10 @@ if (required.some(k => !process.env[k])) {
   process.exitCode = 2;
 } else {
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  // Never echo identifiers in assertion diagnostics, even for malformed fixtures.\n  for (const k of required.slice(2)) {\n    if (!uuid.test(process.env[k])) throw new Error("Invalid synthetic fixture identifier");\n  }
+  // Never echo identifiers in assertion diagnostics, even for malformed fixtures.
+  for (const k of required.slice(2)) {
+    if (!uuid.test(process.env[k])) throw new Error("Invalid synthetic fixture identifier");
+  }
   assert.notEqual(process.env.BOS_TEST_TENANT, process.env.BOS_OTHER_TENANT);
   // Do not echo connection strings through Node assertion diagnostics.
   if (process.env.BOS_MEMBERSHIP_DSN === process.env.BOS_EVIDENCE_DSN) {
