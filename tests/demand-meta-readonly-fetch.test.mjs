@@ -121,3 +121,17 @@ test('reject non-string Meta Insights metrics instead of coercing values',async(
   await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,insights:{data:[metrics]}}]})}),/DEMAND_META_READ_UNVERIFIED/);
  }
 });
+
+// Unknown provider status must never be displayed as a trusted campaign state.
+test('reject unknown or malformed effective_status without coercion',async()=>{
+ for(const effective_status of ['UNKNOWN_STATUS','',null,123,{value:'PAUSED'}]){
+  await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,effective_status}]})}),/DEMAND_META_READ_UNVERIFIED/);
+ }
+});
+test('accept documented non-active Meta effective statuses without declaring ad activation',async()=>{
+ for(const effective_status of ['PAUSED','CAMPAIGN_PAUSED','ADSET_PAUSED','WITH_ISSUES','PENDING_REVIEW']){
+  const r=await readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,effective_status}]})});
+  assert.equal(r.rows[0].effectiveStatus,effective_status);
+  assert.equal(r.metaWriteAllowed,false);
+ }
+});
