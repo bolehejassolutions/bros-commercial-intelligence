@@ -96,3 +96,14 @@ test('reject duplicate ad IDs across pages rather than double-counting spend',as
 test('reject duplicate ad IDs within one provider page',async()=>{
  await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[row,{...row}]})}),/DEMAND_META_READ_UNVERIFIED/);
 });
+
+test('reject incomplete nested Insights pagination instead of undercounting metrics',async()=>{
+ for(const paging of [{next:'https://graph.facebook.com/v22.0/insights?after=more'},{next:'cursor-next'}]){
+  await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,insights:{data:[{impressions:'12',spend:'5.00'}],paging}}]})}),/DEMAND_META_READ_UNVERIFIED/);
+ }
+});
+test('accept complete single-row Insights while retaining observed metrics',async()=>{
+ const r=await readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,insights:{data:[{impressions:'12',spend:'5.00'}],paging:{cursors:{after:'cursor'}}}}]})});
+ assert.equal(r.impressions,12);
+ assert.equal(r.spendMinor,500);
+});
