@@ -7,7 +7,9 @@ export function buildContentPublishPreview(campaign:unknown):ReadonlyArray<Conte
  // Normalize historical caption platform labels consistently with publish-plan labels.
  // Only exact, single supported platforms may receive a caption; never infer combined labels.
  const captions=new Map(view.captions.map(row=>[row.platform.trim().toLowerCase(),row.caption]));
- return Object.freeze(view.publishPlan.map(row=>{
+ // Show the campaign schedule in day order without mutating persisted readback.
+ // Equal-day entries retain their original order (stable sort).
+ return Object.freeze([...view.publishPlan].sort((a,b)=>a.day-b.day).map(row=>{
   const platform=row.platform.trim().toLowerCase();
   // Multi-platform historical labels are not safe to infer or auto-match.
   const caption=allowed.has(platform)?captions.get(platform)??null:null;
