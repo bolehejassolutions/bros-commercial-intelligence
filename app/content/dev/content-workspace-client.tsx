@@ -198,8 +198,8 @@ export default function ContentWorkspaceClient(){
    if(shouldClearContentDraftAttempt(pendingDraftAttempt.current,attempt))pendingDraftAttempt.current=null;
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
     setDraft(current=>JSON.stringify(current)===submitted?initialDraft:current);
-   if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
-    setRefresh(value=>value+1);
+   // The authenticated GET above is already the verified latest snapshot.
+   // Do not issue another GET: its loading/error state could hide a successful save.
   }catch(e){if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
    setError(e instanceof Error?e.message:'Ralat menyimpan draf.');}
   finally{setSaving(false);}
