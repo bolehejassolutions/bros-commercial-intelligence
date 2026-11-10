@@ -120,7 +120,7 @@ test("issuer and audience trust boundary cannot be retargeted through mutable co
 });
 
 
-test("issuer configuration rejects credential-bearing, malformed and query/fragment URLs", () => {
+test("issuer configuration rejects credential-bearing, malformed and query/fragment URLs", async () => {
   for (const invalidIssuer of [
     "https://", "https://user:password@auth.example.test",
     "https://auth.example.test?issuer=other", "https://auth.example.test#other",
