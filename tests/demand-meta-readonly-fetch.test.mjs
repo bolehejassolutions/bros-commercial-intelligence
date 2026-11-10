@@ -11,3 +11,19 @@ test('reject tenant mismatch before fetching',async()=>{let calls=0;await assert
 test('reject cross-account/campaign, invalid metrics and non-GET provider failure',async()=>{for(const bad of [{...row,campaign_id:'123456789'},{...row,account_id:'123456789'},{...row,insights:{data:[{impressions:'12',spend:'NaN'}]}}])await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[bad]})}),/UNVERIFIED/);await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[]},false)}),/UNVERIFIED/)});
 test('reject untrusted pagination URL, duplicate pages, and overflow',async()=>{for(const next of ['https://evil.example/steal','https://graph.facebook.com/v22.0/act_123456789/ads'])await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[],paging:{next}})}),/UNVERIFIED/);await assert.rejects(readDemandMetaAds({...base,maxPages:1,fetchImpl:mock({data:[],paging:{next:'https://graph.facebook.com/v22.0/act_'+accountId+'/ads?page=2'}})}),/UNVERIFIED/)});
 test('reject thrown provider errors without exposing secrets',async()=>{await assert.rejects(readDemandMetaAds({...base,fetchImpl:async()=>{throw Error('secret-test-token')}}),e=>e.message==='DEMAND_META_READ_UNVERIFIED')});
+
+test('accept actual Meta numeric-offset updated_time and normalize to canonical UTC',async()=>{
+ const r=await readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,updated_time:'2026-11-10T08:59:00+0800'}]})});
+ assert.equal(r.rows[0].sourceUpdatedAt,'2026-11-10T00:59:00.000Z');
+});
+test('missing inline Insights is unknown, never zero',async()=>{
+ const {insights,...withoutInsights}=row;
+ const r=await readDemandMetaAds({...base,fetchImpl:mock({data:[withoutInsights]})});
+ assert.equal(r.state,'ROWS_OBSERVED_UNVERIFIED_PROVIDER');
+ assert.equal(r.spendMinor,null);
+ assert.equal(r.impressions,null);
+});
+test('reject impossible Meta calendar date and timestamp later than snapshot',async()=>{
+ for (const updated_time of ['2026-02-30T08:59:00+0800','2026-11-10T10:59:00+0800'])
+  await assert.rejects(readDemandMetaAds({...base,fetchImpl:mock({data:[{...row,updated_time}]})}),/UNVERIFIED/);
+});
