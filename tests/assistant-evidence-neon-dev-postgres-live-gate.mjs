@@ -9,7 +9,10 @@
  * Set BOS_MEMBERSHIP_DSN, BOS_EVIDENCE_DSN, BOS_TEST_SUBJECT,
  * BOS_TEST_TENANT, BOS_OTHER_TENANT, BOS_EXPECTED_EVIDENCE_ID. All IDs must be synthetic UUIDs.
  * The synthetic subject must have an active CONTENT grant in BOS_TEST_TENANT;
- * no grant in BOS_OTHER_TENANT or DEMAND. At least one synthetic CONTENT\n * evidence row with BOS_EXPECTED_EVIDENCE_ID must exist in BOS_TEST_TENANT.\n * An empty authorized read is NOT sufficient to certify evidence integration.\n * No customer records.
+ * no grant in BOS_OTHER_TENANT or DEMAND. At least one synthetic CONTENT
+ * evidence row with BOS_EXPECTED_EVIDENCE_ID must exist in BOS_TEST_TENANT.
+ * An empty authorized read is NOT sufficient to certify evidence integration.
+ * No customer records.
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -18,7 +21,8 @@ import { createBusinessOsDevMembershipChecker } from "../lib/bci/assistant-evide
 import { createBusinessOsDevScopedEvidenceReader } from "../lib/bci/assistant-evidence-neon-dev-read.ts";
 
 const required = ["BOS_MEMBERSHIP_DSN", "BOS_EVIDENCE_DSN",
-  "BOS_TEST_SUBJECT", "BOS_TEST_TENANT", "BOS_OTHER_TENANT",\n  "BOS_EXPECTED_EVIDENCE_ID"];
+  "BOS_TEST_SUBJECT", "BOS_TEST_TENANT", "BOS_OTHER_TENANT",
+  "BOS_EXPECTED_EVIDENCE_ID"];
 if (required.some(k => !process.env[k])) {
   process.stderr.write("SKIP: restricted DEV connection and synthetic fixture inputs required.\n");
   process.exitCode = 2;
@@ -55,7 +59,10 @@ if (required.some(k => !process.env[k])) {
     assert.equal(await membership(subject, { tenantId: tenant, product: "demand" }), false);
     assert.equal(await membership(subject, { tenantId: other, product: "content" }), false);
     const rows = await evidence({ tenantId: tenant, product: "content", maxRows: 20 });
-    assert.ok(rows.length > 0 && rows.length <= 20,\n      "Positive synthetic evidence fixture is required; empty reads are inconclusive");\n    assert.ok(rows.some(row => row.evidenceId === process.env.BOS_EXPECTED_EVIDENCE_ID),\n      "Expected synthetic evidence must be returned from the authorized scope");
+    assert.ok(rows.length > 0 && rows.length <= 20,
+      "Positive synthetic evidence fixture is required; empty reads are inconclusive");
+    assert.ok(rows.some(row => row.evidenceId === process.env.BOS_EXPECTED_EVIDENCE_ID),
+      "Expected synthetic evidence must be returned from the authorized scope");
     assert.ok(rows.every(row => row.tenantId === tenant && row.product === "content"));
     const otherRows = await evidence({ tenantId: other, product: "content", maxRows: 20 });
     assert.equal(otherRows.length, 0, "Other tenant must have no synthetic evidence");
