@@ -9,7 +9,7 @@ const url='https://content.example.test/api/content/dev/workspaces/'+workspace+'
 const payload={product_service:'BROS SELL',audience:'Peniaga Malaysia',platforms:['facebook']};
 const headers={'content-type':'application/json','origin':'https://content.example.test','sec-fetch-site':'same-origin','idempotency-key':'retry_key_123456789'};
 const request=(body:unknown,overrides:Record<string,string>={})=>new Request(url,{method:'POST',headers:{...headers,...overrides},body:typeof body==='string'?body:JSON.stringify(body)});
-const principal=async()=>({userId:user,authenticated:true});
+const principal=async()=>({userId:user,authenticated:true as const});
 
 test('oversized UTF-8 payload is rejected before writer invocation',async()=>{
  let calls=0;const handler=createContentCampaignDraftPost(principal,async()=>{calls++;return {};});
@@ -29,7 +29,7 @@ test('malformed JSON is rejected before writer invocation without leaking input'
 
 test('cross-site fetch metadata cannot be overridden by matching Origin',async()=>{
  let authenticated=0,writes=0;
- const handler=createContentCampaignDraftPost(async()=>{authenticated++;return {userId:user,authenticated:true};},async()=>{writes++;return {};});
+ const handler=createContentCampaignDraftPost(async()=>{authenticated++;return {userId:user,authenticated:true as const};},async()=>{writes++;return {};});
  const response=await handler(request(payload,{'sec-fetch-site':'cross-site'}),workspace);
  assert.equal(response.status,403);
  assert.deepEqual(await response.json(),{error:'forbidden_origin'});
