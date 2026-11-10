@@ -92,3 +92,29 @@ test("impossible calendar dates are denied without locale normalization", async 
   assert.deepEqual(await fixture({ expiresAt: "2026-11-08T13:10:00+01:00" }).verify("opaque-token"),
     { subjectId: P, sessionId: "session-1", expiresAt: "2026-11-08T13:10:00+01:00" });
 });
+
+test("issuer and audience trust boundary cannot be retargeted through mutable config", async () => {
+  const config = { issuer, audience };
+  const verify = createBusinessOsDevIdentityVerifier(async () => ({ ...session }), config, () => NOW);
+  config.issuer = "https://attacker.example.test";
+  config.audience = "attacker-resource";
+  assert.deepEqual(await verify("opaque-token"), {
+    subjectId: P, sessionId: "session-1", expiresAt: session.expiresAt,
+  }, "the original configured trust boundary must remain valid");
+
+  const attacker = createBusinessOsDevIdentityVerifier(
+    async () => ({ ...session, issuer: config.issuer, audience: config.audience }),
+    { issuer, audience }, () => NOW,
+  );
+  assert.equal(await attacker("opaque-token"), null);
+
+  const changedConfig = { issuer, audience };
+  const pinned = createBusinessOsDevIdentityVerifier(
+    async () => ({ ...session, issuer: "https://attacker.example.test", audience: "attacker-resource" }),
+    changedConfig, () => NOW,
+  );
+  changedConfig.issuer = "https://attacker.example.test";
+  changedConfig.audience = "attacker-resource";
+  assert.equal(await pinned("opaque-token"), null,
+    "mutating caller-owned config must never authorize a different issuer or audience");
+});
