@@ -9,6 +9,7 @@ import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft
 import {confirmContentDraftReadback} from '@/lib/content/neon-content-draft-readback';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
 import {scopeContentCampaignItems} from '@/lib/content/neon-content-campaign-items';
+import {filterContentCampaigns} from '@/lib/content/neon-content-campaign-search';
 import {buildContentCampaignBrief} from '@/lib/content/neon-content-campaign-brief';
 import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-preview';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
@@ -114,6 +115,7 @@ export default function ContentWorkspaceClient(){
  const[error,setError]=useState('');
  const[notice,setNotice]=useState('');
  const[refresh,setRefresh]=useState(0);
+ const[campaignQuery,setCampaignQuery]=useState('');
  const pendingDraftAttempt=useRef<ContentDraftAttempt|null>(null);
  // Invalidate older campaign GET responses after a verified draft POST readback.
  const detailReadGuard=useRef(createContentDetailReadGuard());
@@ -128,7 +130,7 @@ export default function ContentWorkspaceClient(){
  useEffect(()=>{
   if(!shouldResetContentDraftOnWorkspaceSwitch(previousWorkspaceRef.current,selected))return;
   previousWorkspaceRef.current=selected;
-  setDraft(initialDraft);setError('');setNotice('');
+  setDraft(initialDraft);setCampaignQuery('');setError('');setNotice('');
   setDetailLoad(initialWorkspaceLoad());
  },[selected]);
  useEffect(()=>{
@@ -237,6 +239,11 @@ export default function ContentWorkspaceClient(){
        Muat semula kempen
       </button>
      </div>
+     <label style={{display:'grid',gap:6,margin:'12px 0',fontSize:13}}>
+      Cari kempen dalam workspace ini
+      <input type="search" value={campaignQuery} onChange={event=>setCampaignQuery(event.target.value)}
+       placeholder="Produk, sasaran, status atau objektif" style={field}/>
+     </label>
      {detailLoad.status==='loading'||detailLoad.status==='idle'||(detailLoad.status==='ready'&&!isContentWorkspaceDetailCurrent(selected,detailLoad))?<p role="status">Memuatkan kempen…</p>:
       detailLoad.status!=='ready'?<div role="alert" style={{border:'1px solid #ad665d',padding:12,borderRadius:8}}>
        <p style={{color:'#ffd0cb'}}>{detailLoad.error}</p>
@@ -245,7 +252,8 @@ export default function ContentWorkspaceClient(){
         Cuba semula</button>
       </div>:
       detailLoad.data.campaigns.length===0?<p>Belum ada kempen dalam workspace ini.</p>:
-     <div style={{display:'grid',gap:12}}>{detailLoad.data.campaigns.map(c=>{
+      filterContentCampaigns(detailLoad.data.campaigns,campaignQuery).length===0?<p>Tiada kempen sepadan. Kosongkan carian untuk lihat semua kempen.</p>:
+     <div style={{display:'grid',gap:12}}>{filterContentCampaigns(detailLoad.data.campaigns,campaignQuery).map(c=>{
       const scopedItems=scopeContentCampaignItems(c.id,detailLoad.data.contentItems,detailLoad.data.scenes);
       const items=scopedItems.map(row=>row.item);
       return <article key={c.id} style={{borderTop:'1px solid #34445c',paddingTop:12}}>
