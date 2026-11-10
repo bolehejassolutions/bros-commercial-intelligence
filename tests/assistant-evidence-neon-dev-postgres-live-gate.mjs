@@ -62,7 +62,7 @@ if (required.some(k => !process.env[k])) {
     } finally {
       if (began) {
         try { await client.query("ROLLBACK"); }
-        catch { client.release(new Error("Discard failed DEV test transaction")); return; }
+        catch { client.release(new Error("Discard failed DEV test transaction")); throw new Error("DEV test transaction rollback failed"); }
       }
       client.release();
     }
