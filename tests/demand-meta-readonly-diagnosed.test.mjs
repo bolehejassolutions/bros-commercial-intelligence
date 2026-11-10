@@ -63,3 +63,23 @@ test('successful Graph snapshot is parsed once and preserves unknown metrics',as
  assert.equal(r.snapshot.state,'NO_ROWS_NOT_ZERO');
  assert.equal(r.snapshot.spendMinor,null);
 });
+
+test('bare HTTP 429 is retryable without treating missing rows as zero',async()=>{
+ let reads=0;
+ const r=await readDemandMetaAdsDiagnosed({...base,fetchImpl:async()=>({ok:false,status:429,json:async()=>{reads++;return {message:'private-provider-details'};}})});
+ assert.equal(reads,1);
+ assert.equal(r.ok,false);assert.equal(r.snapshot,null);
+ assert.equal(r.diagnosis.state,'RATE_LIMITED');assert.equal(r.diagnosis.retryable,true);
+ assert.equal(r.diagnosis.requiresOwnerAction,false);assert.equal(r.diagnosis.metaWriteAllowed,false);
+ assert.ok(!JSON.stringify(r).includes('private-provider-details'));
+});
+test('bare HTTP 403 is not assumed to prove a Meta permission denial',async()=>{
+ const r=await readDemandMetaAdsDiagnosed({...base,fetchImpl:async()=>({ok:false,status:403,json:async()=>({message:'untrusted'})})});
+ assert.equal(r.ok,false);assert.equal(r.snapshot,null);
+ assert.equal(r.diagnosis.state,'PROVIDER_UNVERIFIED');assert.equal(r.diagnosis.requiresOwnerAction,false);
+});
+test('explicit Graph credential error outranks HTTP 429 fallback',async()=>{
+ const r=await readDemandMetaAdsDiagnosed({...base,fetchImpl:async()=>({ok:false,status:429,json:async()=>({error:{code:190,message:'private'}})})});
+ assert.equal(r.ok,false);assert.equal(r.diagnosis.state,'TOKEN_INVALID_OR_EXPIRED');
+ assert.equal(r.diagnosis.retryable,false);assert.equal(r.diagnosis.metaWriteAllowed,false);
+});
