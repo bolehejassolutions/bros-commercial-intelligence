@@ -18,6 +18,7 @@ export type ContentDraftAcknowledgement=Readonly<{id:string;status:'draft';repla
 export function parseContentDraftAcknowledgement(
  payload:unknown,httpStatus:number
 ):ContentDraftAcknowledgement {
+ try {
  const data=object(payload)?ownValue(payload,'data'):undefined;
  const id=object(data)?ownValue(data,'id'):undefined;
  const status=object(data)?ownValue(data,'status'):undefined;
@@ -26,4 +27,9 @@ export function parseContentDraftAcknowledgement(
   status!=='draft'||(Object.hasOwn(data,'replayed')&&typeof replayed!=='boolean'))
   throw new ContentDraftAcknowledgementInvalid();
  return Object.freeze({id,status:'draft',replayed:replayed===true});
+ } catch {
+  // Revoked proxies and hostile reflection traps must fail closed with the
+  // same public error as malformed persistence receipts.
+  throw new ContentDraftAcknowledgementInvalid();
+ }
 }
