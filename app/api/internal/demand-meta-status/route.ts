@@ -1,0 +1,11 @@
+import { handleDemandMetaOperatorStatus } from "@/lib/demand/meta-direct-runtime";
+export const runtime="nodejs";
+export const dynamic="force-dynamic";
+export const revalidate=0;
+export const GET=handleDemandMetaOperatorStatus;
+export const POST=handleDemandMetaOperatorStatus;
+export const PUT=handleDemandMetaOperatorStatus;
+export const PATCH=handleDemandMetaOperatorStatus;
+export const DELETE=handleDemandMetaOperatorStatus;
+export const OPTIONS=handleDemandMetaOperatorStatus;
+export const HEAD=handleDemandMetaOperatorStatus;
