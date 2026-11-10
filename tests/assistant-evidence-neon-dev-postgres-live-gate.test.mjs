@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const script = join(dirname(fileURLToPath(import.meta.url)), "assistant-evidence-neon-dev-postgres-live-gate.mjs");
-const safeEnv = { PATH: process.env.PATH || "", HOME: process.env.HOME || "", NODE_OPTIONS: "" };
+// Silence Node's typeless-package warning in isolated child processes only.
+// Keep strict matching of the gate's own fail-closed diagnostic.
+const safeEnv = { PATH: process.env.PATH || "", HOME: process.env.HOME || "", NODE_OPTIONS: "", NODE_NO_WARNINGS: "1" };
 
 test("DEV PostgreSQL gate parses before any credentials are supplied", () => {
   const result = spawnSync(process.execPath, ["--check", script], {
