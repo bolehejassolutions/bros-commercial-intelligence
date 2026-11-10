@@ -36,6 +36,10 @@ export function createBusinessOsDevIdentityVerifier(
       typeof config.issuer !== "string" || !config.issuer.startsWith("https://") ||
       typeof config.audience !== "string" || !SAFE.test(config.audience) ||
       typeof now !== "function") throw Error("Business OS identity configuration unavailable");
+  // Pin the verified trust boundary at construction; a mutable caller-owned
+  // config must not retarget issuer/audience after initialization.
+  const expectedIssuer = config.issuer;
+  const expectedAudience = config.audience;
   return async bearer => {
     if (typeof bearer !== "string" || bearer.length < 1 ||
         bearer.length > 4096 || !BEARER.test(bearer)) return null;
@@ -46,7 +50,7 @@ export function createBusinessOsDevIdentityVerifier(
       if (!session || typeof session !== "object" ||
           typeof session.subjectId !== "string" || !UUID.test(session.subjectId) ||
           typeof session.sessionId !== "string" || !SAFE.test(session.sessionId) ||
-          session.issuer !== config.issuer || session.audience !== config.audience ||
+          session.issuer !== expectedIssuer || session.audience !== expectedAudience ||
           session.revoked !== false || typeof session.expiresAt !== "string" ||
           !RFC3339_EXPIRY.test(session.expiresAt) ||
           !Number.isFinite(clock)) return null;
