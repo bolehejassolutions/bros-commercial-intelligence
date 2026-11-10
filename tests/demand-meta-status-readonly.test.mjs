@@ -73,3 +73,13 @@ test("snapshot never returns partial rows after a provider failure",async()=>{
     token,now,transport),denied);
   assert.equal(calls,2);
 });
+
+test("provider billing campaign/adset statuses are recognized consistently without granting execution", async () => {
+  for (const status of ["PENDING_BILLING_CAMPAIGN", "PENDING_BILLING_ADSET"]) {
+    const result = await read(ok({...row, effective_status:status}));
+    assert.equal(result.effectiveStatus,status);
+    assert.equal(result.executionAllowed,false);
+    assert.equal(result.providerAuthorizationIndependentlyAttested,false);
+  }
+  await assert.rejects(read(ok({...row,effective_status:"PENDING_BILLING_UNRECOGNIZED"})),denied);
+});
