@@ -4,7 +4,7 @@ export type MetaStatusBinding = Readonly<{ accountId: string; objectId: string; 
 export type MetaStatusTransport = (url: string, init: { method: "GET"; headers: Record<string,string>; signal: AbortSignal; redirect: "error"; cache: "no-store" }) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
 const deny = (): never => { throw Error("BROS_DEMAND_META_STATUS_READ_FAILED"); };
 const object = (v: unknown): v is Record<string,unknown> => !!v && typeof v === "object" && !Array.isArray(v);
-const statuses = new Set(["ACTIVE", "PAUSED", "DELETED", "ARCHIVED", "IN_PROCESS", "WITH_ISSUES", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "DISAPPROVED", "PENDING_REVIEW", "PREAPPROVED", "PENDING_BILLING_INFO"]);
+const statuses = new Set(["ACTIVE", "PAUSED", "DELETED", "ARCHIVED", "IN_PROCESS", "WITH_ISSUES", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "DISAPPROVED", "PENDING_REVIEW", "PREAPPROVED", "PENDING_BILLING_INFO", "PENDING_BILLING_CAMPAIGN", "PENDING_BILLING_ADSET"]);
 /** Caller must independently bind verified principal, tenant and server-owned account/token. */
 export async function readDemandMetaObjectStatus(binding: MetaStatusBinding, token: string, observedAt: string, transport: MetaStatusTransport) {
   try {
