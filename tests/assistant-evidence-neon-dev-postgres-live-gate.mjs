@@ -28,7 +28,7 @@ if (required.some(k => !process.env[k])) {
   process.exitCode = 2;
 } else {
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  for (const k of required.slice(2)) assert.match(process.env[k]!, uuid);
+  for (const k of required.slice(2)) assert.match(process.env[k], uuid);
   assert.notEqual(process.env.BOS_TEST_TENANT, process.env.BOS_OTHER_TENANT);
   assert.notEqual(process.env.BOS_MEMBERSHIP_DSN, process.env.BOS_EVIDENCE_DSN,
     "Readers must use separate direct restricted logins");
@@ -80,9 +80,9 @@ if (required.some(k => !process.env[k])) {
       createBusinessOsDevReadOnlyTransaction(membershipPool));
     const evidence = createBusinessOsDevScopedEvidenceReader(
       createBusinessOsDevReadOnlyTransaction(evidencePool));
-    const subject = process.env.BOS_TEST_SUBJECT!;
-    const tenant = process.env.BOS_TEST_TENANT!;
-    const other = process.env.BOS_OTHER_TENANT!;
+    const subject = process.env.BOS_TEST_SUBJECT;
+    const tenant = process.env.BOS_TEST_TENANT;
+    const other = process.env.BOS_OTHER_TENANT;
     assert.equal(await membership(subject, { tenantId: tenant, product: "content" }), true);
     assert.equal(await membership(subject, { tenantId: tenant, product: "demand" }), false);
     assert.equal(await membership(subject, { tenantId: other, product: "content" }), false);
