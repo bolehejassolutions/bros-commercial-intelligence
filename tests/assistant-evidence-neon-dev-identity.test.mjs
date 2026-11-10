@@ -118,3 +118,19 @@ test("issuer and audience trust boundary cannot be retargeted through mutable co
   assert.equal(await pinned("opaque-token"), null,
     "mutating caller-owned config must never authorize a different issuer or audience");
 });
+
+
+test("issuer configuration rejects credential-bearing, malformed and query/fragment URLs", () => {
+  for (const invalidIssuer of [
+    "https://", "https://user:password@auth.example.test",
+    "https://auth.example.test?issuer=other", "https://auth.example.test#other",
+    "https://auth.example.test:invalid", "https://auth.example.test\\n.evil.test",
+  ]) {
+    assert.throws(() => createBusinessOsDevIdentityVerifier(async () => session,
+      { issuer: invalidIssuer, audience }, () => NOW),
+    /identity configuration unavailable/);
+  }
+  assert.deepEqual(createBusinessOsDevIdentityVerifier(async () => ({ ...session,
+    issuer: "https://auth.example.test/tenant" }),
+  { issuer: "https://auth.example.test/tenant", audience }, () => NOW) && true, true);
+});
