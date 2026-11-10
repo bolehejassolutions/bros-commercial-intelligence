@@ -32,10 +32,10 @@ export function buildContentCampaignView(raw:unknown):ContentCampaignView {
  }]:[]);
  const captionRows=Array.isArray(c.captions)
   ?arr(c.captions,100).flatMap(row=>record(row)?[{
-     platform:str(row.platform,80).toLowerCase(),caption:str(row.caption,10000)
+     platform:str(row.platform,80).trim().toLowerCase(),caption:str(row.caption,10000)
     }]:[])
   :record(c.captions)?Object.entries(c.captions).slice(0,8).map(([platform,caption])=>({
-     platform:platform.toLowerCase(),caption:str(caption,10000)
+     platform:platform.trim().toLowerCase(),caption:str(caption,10000)
     })):[];
  const seen=new Set<string>();
  const captions=captionRows.filter(row=>{
