@@ -24,6 +24,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const BEARER = /^[A-Za-z0-9._~+/-]+={0,2}$/;
 const SAFE = /^[A-Za-z0-9_.:-]{1,256}$/;
 const MAX_TTL_MS = 24 * 60 * 60 * 1000;
+// An issuer is an HTTPS identity-provider identifier, never a URL containing
+// credentials, a fragment or a query that can silently retarget trust.
+const validIssuer = (value: unknown): value is string => {
+  if (typeof value !== "string" || !value.startsWith("https://")) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !!url.hostname && !url.username &&
+      !url.password && !url.search && !url.hash;
+  } catch { return false; }
+};
 // Reject locale-dependent or timezone-free dates from a purported trusted IdP.
 const RFC3339_EXPIRY = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d)$/;
 
@@ -33,7 +43,7 @@ export function createBusinessOsDevIdentityVerifier(
   now: () => number = Date.now,
 ): (bearer: string) => Promise<VerifiedBusinessOsPrincipal | null> {
   if (typeof introspect !== "function" || !config ||
-      typeof config.issuer !== "string" || !config.issuer.startsWith("https://") ||
+      !validIssuer(config.issuer) ||
       typeof config.audience !== "string" || !SAFE.test(config.audience) ||
       typeof now !== "function") throw Error("Business OS identity configuration unavailable");
   // Pin the verified trust boundary at construction; a mutable caller-owned
