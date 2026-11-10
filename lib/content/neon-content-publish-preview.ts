@@ -6,13 +6,21 @@ export function buildContentPublishPreview(campaign:unknown):ReadonlyArray<Conte
  const view=buildContentCampaignView(campaign);
  // Normalize historical caption platform labels consistently with publish-plan labels.
  // Only exact, single supported platforms may receive a caption; never infer combined labels.
- const captions=new Map(view.captions.map(row=>[row.platform.trim().toLowerCase(),row.caption]));
+ // Duplicate captions for the same normalized platform are ambiguous: fail closed.
+ // Never silently choose the last caption when legacy readback contains collisions.
+ const captions=new Map<string,string>();
+ const ambiguous=new Set<string>();
+ for(const row of view.captions){
+  const platform=row.platform.trim().toLowerCase();
+  if(captions.has(platform)) ambiguous.add(platform);
+  else captions.set(platform,row.caption);
+ }
  // Show the campaign schedule in day order without mutating persisted readback.
  // Equal-day entries retain their original order (stable sort).
  return Object.freeze([...view.publishPlan].sort((a,b)=>a.day-b.day).map(row=>{
   const platform=row.platform.trim().toLowerCase();
   // Multi-platform historical labels are not safe to infer or auto-match.
-  const caption=allowed.has(platform)?captions.get(platform)??null:null;
+  const caption=allowed.has(platform)&&!ambiguous.has(platform)?captions.get(platform)??null:null;
   return Object.freeze({day:row.day,platform:row.platform,contentType:row.contentType,
    objective:row.objective,caption,captionAvailable:caption!==null,mediaVerified:false as const,publishAuthorized:false as const});
  }));
