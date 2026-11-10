@@ -5,6 +5,11 @@
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const object=(value:unknown):value is Record<string,unknown>=>
  value!==null&&typeof value==='object'&&!Array.isArray(value);
+/** Read only own value properties: inherited fields and accessor getters cannot certify a write. */
+const ownValue=(value:object,key:string):unknown=>{
+ const descriptor=Object.getOwnPropertyDescriptor(value,key);
+ return descriptor&&'value' in descriptor?descriptor.value:undefined;
+};
 export class ContentDraftAcknowledgementInvalid extends Error{
  constructor(){super('Pengesahan simpanan draf tidak lengkap. Cuba semula dengan permintaan yang sama.');
   this.name='ContentDraftAcknowledgementInvalid';}
@@ -13,11 +18,12 @@ export type ContentDraftAcknowledgement=Readonly<{id:string;status:'draft';repla
 export function parseContentDraftAcknowledgement(
  payload:unknown,httpStatus:number
 ):ContentDraftAcknowledgement {
- if(httpStatus!==201||!object(payload)||!object(payload.data)||
-  !UUID.test(String(payload.data.id??''))||
-  payload.data.status!=='draft'||
-  ('replayed' in payload.data&&typeof payload.data.replayed!=='boolean'))
+ const data=object(payload)?ownValue(payload,'data'):undefined;
+ const id=object(data)?ownValue(data,'id'):undefined;
+ const status=object(data)?ownValue(data,'status'):undefined;
+ const replayed=object(data)?ownValue(data,'replayed'):undefined;
+ if(httpStatus!==201||!object(data)||typeof id!=='string'||!UUID.test(id)||
+  status!=='draft'||(Object.hasOwn(data,'replayed')&&typeof replayed!=='boolean'))
   throw new ContentDraftAcknowledgementInvalid();
- return Object.freeze({id:payload.data.id as string,status:'draft',
-  replayed:payload.data.replayed===true});
+ return Object.freeze({id,status:'draft',replayed:replayed===true});
 }
