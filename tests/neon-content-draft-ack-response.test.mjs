@@ -15,6 +15,6 @@ test('HTTP 200 alone or malformed 201 never certifies persistence',()=>{
   assert.throws(()=>parseContentDraftAcknowledgement({data:{id,status:'draft'}},status),ContentDraftAcknowledgementInvalid);
  for(const payload of [null,{},[],{data:null},{data:[]},{data:{}},
   {data:{id:'not-uuid',status:'draft'}},{data:{id,status:'published'}},
-  {data:{id,status:'draft',replayed:false}},{data:{id,status:'draft',replayed:'true'}}])
+  {data:{id,status:'draft',replayed:null}},{data:{id,status:'draft',replayed:'true'}}])
   assert.throws(()=>parseContentDraftAcknowledgement(payload,201),ContentDraftAcknowledgementInvalid);
 });
