@@ -39,3 +39,27 @@ test('transport exceptions never disclose messages',async()=>{
  assert.equal(r.ok,false);assert.equal(r.diagnosis.state,'PROVIDER_UNVERIFIED');
  assert.ok(!JSON.stringify(r).includes('sensitive fixture'));
 });
+
+test('Graph error envelope with HTTP 200 is diagnosed and never accepted as a snapshot',async()=>{
+ let reads=0;
+ const r=await readDemandMetaAdsDiagnosed({...base,fetchImpl:async()=>({ok:true,json:async()=>{reads++;return {error:{code:190,message:'fixture-private-token'}}}})});
+ assert.equal(reads,1,'response body must be read once');
+ assert.equal(r.ok,false);assert.equal(r.snapshot,null);
+ assert.equal(r.diagnosis.state,'TOKEN_INVALID_OR_EXPIRED');
+ assert.equal(r.diagnosis.metaWriteAllowed,false);
+ assert.ok(!JSON.stringify(r).includes('fixture-private-token'));
+});
+test('HTTP 200 malformed Graph envelope remains unverified, not an empty success',async()=>{
+ const r=await readDemandMetaAdsDiagnosed({...base,fetchImpl:async()=>({ok:true,json:async()=>({error:{code:'190',message:'private'}})})});
+ assert.equal(r.ok,false);assert.equal(r.snapshot,null);
+ assert.equal(r.diagnosis.state,'PROVIDER_UNVERIFIED');
+ assert.ok(!JSON.stringify(r).includes('private'));
+});
+test('successful Graph snapshot is parsed once and preserves unknown metrics',async()=>{
+ let reads=0;
+ const r=await readDemandMetaAdsDiagnosed({...base,fetchImpl:async()=>({ok:true,json:async()=>{reads++;return {data:[]}}})});
+ assert.equal(reads,1);
+ assert.equal(r.ok,true);assert.equal(r.diagnosis,null);
+ assert.equal(r.snapshot.state,'NO_ROWS_NOT_ZERO');
+ assert.equal(r.snapshot.spendMinor,null);
+});
