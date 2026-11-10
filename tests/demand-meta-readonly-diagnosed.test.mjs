@@ -83,3 +83,19 @@ test('explicit Graph credential error outranks HTTP 429 fallback',async()=>{
  assert.equal(r.ok,false);assert.equal(r.diagnosis.state,'TOKEN_INVALID_OR_EXPIRED');
  assert.equal(r.diagnosis.retryable,false);assert.equal(r.diagnosis.metaWriteAllowed,false);
 });
+
+test('HTTP 429 with unreadable body remains rate limited and never returns a snapshot',async()=>{
+ let reads=0;
+ const r=await readDemandMetaAdsDiagnosed({...base,fetchImpl:async()=>({ok:false,status:429,json:async()=>{reads++;throw Error('secret provider body');}})});
+ assert.equal(reads,1);
+ assert.equal(r.ok,false);assert.equal(r.snapshot,null);
+ assert.equal(r.diagnosis.state,'RATE_LIMITED');assert.equal(r.diagnosis.retryable,true);
+ assert.equal(r.diagnosis.metaWriteAllowed,false);
+ assert.ok(!JSON.stringify(r).includes('secret provider body'));
+});
+test('HTTP 200 with unreadable body remains unverified, not rate limited',async()=>{
+ const r=await readDemandMetaAdsDiagnosed({...base,fetchImpl:async()=>({ok:true,status:200,json:async()=>{throw Error('private payload');}})});
+ assert.equal(r.ok,false);assert.equal(r.snapshot,null);
+ assert.equal(r.diagnosis.state,'PROVIDER_UNVERIFIED');
+ assert.ok(!JSON.stringify(r).includes('private payload'));
+});
