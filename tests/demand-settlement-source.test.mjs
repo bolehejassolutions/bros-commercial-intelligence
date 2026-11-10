@@ -34,3 +34,24 @@ test('proxy order-list iteration traps fail closed without leaking adapter secre
  const orders=new Proxy([order],{get(target,key,receiver){if(key===Symbol.iterator)throw Error('iterator-secret-leak');return Reflect.get(target,key,receiver)}});
  await assert.rejects(call({readSettlements:async()=>({...payload,orders})}),e=>e.message==='DEMAND_SETTLEMENT_SOURCE_UNVERIFIED');
 });
+
+// Adapter-provided settlement rows are observations, not independently authenticated revenue.
+test('adapter source label cannot upgrade observations into verified revenue',async()=>{
+ const v=await call();
+ assert.equal(v.settledRevenueMinor,10000);
+ assert.equal(v.verifiedSettledRevenueMinor,null);
+ assert.equal(v.providerAuthenticationVerified,false);
+ assert.equal(v.tenantAuthorizationVerifiedForProvider,false);
+ assert.equal(v.metaWriteAllowed,false);
+});
+test('empty adapter response is not proof of zero verified revenue',async()=>{
+ const v=await call({readSettlements:async()=>({...payload,orders:[]})});
+ assert.equal(v.settledRevenueMinor,0);
+ assert.equal(v.verifiedSettledRevenueMinor,null);
+ assert.equal(v.providerAuthenticationVerified,false);
+});
+test('forged server source string never establishes verified revenue',async()=>{
+ const v=await call({readSettlements:async()=>({...payload,orders:[{...order,amountMinor:999999}]})});
+ assert.equal(v.settledRevenueMinor,999999);
+ assert.equal(v.verifiedSettledRevenueMinor,null);
+});
