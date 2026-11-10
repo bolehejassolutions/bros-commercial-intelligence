@@ -31,14 +31,15 @@ test('reject impossible Meta calendar date and timestamp later than snapshot',as
 test('pagination cannot change projection fields, page size, or inject provider parameters',async()=>{
  const root='https://graph.facebook.com/v22.0/act_'+accountId+'/ads';
  const fields='id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time';
- for(const suffix of ['?after=cursor','?fields='+encodeURIComponent(fields)+'&limit=1&after=cursor','?fields='+encodeURIComponent(fields)+'&limit=100&after=cursor&filtering=secret','?fields='+encodeURIComponent(fields)+'&limit=100&after=cursor&after=second','?fields='+encodeURIComponent(fields)+'&limit=100']) {
+ const filtering=encodeURIComponent(JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]));
+ for(const suffix of ['?after=cursor','?fields='+encodeURIComponent(fields)+'&limit=1&filtering='+filtering+'&after=cursor','?fields='+encodeURIComponent(fields)+'&limit=100&after=cursor&filtering=secret','?fields='+encodeURIComponent(fields)+'&limit=100&filtering='+filtering+'&after=cursor&after=second','?fields='+encodeURIComponent(fields)+'&limit=100&filtering='+filtering]) {
   let calls=0;
   await assert.rejects(readDemandMetaAds({...base,fetchImpl:async()=>{calls++;return {ok:true,json:async()=>({data:[],paging:calls===1?{next:root+suffix}:undefined})}}}),/UNVERIFIED/);
   assert.equal(calls,1);
  }
 });
 test('bounded cursor-only continuation remains read-only',async()=>{
- const first='https://graph.facebook.com/v22.0/act_'+accountId+'/ads?fields=id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time&limit=100';
+ const first='https://graph.facebook.com/v22.0/act_'+accountId+'/ads?fields=id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time&limit=100&filtering='+encodeURIComponent(JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]));
  let calls=0;
  const result=await readDemandMetaAds({...base,fetchImpl:async(url,opts)=>{
   assert.equal(opts.method,'GET');calls++;
@@ -49,7 +50,7 @@ test('bounded cursor-only continuation remains read-only',async()=>{
 });
 
 test('reject oversized, unsafe, or fragment-bearing pagination cursors before second fetch',async()=>{
- const first='https://graph.facebook.com/v22.0/act_'+accountId+'/ads?fields=id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time&limit=100';
+ const first='https://graph.facebook.com/v22.0/act_'+accountId+'/ads?fields=id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time&limit=100&filtering='+encodeURIComponent(JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]));
  for(const suffix of ['&after='+('A'.repeat(513)),'&after=cursor%2Funsafe','&after=cursor%20space','&after=cursor#fragment']){
   let calls=0;
   await assert.rejects(readDemandMetaAds({...base,fetchImpl:async()=>{
@@ -57,5 +58,26 @@ test('reject oversized, unsafe, or fragment-bearing pagination cursors before se
    return {ok:true,json:async()=>({data:[],paging:{next:first+suffix}})};
   }}),/DEMAND_META_READ_UNVERIFIED/);
   assert.equal(calls,1,'invalid cursor must not trigger another provider call');
+ }
+});
+
+test('Meta account ads GET is campaign-filtered before provider retrieval',async()=>{
+ let calls=0;
+ await readDemandMetaAds({...base,fetchImpl:async(url,options)=>{
+  calls++;
+  assert.equal(options.method,'GET');
+  assert.deepEqual(JSON.parse(new URL(url).searchParams.get('filtering')),[{field:'campaign.id',operator:'EQUAL',value:campaignId}]);
+  return {ok:true,json:async()=>({data:[row]})};
+ }});
+ assert.equal(calls,1);
+});
+test('pagination cannot switch campaign filtering or remove it',async()=>{
+ const first='https://graph.facebook.com/v22.0/act_'+accountId+'/ads?fields=id,adset_id,campaign_id,account_id,effective_status,insights.fields(impressions,spend),updated_time&limit=100';
+ for(const filtering of ['', '&filtering='+encodeURIComponent(JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:'123456789'}]))]){
+  let calls=0;
+  await assert.rejects(readDemandMetaAds({...base,fetchImpl:async()=>{
+   calls++;return {ok:true,json:async()=>({data:[],paging:{next:first+filtering+'&after=cursor'}})};
+  }}),/UNVERIFIED/);
+  assert.equal(calls,1);
  }
 });
