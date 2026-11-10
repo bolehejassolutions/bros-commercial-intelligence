@@ -1,4 +1,5 @@
 import "server-only";
+import { createDemandOperatorStatusHandler } from "./meta-operator-http.ts";
 import { Pool } from "pg";
 import { createNeonAuthPrincipalVerifier, type NeonAuthVerifyStage } from "../bci/neon-auth-principal.ts";
 import { createNeonDevMembershipLookup } from "../bci/neon-dev-membership-rows.ts";
@@ -252,3 +253,16 @@ export const demandMetaPilotRuntime = {
     return verifyPilotLedger(getEvidenceWriterPool(),scope,{pausedCampaignPlanSha256:randomBytes(32).toString("hex")});
   },
 };
+
+/** Isolated operator status/Insights GET: Preview-only, explicit additional flag, no Meta writes. */
+const operatorStatusHandler=createDemandOperatorStatusHandler({
+ enabled:()=>enabled() && process.env.BROS_DEMAND_META_OPERATOR_STATUS==="enabled",
+ accountId:process.env.BROS_DEMAND_META_ACCOUNT_ID??"act_0",
+ campaignId:process.env.BROS_DEMAND_META_CAMPAIGN_ID??"0",
+ apiVersion:process.env.BROS_DEMAND_META_API_VERSION??"v26.0",
+ authorize:jwt=>demandMetaPilotRuntime.authorize(jwt),
+ readToken:()=>demandMetaPilotRuntime.readToken(),
+ now:()=>new Date(),
+ transport:async(url,init)=>fetch(url,init),
+});
+export const handleDemandMetaOperatorStatus=(request:Request)=>operatorStatusHandler(request);
