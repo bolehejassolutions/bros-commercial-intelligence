@@ -11,8 +11,8 @@ const spendMetric = (x:unknown):number => {
  if(typeof x!=="string" || !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(x)) deny();
  // Parse integer cents without floating-point rounding. Reject amounts whose cents
  // cannot survive conversion to the public numeric spend representation exactly.
- const [whole, fractional=""] = x.split(".");
- const cents=BigInt(whole)*100n+BigInt((fractional+"00").slice(0,2));
+ const [whole, fractional=""] = (x as string).split(".");
+ const cents=BigInt(whole)*BigInt(100)+BigInt((fractional+"00").slice(0,2));
  if(cents>BigInt(Number.MAX_SAFE_INTEGER)) deny();
  const spend=Number(x);
  if(!Number.isFinite(spend) || !Number.isSafeInteger(Math.round(spend*100)) ||
