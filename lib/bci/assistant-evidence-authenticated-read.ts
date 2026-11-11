@@ -45,7 +45,7 @@ function parseScope(request: Request): Selection | null {
   const product = url.searchParams.get("product");
   if (!tenantId || !ID.test(tenantId) ||
       (product !== "content" && product !== "demand")) return null;
-  return { tenantId, product };
+  return Object.freeze({ tenantId, product });
 }
 
 function parseBearer(request: Request): string | null {
