@@ -27,7 +27,7 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
      url.searchParams.getAll("since").length!==1||
      url.searchParams.getAll("until").length!==1)return reply(400,{error:"INVALID_REQUEST"});
   // Reject malformed or oversized reporting windows before membership/provider work.
-  const validDay=(value:string|null)=>typeof value==="string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+  const validDay=(value:string|null)=>typeof value==="string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
     Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10)===value;
   const since=url.searchParams.get("since"),until=url.searchParams.get("until");
   if(!validDay(since)||!validDay(until)||since!>until!||
