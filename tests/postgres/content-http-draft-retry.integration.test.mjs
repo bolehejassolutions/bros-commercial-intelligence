@@ -41,7 +41,8 @@ test('real disposable PostgreSQL: HTTP lost acknowledgement, retry, payload and 
       'SELECT campaign_id,payload FROM http_draft_receipts WHERE owner=$1 AND workspace=$2 AND retry_key=$3',
       [principal.userId,scope,retryKey]);
     if(existing.rows.length){
-      if(JSON.stringify(existing.rows[0].payload)!==JSON.stringify(JSON.parse(payload)))throw Error('payload_conflict');
+      const same=await client.query('SELECT $1::jsonb=$2::jsonb AS equal',[JSON.stringify(existing.rows[0].payload),payload]);
+      if(same.rows[0].equal!==true)throw Error('payload_conflict');
       await client.query('COMMIT');
       return {id:existing.rows[0].campaign_id,status:'draft',replayed:true};
     }
