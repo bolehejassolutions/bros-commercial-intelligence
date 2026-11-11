@@ -56,7 +56,12 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
       ...(deps.adId?[{kind:"ad" as const,objectId:deps.adId}]:[])]
    },resolveScope,async()=>{
     const token=deps.readToken();if(!token){tokenMissing=true;throw Error("NO_SERVER_TOKEN");}return token;
-   },async(url,init)=>{try{return await deps.transport(url,init);}catch(error){providerFailed=true;throw error;}},deps.now);
+   },async(url,init)=>{try{const response=await deps.transport(url,init);
+    // Meta non-2xx responses are provider failures, not tenant authorization denials.
+    // Never parse or return provider error bodies, which can contain sensitive details.
+    if(!response||response.ok!==true){providerFailed=true;throw Error("META_PROVIDER_HTTP_FAILURE");}
+    return response;
+   }catch{providerFailed=true;throw Error("META_PROVIDER_TRANSPORT_FAILURE");}},deps.now);
    return reply(200,{source:"META_GRAPH_API_UNATTESTED",observedAt:result.observedAt,
     insights:result.insights,status:result.status,verifiedPaidOrders:null,
     executionAllowed:false,providerAuthorizationIndependentlyAttested:false});
