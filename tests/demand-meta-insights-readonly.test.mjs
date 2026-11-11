@@ -8,7 +8,7 @@ const transport=data=>async(url,init)=>{const u=new URL(url);assert.equal(u.orig
 const denied=/BROS_DEMAND_META_INSIGHTS_READ_FAILED/;
 test("no rows are unknown, explicitly reported zero is zero",async()=>{const empty=await read(req,token,transport({data:[]}));assert.equal(empty.state,"NO_ROWS_NOT_ZERO");assert.equal(empty.spend,null);const zero=await read(req,token,transport({data:[row]}));assert.equal(zero.state,"PROVIDER_ROW");assert.equal(zero.spend,0);assert.equal(zero.impressions,0);assert.equal(zero.executionAllowed,false);assert.equal(Object.isFrozen(zero),true);});
 test("invalid scope, dates and credential fail before transport",async()=>{let calls=0;const net=async()=>{calls++;throw Error("network");};for(const changes of [{accountId:"act_1/insights"},{apiVersion:"v26.0?x=1"},{since:"2026-02-30"},{until:"2027-01-01"},{until:"2026-10-01"},{observedAt:"2026-11-31T00:00:00Z"}])await assert.rejects(read({...req,...changes},token,net),denied);await assert.rejects(read(req,"bad\nheader",net),denied);assert.equal(calls,0);});
-test("provider errors, wrong account, malformed rows and pagination fail closed",async()=>{for(const data of [{error:{message:token}},null,{data:[{...row,account_id:"wrong"}]},{data:[{...row,spend:"NaN"}]},{data:[{...row,clicks:"1"}]},{data:[row,row]},{data:[row],paging:{next:"https://evil.test"}},{data:"bad"}])await assert.rejects(read(req,token,transport(data)),denied);await assert.rejects(read(req,token,async()=>{throw Error(token);}),denied);await assert.rejects(read(req,token,async()=>({ok:false,json:async()=>({})})),denied);});
+test("provider errors, wrong account, malformed rows and pagination fail closed",async()=>{for(const data of [{error:{message:token}},null,{data:[{...row,account_id:"wrong"}]},{data:[{...row,spend:"NaN"}]},{data:[{...row,clicks:"1.5"}]},{data:[row,row]},{data:[row],paging:{next:"https://evil.test"}},{data:"bad"}])await assert.rejects(read(req,token,transport(data)),denied);await assert.rejects(read(req,token,async()=>{throw Error(token);}),denied);await assert.rejects(read(req,token,async()=>({ok:false,json:async()=>({})})),denied);});
 
 test("malformed paging and incomplete windows fail closed without leaking provider data",async()=>{
  const invalid=[
@@ -27,4 +27,13 @@ test("malformed paging and incomplete windows fail closed without leaking provid
  const empty=await read(req,token,transport({data:[],paging:{cursors:{}}}));
  assert.equal(empty.state,"NO_ROWS_NOT_ZERO");
  assert.equal(empty.spend,null);
+});
+
+test("Meta may report multiple clicks per impression; retain exact provider counts",async()=>{
+ const observed=await read(req,token,transport({data:[{...row,impressions:"1",clicks:"3",spend:"0.20"}]}));
+ assert.equal(observed.state,"PROVIDER_ROW");
+ assert.equal(observed.impressions,1);
+ assert.equal(observed.clicks,3);
+ assert.equal(observed.spend,0.2);
+ assert.equal(observed.executionAllowed,false);
 });
