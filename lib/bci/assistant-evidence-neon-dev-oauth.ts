@@ -113,15 +113,20 @@ export function createBusinessOsDevOAuthVerifier(
       // A JWT can remain valid despite logout or resource disablement.
       // An independent LIVE check is required on EVERY call, including the
       // handler's post-SQL verification. Until available, this MUST remain off.
+      // Snapshot verified claims before awaiting the external live-status adapter.
+      // The adapter must not be able to mutate the authorized principal.
+      const subjectId = v.sub;
+      const verifiedClientId = v.client_id;
+      const expiresAt = new Date(v.exp * 1000).toISOString();
       const tokenDigest = createHash("sha256").update(bearer).digest("hex");
       const active = await verifyLiveTokenStatus({
-        bearer, subjectId: v.sub, clientId: v.client_id, tokenDigest,
+        bearer, subjectId, clientId: verifiedClientId, tokenDigest,
       });
       if (active !== true) return null;
       return Object.freeze({
-        subjectId: v.sub,
+        subjectId,
         sessionId: "oauth:" + tokenDigest,
-        expiresAt: new Date(v.exp * 1000).toISOString(),
+        expiresAt,
       });
     } catch { return null; }
   };
