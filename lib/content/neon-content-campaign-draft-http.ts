@@ -54,7 +54,7 @@ export function createContentCampaignDraftPost(verify:Verify,create:Create) {
    return reply(400,'invalid_draft');
   const draft:Draft={product_service:(v.product_service as string).trim(),audience:(v.audience as string).trim(),
    description:(v.description as string)||'',problem:(v.problem as string)||'',objective:(v.objective as string)||'',
-   duration_days:(v.duration_days as number)||7,platforms:(v.platforms as string[]).map(p=>p.toLowerCase())};
+   duration_days:(v.duration_days as number)||7,platforms:Object.freeze((v.platforms as string[]).map(p=>p.toLowerCase())) as unknown as string[]};
   try{
    const data=await create(Object.freeze({userId:principal.userId,authenticated:true}),workspaceId,Object.freeze(draft),key);
    // Never acknowledge a saved draft unless the restricted writer returns a persisted draft identity.
