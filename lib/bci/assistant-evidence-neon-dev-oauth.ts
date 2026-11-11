@@ -117,7 +117,8 @@ export function createBusinessOsDevOAuthVerifier(
       // The adapter must not be able to mutate the authorized principal.
       const subjectId = v.sub;
       const verifiedClientId = v.client_id;
-      const expiresAt = new Date(v.exp * 1000).toISOString();
+      const expiryMillis = v.exp * 1000;
+      const expiresAt = new Date(expiryMillis).toISOString();
       const tokenDigest = createHash("sha256").update(bearer).digest("hex");
       const active = await verifyLiveTokenStatus({
         bearer, subjectId, clientId: verifiedClientId, tokenDigest,
@@ -126,7 +127,7 @@ export function createBusinessOsDevOAuthVerifier(
       // Re-check the clock immediately before returning an authorized principal.
       const disclosureClock = now();
       if (active !== true || !Number.isFinite(disclosureClock) ||
-          v.exp * 1000 <= disclosureClock) return null;
+          expiryMillis <= disclosureClock) return null;
       return Object.freeze({
         subjectId,
         sessionId: "oauth:" + tokenDigest,
