@@ -36,7 +36,7 @@ export async function readDemandOperatorSnapshot(
     timestamp.getTime()-Date.parse(scope.verifiedAt)>60000||
     Date.parse(scope.verifiedAt)>timestamp.getTime()+5000)return fail();
   if(!validDate(request.since)||!validDate(request.until)||request.since>request.until||
-    (Date.parse(request.until)-Date.parse(request.since))/86400000>31||
+    (Date.parse(request.until)-Date.parse(request.since))/86400000>=31||
     !Array.isArray(request.objects)||request.objects.length<1||request.objects.length>20||
     typeof request.apiVersion!=="string"||typeof request.since!=="string"||
     typeof request.until!=="string")fail();
