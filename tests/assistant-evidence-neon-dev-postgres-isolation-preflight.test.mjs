@@ -23,6 +23,8 @@ function rejectBeforeDatabase(overrides) {
   assert.notEqual(result.status, 0, "Ambiguous isolation must never certify DEV access");
   assert.equal(result.stdout, "");
   assert.doesNotMatch(result.stderr, /synthetic-(membership|evidence)-placeholder/);
+  assert.doesNotMatch(result.stderr, /00000000-0000-4000-8000-00000000000[123]/,
+    "Preflight errors must not echo any synthetic fixture identifiers");
   assert.doesNotMatch(result.stderr, /PASS: restricted role posture/);
   assert.doesNotMatch(result.stderr, /Install pg locally/, "Preflight must reject before driver load");
 }
