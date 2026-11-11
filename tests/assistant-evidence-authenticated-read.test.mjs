@@ -365,3 +365,25 @@ test("malformed verified session identifiers are denied before membership and SQ
     assert.equal(reads, 0, "evidence query must not run");
   }
 });
+
+
+test("post-read session binding downgrade or upgrade denies before membership recheck", async () => {
+  for (const [first, second] of [
+    [undefined, "session-A"],
+    ["session-A", undefined],
+  ]) {
+    let verifications = 0, grants = 0;
+    const { handler } = fixture({
+      verifyBearerToken: async () => ({
+        subjectId: "user-1", expiresAt: "2026-11-08T06:00:00Z",
+        sessionId: ++verifications === 1 ? first : second,
+      }),
+      hasEvidenceReadGrant: async () => { grants++; return true; },
+    });
+    const response = await handler(get());
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "authentication_required" });
+    assert.equal(verifications, 2);
+    assert.equal(grants, 1);
+  }
+});
