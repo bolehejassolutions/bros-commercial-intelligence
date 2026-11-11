@@ -85,7 +85,7 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
           !Number.isFinite(now) || Date.parse(principal.expiresAt) <= now) {
         return reply(401, { error: "authentication_required" });
       }
-      const granted = await deps.hasEvidenceReadGrant(principal.subjectId, selection);
+      // Snapshot the validated identity before awaiting mutable server adapters.\n      // Never compare against an object that an asynchronous adapter can mutate.\n      const verifiedSubjectId = principal.subjectId;\n      const verifiedSessionId = principal.sessionId;\n      const verifiedExpiry = principal.expiresAt;\n      const granted = await deps.hasEvidenceReadGrant(verifiedSubjectId, selection);
       if (granted !== true) return reply(403, { error: "access_denied" });
       const rows = await deps.listScopedReceipts({ ...selection, maxRows: 20 });
       // A restricted repository must enforce its SQL LIMIT independently; never
@@ -103,19 +103,19 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
       // checks narrow the race; they cannot make separate stores atomic.
       const stillVerified = await deps.verifyBearerToken(token);
       const nowAfterRead = deps.now ? deps.now() : Date.now();
-      if (!stillVerified || stillVerified.subjectId !== principal.subjectId ||
-          stillVerified.expiresAt !== principal.expiresAt ||
-          stillVerified.sessionId !== principal.sessionId ||
+      if (!stillVerified || stillVerified.subjectId !== verifiedSubjectId ||
+          stillVerified.expiresAt !== verifiedExpiry ||
+          stillVerified.sessionId !== verifiedSessionId ||
           !Number.isFinite(nowAfterRead) ||
-          Date.parse(principal.expiresAt) <= nowAfterRead) {
+          Date.parse(verifiedExpiry) <= nowAfterRead) {
         return reply(401, { error: "authentication_required" });
       }
-      const stillGranted = await deps.hasEvidenceReadGrant(principal.subjectId, selection);
+      const stillGranted = await deps.hasEvidenceReadGrant(verifiedSubjectId, selection);
       if (stillGranted !== true) return reply(403, { error: "access_denied" });
       const scoped = {
         identityVerifiedByServer: true as const,
         tenantMembershipVerifiedByServer: true as const,
-        subjectId: principal.subjectId,
+        subjectId: verifiedSubjectId,
         tenantId: selection.tenantId,
         product: selection.product,
         scopes: ["evidence:read"] as const,
