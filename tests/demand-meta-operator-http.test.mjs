@@ -285,6 +285,16 @@ test("invalid server Meta tokens fail closed without contacting provider",async(
   assert.deepEqual(await response.json(),{error:"DEMAND_META_CREDENTIAL_UNAVAILABLE"});
   assert.deepEqual(h.counts(),{reads:0,auth:1,tokenReads:0});
  }
- const valid=build({readToken:()=>"opaque-ASCII_+/=~token"});
+ const validToken="opaque-ASCII_+/=~token";
+ let validCalls=0;
+ const valid=build({readToken:()=>validToken,transport:async(u,init)=>{
+  validCalls++;
+  assert.equal(init.method,"GET");
+  assert.equal(init.headers.Authorization,"Bearer "+validToken);
+  assert.equal(u.includes(validToken),false);
+  if(u.includes("/insights?"))return {ok:true,json:async()=>({data:[]})};
+  return {ok:true,json:async()=>({id,account_id:"1997776120879476",configured_status:"PAUSED",effective_status:"PAUSED"})};
+ }});
  assert.equal((await valid.handler(req())).status,200);
+ assert.equal(validCalls,2);
 });
