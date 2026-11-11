@@ -38,12 +38,12 @@ test('actual restricted writer persists HTTP draft, replays and rejects changed 
   body:JSON.stringify(body)});
  try {
   const first=await handler(request(payload),workspace);
-  assert.equal(first.status,201,await first.text().catch(()=>'')); 
-  const saved=await first.json();
+  assert.equal(first.status,201); 
+  const {data:saved}=await first.json();
   assert.match(saved.id,/^[0-9a-f-]{36}$/i);
   const replay=await handler(request(payload),workspace);
-  assert.equal(replay.status,200);
-  const repeated=await replay.json();
+  assert.equal(replay.status,201);
+  const {data:repeated}=await replay.json();
   assert.equal(repeated.id,saved.id);
   const changed=await handler(request({...payload,audience:'Changed'}),workspace);
   assert.equal(changed.status,404);
