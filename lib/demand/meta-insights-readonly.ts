@@ -8,7 +8,7 @@ const date = (x:unknown):x is string => typeof x==="string" && /^\d{4}-\d{2}-\d{
 const metric = (x:unknown):number => typeof x==="string" && /^(?:0|[1-9]\d*)$/.test(x) && Number.isSafeInteger(Number(x)) ? Number(x) : deny();
 // MYR account spend must be an exact non-negative cent amount; never silently round sub-cent provider values.
 const spendMetric = (x:unknown):number => {
- if(typeof x!=="string" || !/^(?:0|[1-9]\\d*)(?:\\.\\d{1,2})?$/.test(x)) deny();
+ if(typeof x!=="string" || !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(x)) deny();
  // Parse integer cents without floating-point rounding. Reject amounts whose cents
  // cannot survive conversion to the public numeric spend representation exactly.
  const [whole, fractional=""] = x.split(".");
