@@ -99,3 +99,38 @@ test("caller cannot override server-pinned ad set or ad IDs",async()=>{
  }
  assert.deepEqual(h.counts(),{reads:0,auth:0,tokenReads:0});
 });
+
+test("concurrent Meta observations are capped at two; saturation makes zero extra provider calls",async()=>{
+ let release;
+ const gate=new Promise(resolve=>{release=resolve;});
+ let started=0;
+ const h=build({transport:async(u)=>{
+  started++;
+  await gate;
+  if(u.includes("/insights?"))return {ok:true,json:async()=>({data:[]})};
+  return {ok:true,json:async()=>({id,account_id:"1997776120879476",configured_status:"PAUSED",effective_status:"PAUSED"})};
+ }});
+ const first=h.handler(req()),second=h.handler(req());
+ // Await until both reads have entered the controlled transport.
+ for(let i=0;i<100&&started<2;i++)await new Promise(resolve=>setTimeout(resolve,1));
+ assert.equal(started,2);
+ const busy=await h.handler(req());
+ assert.equal(busy.status,429);
+ assert.deepEqual(await busy.json(),{error:"DEMAND_STATUS_BUSY"});
+ assert.equal(started,2);
+ release();
+ assert.equal((await first).status,200);
+ assert.equal((await second).status,200);
+ assert.equal((await h.handler(req())).status,200);
+});
+test("failed Meta read releases concurrency slot for a subsequent request",async()=>{
+ let calls=0;
+ const h=build({transport:async(u)=>{
+  calls++;
+  if(calls===1)throw Error("synthetic provider failure");
+  if(u.includes("/insights?"))return {ok:true,json:async()=>({data:[]})};
+  return {ok:true,json:async()=>({id,account_id:"1997776120879476",configured_status:"PAUSED",effective_status:"PAUSED"})};
+ }});
+ assert.equal((await h.handler(req())).status,403);
+ assert.equal((await h.handler(req())).status,200);
+});
