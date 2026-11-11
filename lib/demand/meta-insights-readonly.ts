@@ -28,7 +28,7 @@ export async function readDemandMetaAccountInsights(req:InsightsRequest,token:st
   const row=rows[0] as Record<string,unknown>;
   if (!obj(row) || row.account_id!==req.accountId.slice(4) || row.date_start!==req.since || row.date_stop!==req.until) deny();
   const spend=metric(row.spend),impressions=metric(row.impressions),clicks=metric(row.clicks);
-  if (!Number.isSafeInteger(impressions) || !Number.isSafeInteger(clicks) || !Number.isSafeInteger(Math.round(spend*100)) || clicks>impressions) deny();
+  if (!Number.isSafeInteger(impressions) || !Number.isSafeInteger(clicks) || !Number.isSafeInteger(Math.round(spend*100))) deny();
   return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,
    accountId:req.accountId,since:req.since,until:req.until,state:"PROVIDER_ROW" as const,spend,impressions,clicks,executionAllowed:false as const});
  } catch {deny();}
