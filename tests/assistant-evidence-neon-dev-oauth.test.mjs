@@ -188,3 +188,29 @@ test("live-status adapter cannot rewrite verified principal or expiry during awa
   assert.equal(result.expiresAt, originalExpiry);
   assert.equal(Object.isFrozen(result), true);
 });
+
+test("token expiring during asynchronous live-status verification fails closed", async () => {
+  let clock = NOW;
+  let statusCalls = 0;
+  const verifier = createBusinessOsDevOAuthVerifier(config,
+    async () => claims({ exp: Math.floor(NOW / 1000) + 1 }),
+    async () => {
+      statusCalls++;
+      clock += 1000;
+      await Promise.resolve();
+      return true;
+    }, () => clock);
+  assert.equal(await verifier("fixture.jwt.signature"), null);
+  assert.equal(statusCalls, 1);
+});
+
+test("token remains valid when live-status verification completes before expiry", async () => {
+  let clock = NOW;
+  const verifier = createBusinessOsDevOAuthVerifier(config,
+    async () => claims({ exp: Math.floor(NOW / 1000) + 2 }),
+    async () => {
+      clock += 1000;
+      return true;
+    }, () => clock);
+  assert.equal((await verifier("fixture.jwt.signature"))?.subjectId, sub);
+});
