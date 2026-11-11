@@ -32,7 +32,10 @@ if (required.some(k => !process.env[k])) {
   for (const k of required.slice(2)) {
     if (!uuid.test(process.env[k])) throw new Error("Invalid synthetic fixture identifier");
   }
-  assert.notEqual(process.env.BOS_TEST_TENANT, process.env.BOS_OTHER_TENANT);
+  if (process.env.BOS_TEST_TENANT === process.env.BOS_OTHER_TENANT) {
+    // Avoid AssertionError diagnostics containing synthetic or private identifiers.
+    throw new Error("Authorized and other DEV fixture scopes must differ");
+  }
   // Do not echo connection strings through Node assertion diagnostics.
   if (process.env.BOS_MEMBERSHIP_DSN === process.env.BOS_EVIDENCE_DSN) {
     throw new Error("Readers must use separate direct restricted logins");
