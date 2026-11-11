@@ -50,6 +50,24 @@ test('actual restricted writer persists HTTP draft, replays and rejects changed 
   assert.equal(repeated.id,saved.id);
   const changed=await handler(request({...payload,audience:'Changed'}),workspace);
   assert.equal(changed.status,404);
+  // The actual HTTP boundary must reject a route/workspace mismatch before
+  // touching the restricted writer, even when the caller has a valid session.
+  const otherWorkspace='33333333-3333-4333-8333-333333333333';
+  const wrongScope=await handler(request(payload),otherWorkspace);
+  assert.equal(wrongScope.status,404);
+  assert.equal((await wrongScope.json()).error,'not_found');
+  // Cross-site writes must be rejected independently of session validity.
+  const crossSite=new Request('https://content.example.test/api/content/dev/workspaces/'+workspace+'/campaign-drafts',{
+   method:'POST',headers:{'content-type':'application/json',origin:'https://external.example.test',
+    'sec-fetch-site':'cross-site','idempotency-key':'actual_writer_crosssite_20261112'},
+   body:JSON.stringify(payload)});
+  const forbidden=await handler(crossSite,workspace);
+  assert.equal(forbidden.status,403);
+  assert.equal((await forbidden.json()).error,'forbidden_origin');
+  // An invalid draft must not reserve an idempotency key or persist a campaign.
+  const malformed=await handler(request({...payload,platforms:['facebook','facebook']}),workspace);
+  assert.equal(malformed.status,400);
+  assert.equal((await malformed.json()).error,'invalid_draft');
   const stored=await admin.query('SELECT id,tenant_id,workspace_id,owner_principal_id,audience FROM content_dev.campaigns WHERE id=$1',[saved.id]);
   assert.equal(stored.rowCount,1);
   assert.equal(stored.rows[0].audience,payload.audience);
