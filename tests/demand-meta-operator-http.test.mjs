@@ -276,3 +276,15 @@ test("Meta provider rate limit is sanitized and recovery does not retain a stale
  assert.equal((await recovered.json()).insights.state,"NO_ROWS_NOT_ZERO");
  assert.equal(calls,3);
 });
+
+test("invalid server Meta tokens fail closed without contacting provider",async()=>{
+ for(const invalid of ["", " ", "synthetic token", "abc\\ndef", "abc\\rdef", "abc\\tdef", "é", "x".repeat(4097), null]){
+  const h=build({readToken:()=>invalid});
+  const response=await h.handler(req());
+  assert.equal(response.status,503,JSON.stringify(invalid)?.slice(0,40));
+  assert.deepEqual(await response.json(),{error:"DEMAND_META_CREDENTIAL_UNAVAILABLE"});
+  assert.deepEqual(h.counts(),{reads:0,auth:1,tokenReads:0});
+ }
+ const valid=build({readToken:()=>"opaque-ASCII_+/=~token"});
+ assert.equal((await valid.handler(req())).status,200);
+});
