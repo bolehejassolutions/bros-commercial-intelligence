@@ -21,7 +21,7 @@ const receipt = {
 };
 
 function fixture({ revokedAtCheck, membership = true, row = receipt, throwIdp = false,
-  throwMembership = false, throwEvidence = false, expiry, changedSubject = false, changedSession = false, revokeMembershipAfterRead = false } = {}) {
+  throwMembership = false, throwEvidence = false, expiry, changedSubject = false, changedSession = false, changedIssuer = false, changedAudience = false, changedExpiry = false, revokeMembershipAfterRead = false } = {}) {
   const calls = [];
   let checks = 0;
   let membershipChecks = 0;
@@ -34,8 +34,10 @@ function fixture({ revokedAtCheck, membership = true, row = receipt, throwIdp = 
       checks++;
       return {
         subjectId: changedSubject && checks > 1 ? OTHER : P,
-        sessionId: changedSession && checks > 1 ? "replacement-session" : "server-session", issuer, audience,
-        expiresAt: expiry ?? "2026-11-08T12:10:00Z",
+        sessionId: changedSession && checks > 1 ? "replacement-session" : "server-session",
+        issuer: changedIssuer && checks > 1 ? "https://foreign-idp.example.test" : issuer,
+        audience: changedAudience && checks > 1 ? "foreign-resource" : audience,
+        expiresAt: changedExpiry && checks > 1 ? "2026-11-08T12:11:00Z" : (expiry ?? "2026-11-08T12:10:00Z"),
         revoked: revokedAtCheck === checks,
       };
     },
@@ -182,4 +184,19 @@ test("session replacement with unchanged subject after SQL denies disclosure", a
   assert.deepEqual(JSON.parse(body), { error: "authentication_required" });
   assert.deepEqual(f.calls, ["idp", "membership-transaction", "evidence-transaction", "idp"]);
   assert.ok(!body.includes(E));
+});
+
+// A live IdP backchannel can return changed trust/session metadata between
+// the first grant and the second pre-disclosure check. Never reuse the earlier
+// positive decision when issuer, audience or expiry changes mid-read.
+test("post-read IdP issuer, audience or expiry drift fails closed before disclosure", async () => {
+  for (const opts of [{ changedIssuer: true }, { changedAudience: true }, { changedExpiry: true }]) {
+    const f = fixture(opts);
+    const response = await f.handler(request());
+    assert.equal(response.status, 401);
+    const body = await response.text();
+    assert.deepEqual(JSON.parse(body), { error: "authentication_required" });
+    assert.deepEqual(f.calls, ["idp", "membership-transaction", "evidence-transaction", "idp"]);
+    assert.ok(!body.includes(E));
+  }
 });
