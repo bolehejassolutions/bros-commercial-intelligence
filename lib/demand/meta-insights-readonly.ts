@@ -5,6 +5,9 @@ const deny = ():never => {throw Error("BROS_DEMAND_META_INSIGHTS_READ_FAILED");}
 const obj = (x:unknown):x is Record<string,unknown> => !!x && typeof x==="object" && !Array.isArray(x);
 const date = (x:unknown):x is string => typeof x==="string" && /^\d{4}-\d{2}-\d{2}$/.test(x) && !Number.isNaN(Date.parse(x)) && new Date(Date.parse(x)).toISOString().slice(0,10)===x;
 const metric = (x:unknown):number => typeof x==="string" && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(x) && Number.isFinite(Number(x)) ? Number(x) : deny();
+// MYR account spend must be an exact non-negative cent amount; never silently round sub-cent provider values.
+const spendMetric = (x:unknown):number => typeof x==="string" && /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(x) &&
+ Number.isSafeInteger(Math.round(Number(x)*100)) ? Number(x) : deny();
 export async function readDemandMetaAccountInsights(req:InsightsRequest,token:string,transport:InsightsTransport) {
  try {
   if (!obj(req) || typeof req.accountId!=="string" || !/^act_\d{5,30}$/.test(req.accountId) ||
@@ -27,7 +30,7 @@ export async function readDemandMetaAccountInsights(req:InsightsRequest,token:st
    accountId:req.accountId,since:req.since,until:req.until,state:"NO_ROWS_NOT_ZERO" as const,spend:null,impressions:null,clicks:null,executionAllowed:false as const});
   const row=rows[0] as Record<string,unknown>;
   if (!obj(row) || row.account_id!==req.accountId.slice(4) || row.date_start!==req.since || row.date_stop!==req.until) deny();
-  const spend=metric(row.spend),impressions=metric(row.impressions),clicks=metric(row.clicks);
+  const spend=spendMetric(row.spend),impressions=metric(row.impressions),clicks=metric(row.clicks);
   if (!Number.isSafeInteger(impressions) || !Number.isSafeInteger(clicks) || !Number.isSafeInteger(Math.round(spend*100))) deny();
   return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,
    accountId:req.accountId,since:req.since,until:req.until,state:"PROVIDER_ROW" as const,spend,impressions,clicks,executionAllowed:false as const});
