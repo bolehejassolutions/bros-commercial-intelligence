@@ -189,3 +189,26 @@ test("provider outage is distinct from tenant denial, while revalidation failure
  const revoked=build({authorize:async()=>{if(++checks===2)throw Error("revoked");return {principalId:"p",tenantId:"t"};}});
  assert.equal((await revoked.handler(req())).status,403);
 });
+
+test("Meta non-2xx responses are provider failures, never tenant denials or leaked bodies",async()=>{
+ for(const status of [400,401,403,429,500,503]){
+  let calls=0;
+  const h=build({transport:async()=>{calls++;return {ok:false,status,json:async()=>{throw Error("provider secret must not be parsed");}};}});
+  const response=await h.handler(req());
+  assert.equal(response.status,502,"provider HTTP "+status);
+  assert.deepEqual(await response.json(),{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
+  assert.equal(calls,1);
+ }
+});
+test("Meta non-2xx after successful Insights also fails atomically",async()=>{
+ let calls=0;
+ const h=build({transport:async(u)=>{
+  calls++;
+  if(u.includes("/insights?"))return {ok:true,json:async()=>({data:[]})};
+  return {ok:false,status:403,json:async()=>{throw Error("secret error");}};
+ }});
+ const response=await h.handler(req());
+ assert.equal(response.status,502);
+ assert.deepEqual(await response.json(),{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
+ assert.equal(calls,2);
+});
