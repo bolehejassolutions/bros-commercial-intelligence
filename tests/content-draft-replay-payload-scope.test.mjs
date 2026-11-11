@@ -8,7 +8,7 @@ const workspaceB='44444444-4444-4444-8444-444444444444';
 const user='22222222-2222-4222-8222-222222222222';
 const key='replay_payload_scope_123';
 const draft={product_service:'BROS SELL',audience:'Peniaga Malaysia',platforms:['facebook']};
-const makeRequest=(body)=>new Request('https://content.example.test/api/content/dev/workspaces/'+workspaceA+'/campaign-drafts',{
+const makeRequest=(body,workspaceId=workspaceA)=>new Request('https://content.example.test/api/content/dev/workspaces/'+workspaceId+'/campaign-drafts',{
  method:'POST',headers:{'content-type':'application/json','origin':'https://content.example.test',
  'sec-fetch-site':'same-origin','idempotency-key':key},body:JSON.stringify(body)
 });
@@ -46,7 +46,7 @@ test('same authenticated principal and key remain scoped to workspace',async()=>
   return saved.get(scope);
  });
  const a=await handler(makeRequest(draft),workspaceA);
- const b=await handler(makeRequest(draft),workspaceB);
+ const b=await handler(makeRequest(draft,workspaceB),workspaceB);
  assert.equal(a.status,201);assert.equal(b.status,201);
  assert.notEqual((await a.json()).data.id,(await b.json()).data.id);
  assert.equal(inserts,2);
