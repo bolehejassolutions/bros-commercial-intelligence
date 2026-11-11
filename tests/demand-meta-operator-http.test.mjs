@@ -132,7 +132,7 @@ test("failed Meta read releases concurrency slot for a subsequent request",async
   if(u.includes("/insights?"))return {ok:true,json:async()=>({data:[]})};
   return {ok:true,json:async()=>({id,account_id:"1997776120879476",configured_status:"PAUSED",effective_status:"PAUSED"})};
  }});
- assert.equal((await h.handler(req())).status,403);
+ assert.equal((await h.handler(req())).status,502);
  assert.equal((await h.handler(req())).status,200);
 });
 
