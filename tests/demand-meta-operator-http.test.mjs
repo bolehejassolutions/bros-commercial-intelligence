@@ -212,3 +212,19 @@ test("Meta non-2xx after successful Insights also fails atomically",async()=>{
  assert.deepEqual(await response.json(),{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
  assert.equal(calls,2);
 });
+
+
+test("Meta malformed JSON after HTTP 200 is a sanitized provider failure, not tenant denial",async()=>{
+ for(const stage of ["insights","object"]){
+  let calls=0;
+  const h=build({transport:async(u)=>{
+   calls++;
+   if(stage==="insights"||!u.includes("/insights?"))return {ok:true,json:async()=>{throw Error("synthetic sensitive provider JSON");}};
+   return {ok:true,json:async()=>({data:[]})};
+  }});
+  const response=await h.handler(req());
+  assert.equal(response.status,502,stage);
+  assert.deepEqual(await response.json(),{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
+  assert.equal(calls,stage==="insights"?1:2);
+ }
+});
