@@ -429,3 +429,25 @@ test("mutable verifier principal cannot extend expiry while evidence SQL is pend
   assert.deepEqual(await response.json(), { error: "authentication_required" });
   assert.equal(grants, 1);
 });
+
+test("token expiring during final membership recheck denies evidence disclosure", async () => {
+  let clocks = 0, grants = 0;
+  const { handler } = fixture({
+    now: () => ++clocks === 3 ? Date.parse("2026-11-08T06:00:00Z") : NOW,
+    hasEvidenceReadGrant: async () => { grants++; return true; },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
+  assert.equal(clocks, 3);
+  assert.equal(grants, 2);
+});
+
+test("token remaining valid through final membership recheck can disclose scoped evidence", async () => {
+  let clocks = 0;
+  const { handler } = fixture({ now: () => { clocks++; return NOW; } });
+  const response = await handler(get());
+  assert.equal(response.status, 200);
+  assert.equal(clocks, 3);
+  assert.equal((await response.json()).access, "read_only");
+});
