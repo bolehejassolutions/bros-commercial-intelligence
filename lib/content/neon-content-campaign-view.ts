@@ -37,11 +37,16 @@ export function buildContentCampaignView(raw:unknown):ContentCampaignView {
   :record(c.captions)?Object.entries(c.captions).slice(0,8).map(([platform,caption])=>({
      platform:platform.trim().toLowerCase(),caption:str(caption,10000)
     })):[];
- const seen=new Set<string>();
- const captions=captionRows.filter(row=>{
-  if(!platforms.has(row.platform)||!row.caption.trim()||seen.has(row.platform))return false;
-  seen.add(row.platform);return true;
- });
+ // Reject every member of a normalized-platform collision before any consumer
+ // (including publish preview) can mistake the first row for an approved caption.
+ const counts=new Map<string,number>();
+ for(const row of captionRows){
+  if(platforms.has(row.platform)&&row.caption.trim())
+   counts.set(row.platform,(counts.get(row.platform)??0)+1);
+ }
+ const captions=captionRows.filter(row=>
+  platforms.has(row.platform)&&Boolean(row.caption.trim())&&counts.get(row.platform)===1
+ );
  // Historic source may contain a comma-separated multi-platform label.
  // Preserve the original display label; never silently schedule these rows.
  const publishPlan=arr(c.publish_plan,300).flatMap(row=>{
