@@ -30,8 +30,12 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
   const validDay=(value:string|null)=>typeof value==="string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
     Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10)===value;
   const since=url.searchParams.get("since"),until=url.searchParams.get("until");
+  // Inclusive 31-calendar-day ceiling; never request future or pre-epoch reporting.
+  // Use the server clock rather than caller headers to prevent time-window spoofing.
+  const today=deps.now().toISOString().slice(0,10);
   if(!validDay(since)||!validDay(until)||since!>until!||
-    (Date.parse(until!)-Date.parse(since!))/86400000>31)return reply(400,{error:"INVALID_REPORTING_WINDOW"});
+    since!<"2000-01-01"||until!>today||
+    (Date.parse(until!)-Date.parse(since!))/86400000>=31)return reply(400,{error:"INVALID_REPORTING_WINDOW"});
   const auth=request.headers.get("authorization");
   if(!auth||auth.length>16007||!/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(auth))return reply(401,{error:"UNAUTHORIZED"});
   // Bound concurrent read-only observations per handler instance; never queue or retry provider reads.
