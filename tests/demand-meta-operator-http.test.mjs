@@ -63,12 +63,12 @@ test("revoked membership during post-read revalidation never exposes a partial r
 });
 test("provider failure is sanitized; no partial results or token leakage",async()=>{
  const h=build({transport:async()=>{throw Error("sensitive provider token");}});
- const response=await h.handler(req());assert.equal(response.status,403);
- const body=JSON.stringify(await response.json());assert.ok(!body.includes("sensitive"));
+ const response=await h.handler(req());assert.equal(response.status,502);
+ assert.deepEqual(await response.json(),{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
 });
 test("missing server token denies before any Meta GET",async()=>{
  const h=build({readToken:()=>null});const response=await h.handler(req());
- assert.equal(response.status,403);assert.equal(h.counts().reads,0);
+ assert.equal(response.status,503);assert.deepEqual(await response.json(),{error:"DEMAND_META_CREDENTIAL_UNAVAILABLE"});assert.equal(h.counts().reads,0);
 });
 
 test("server-pinned campaign, ad set and ad are observed together with no caller-controlled IDs",async()=>{
@@ -178,4 +178,14 @@ test("Insights accepts 31 inclusive historical days and rejects future and 32-da
   assert.deepEqual(await response.json(),{error:"INVALID_REPORTING_WINDOW"});
   assert.deepEqual(h.counts(),{reads:0,auth:0,tokenReads:0});
  }
+});
+
+test("provider outage is distinct from tenant denial, while revalidation failures remain 403",async()=>{
+ const provider=build({transport:async()=>{throw Error("secret provider detail");}});
+ const outage=await provider.handler(req());assert.equal(outage.status,502);
+ assert.equal(outage.headers.get("cache-control"),"private, no-store, max-age=0");
+ assert.ok(!JSON.stringify(await outage.json()).includes("secret"));
+ let checks=0;
+ const revoked=build({authorize:async()=>{if(++checks===2)throw Error("revoked");return {principalId:"p",tenantId:"t"};}});
+ assert.equal((await revoked.handler(req())).status,403);
 });
