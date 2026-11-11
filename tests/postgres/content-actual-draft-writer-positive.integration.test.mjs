@@ -6,9 +6,11 @@ import {createContentCampaignDraftWriter} from '../../lib/content/neon-content-c
 
 const adminUrl=process.env.CONTENT_ADMIN_DB_URL??'';
 const writerUrl=process.env.CONTENT_DRAFT_DB_URL??'';
+const readerUrl=process.env.CONTENT_READER_DB_URL??'';
 if(process.env.CONTENT_PG_INTEGRATION_CI!=='disposable_only' ||
  !/^postgresql:\/\/postgres:[^@]+@127\.0\.0\.1:5432\/bros_intelligence_dev$/.test(adminUrl) ||
- !/^postgresql:\/\/content_dev_draft_writer_v2:[^@]+@127\.0\.0\.1:5432\/bros_intelligence_dev$/.test(writerUrl))
+ !/^postgresql:\/\/content_dev_draft_writer_v2:[^@]+@127\.0\.0\.1:5432\/bros_intelligence_dev$/.test(writerUrl) ||
+ !/^postgresql:\/\/content_dev_reader_v2:[^@]+@127\.0\.0\.1:5432\/bros_intelligence_dev$/.test(readerUrl))
  throw Error('Refusing non-disposable PostgreSQL target');
 
 const userId='8ae086ff-3f10-4863-b5e7-4b67e062024d';
@@ -19,7 +21,8 @@ const payload={product_service:'BROS SELL',audience:'Peniaga Malaysia',descripti
 test('actual restricted writer persists HTTP draft, replays and rejects changed payload; independent admin readback',async()=>{
  const writer=new pg.Client({connectionString:writerUrl});
  const admin=new pg.Client({connectionString:adminUrl});
- await writer.connect(); await admin.connect();
+ const reader=new pg.Client({connectionString:readerUrl});
+ await writer.connect(); await admin.connect(); await reader.connect();
  const transaction=async fn=>{
   await writer.query('BEGIN');
   try {
@@ -54,5 +57,19 @@ test('actual restricted writer persists HTTP draft, replays and rejects changed 
   assert.equal(stored.rows[0].owner_principal_id,userId);
   const requests=await admin.query('SELECT count(*)::int AS n FROM content_dev.campaign_draft_requests WHERE campaign_id=$1',[saved.id]);
   assert.equal(requests.rows[0].n,1);
- }finally{await writer.end();await admin.end();}
+  // Read committed data from the actual least-privilege reader, not the admin.
+  await reader.query('BEGIN');
+  await reader.query("SELECT set_config('bci.principal_id',$1,true)",[userId]);
+  const visible=await reader.query('SELECT id,workspace_id,audience FROM content_dev.campaigns WHERE id=$1',[saved.id]);
+  assert.equal(visible.rowCount,1);
+  assert.equal(visible.rows[0].workspace_id,workspace);
+  assert.equal(visible.rows[0].audience,payload.audience);
+  await reader.query('ROLLBACK');
+  // A different authenticated principal must not observe the same campaign.
+  await reader.query('BEGIN');
+  await reader.query("SELECT set_config('bci.principal_id',$1,true)",['11111111-1111-4111-8111-111111111111']);
+  const denied=await reader.query('SELECT id FROM content_dev.campaigns WHERE id=$1',[saved.id]);
+  assert.equal(denied.rowCount,0);
+  await reader.query('ROLLBACK');
+ }finally{await reader.query('ROLLBACK').catch(()=>{});await reader.end();await writer.end();await admin.end();}
 });
