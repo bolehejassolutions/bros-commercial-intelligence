@@ -117,6 +117,12 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
       }
       const stillGranted = await deps.hasEvidenceReadGrant(verifiedSubjectId, selection);
       if (stillGranted !== true) return reply(403, { error: "access_denied" });
+      // The final membership lookup is asynchronous. The token may expire
+      // while that check is pending even if the earlier post-SQL check passed.
+      const finalClock = deps.now ? deps.now() : Date.now();
+      if (!Number.isFinite(finalClock) || Date.parse(verifiedExpiry) <= finalClock) {
+        return reply(401, { error: "authentication_required" });
+      }
       const scoped = {
         identityVerifiedByServer: true as const,
         tenantMembershipVerifiedByServer: true as const,
