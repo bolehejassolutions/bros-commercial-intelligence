@@ -7,8 +7,18 @@ const date = (x:unknown):x is string => typeof x==="string" && /^\d{4}-\d{2}-\d{
 // Impression and click counts are discrete observations: never coerce fractional textual counts.
 const metric = (x:unknown):number => typeof x==="string" && /^(?:0|[1-9]\d*)$/.test(x) && Number.isSafeInteger(Number(x)) ? Number(x) : deny();
 // MYR account spend must be an exact non-negative cent amount; never silently round sub-cent provider values.
-const spendMetric = (x:unknown):number => typeof x==="string" && /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(x) &&
- Number.isSafeInteger(Math.round(Number(x)*100)) ? Number(x) : deny();
+const spendMetric = (x:unknown):number => {
+ if(typeof x!=="string" || !/^(?:0|[1-9]\\d*)(?:\\.\\d{1,2})?$/.test(x)) deny();
+ // Parse integer cents without floating-point rounding. Reject amounts whose cents
+ // cannot survive conversion to the public numeric spend representation exactly.
+ const [whole, fractional=""] = x.split(".");
+ const cents=BigInt(whole)*100n+BigInt((fractional+"00").slice(0,2));
+ if(cents>BigInt(Number.MAX_SAFE_INTEGER)) deny();
+ const spend=Number(x);
+ if(!Number.isFinite(spend) || !Number.isSafeInteger(Math.round(spend*100)) ||
+    BigInt(Math.round(spend*100))!==cents) deny();
+ return spend;
+};
 export async function readDemandMetaAccountInsights(req:InsightsRequest,token:string,transport:InsightsTransport) {
  try {
   if (!obj(req) || typeof req.accountId!=="string" || !/^act_\d{5,30}$/.test(req.accountId) ||
