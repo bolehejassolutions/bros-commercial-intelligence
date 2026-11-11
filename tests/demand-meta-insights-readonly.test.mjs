@@ -65,3 +65,15 @@ test("MYR spend rejects fractional cents rather than silently rounding provider 
   assert.equal(observed.state,"PROVIDER_ROW");
  }
 });
+
+test("Meta impression and click counters reject fractional, exponential and unsafe integers",async()=>{
+ for(const field of ["impressions","clicks"]){
+  for(const value of ["0.0","1.00","1.5","1e2","-1","9007199254740992"]){
+   await assert.rejects(read(req,token,transport({data:[{...row,[field]:value}]})),denied,field+"="+value);
+  }
+  for(const value of ["0","1","123456"]){
+   const observed=await read(req,token,transport({data:[{...row,[field]:value}]}));
+   assert.equal(observed[field],Number(value));
+  }
+ }
+});
