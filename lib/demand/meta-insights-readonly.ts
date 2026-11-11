@@ -10,7 +10,7 @@ export async function readDemandMetaAccountInsights(req:InsightsRequest,token:st
   if (!obj(req) || typeof req.accountId!=="string" || !/^act_\d{5,30}$/.test(req.accountId) ||
    typeof req.apiVersion!=="string" || !/^v[1-9]\d?\.\d+$/.test(req.apiVersion) ||
    !date(req.since) || !date(req.until) || req.since>req.until ||
-   (Date.parse(req.until)-Date.parse(req.since))/86400000>31 ||
+   (Date.parse(req.until)-Date.parse(req.since))/86400000>=31 ||
    typeof req.observedAt!=="string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(req.observedAt) ||
    !Number.isFinite(Date.parse(req.observedAt)) || new Date(req.observedAt).toISOString().slice(0,19)!==req.observedAt.slice(0,19) ||
    typeof token!=="string" || token.length<20 || token.length>4096 || /[^\x21-\x7e]/.test(token) || typeof transport!=="function") deny();
