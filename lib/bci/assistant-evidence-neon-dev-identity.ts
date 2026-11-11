@@ -27,7 +27,7 @@ const MAX_TTL_MS = 24 * 60 * 60 * 1000;
 // An issuer is an HTTPS identity-provider identifier, never a URL containing
 // credentials, a fragment or a query that can silently retarget trust.
 const validIssuer = (value: unknown): value is string => {
-  if (typeof value !== "string" || !value.startsWith("https://") || /[\\u0000-\\u0020\\u007f]/.test(value)) return false;
+  if (typeof value !== "string" || !value.startsWith("https://") || /[\u0000-\u0020\u007f]/.test(value)) return false;
   try {
     const url = new URL(value);
     return url.protocol === "https:" && !!url.hostname && !url.username &&
