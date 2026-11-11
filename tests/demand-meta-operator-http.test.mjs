@@ -146,3 +146,20 @@ test("operator runtime wires optional server-owned ad set/ad IDs and rejects mal
  assert.match(runtime,/process\.env\.BROS_DEMAND_META_AD_ID === undefined \|\| digits\.test\(process\.env\.BROS_DEMAND_META_AD_ID\)/);
  assert.doesNotMatch(operator,/request\.headers\.(get|has)\(["']x-(adset|ad)-id/);
 });
+
+test("invalid and overlong reporting windows are rejected before authentication or Meta reads",async()=>{
+ const bad=[
+  "since=2026-02-30&until=2026-03-01",
+  "since=2026-11-08&until=2026-11-07",
+  "since=2026-01-01&until=2026-02-02",
+  "since=2026-11-01T00:00:00Z&until=2026-11-07",
+  "since=2026-11-01&until=not-a-date"
+ ];
+ for(const query of bad){
+  const h=build();
+  const response=await h.handler(req("https://internal.example/api/internal/demand-meta-status?"+query));
+  assert.equal(response.status,400,query);
+  assert.deepEqual(await response.json(),{error:"INVALID_REPORTING_WINDOW"});
+  assert.deepEqual(h.counts(),{reads:0,auth:0,tokenReads:0});
+ }
+});
