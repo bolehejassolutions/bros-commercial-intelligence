@@ -387,3 +387,45 @@ test("post-read session binding downgrade or upgrade denies before membership re
     assert.equal(grants, 1);
   }
 });
+
+
+test("mutable verifier principal cannot change identity during membership lookup", async () => {
+  const first = { subjectId: "user-1", expiresAt: "2026-11-08T06:00:00Z", sessionId: "session-A" };
+  let verifies = 0, grants = 0;
+  const { handler } = fixture({
+    verifyBearerToken: async () => ++verifies === 1 ? first : {
+      subjectId: "user-2", expiresAt: first.expiresAt, sessionId: "session-B",
+    },
+    hasEvidenceReadGrant: async () => {
+      grants++;
+      if (grants === 1) {
+        first.subjectId = "user-2";
+        first.sessionId = "session-B";
+      }
+      return true;
+    },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
+  assert.equal(grants, 1);
+});
+
+test("mutable verifier principal cannot extend expiry while evidence SQL is pending", async () => {
+  const first = { subjectId: "user-1", expiresAt: "2026-11-08T06:00:00Z", sessionId: "session-A" };
+  let verifies = 0, grants = 0;
+  const { handler } = fixture({
+    verifyBearerToken: async () => ++verifies === 1 ? first : {
+      subjectId: first.subjectId, expiresAt: "2026-11-08T07:00:00Z", sessionId: first.sessionId,
+    },
+    hasEvidenceReadGrant: async () => { grants++; return true; },
+    listScopedReceipts: async () => {
+      first.expiresAt = "2026-11-08T07:00:00Z";
+      return [record()];
+    },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
+  assert.equal(grants, 1);
+});
