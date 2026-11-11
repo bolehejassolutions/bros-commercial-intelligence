@@ -63,6 +63,9 @@ jobs:
           reader_pass="$(openssl rand -hex 32)"
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE content_dev_reader_v2 LOGIN NOINHERIT NOBYPASSRLS NOSUPERUSER NOCREATEROLE PASSWORD '${reader_pass}'"
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgres/content-reader-fixture.sql
+          draft_pass="$(openssl rand -hex 32)"
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -v draft_password="$draft_pass" -f tests/postgres/content-draft-writer-positive-fixture.sql
+          export CONTENT_DRAFT_DB_URL="postgresql://content_dev_draft_writer_v2:${draft_pass}@127.0.0.1:5432/bros_intelligence_dev"
           export CONTENT_TEST_DB_URL="postgresql://content_dev_generated_writer_v1:${role_pass}@127.0.0.1:5432/bros_intelligence_dev"
           export CONTENT_READER_DB_URL="postgresql://content_dev_reader_v2:${reader_pass}@127.0.0.1:5432/bros_intelligence_dev"
           export CONTENT_ADMIN_DB_URL="$ADMIN_DATABASE_URL"
