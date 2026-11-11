@@ -1,4 +1,5 @@
 import test from "node:test";
+import {readFileSync} from "node:fs";
 import assert from "node:assert/strict";
 import {createDemandOperatorStatusHandler} from "../lib/demand/meta-operator-http.ts";
 const clock="2026-11-11T01:00:00.000Z";
@@ -133,4 +134,15 @@ test("failed Meta read releases concurrency slot for a subsequent request",async
  }});
  assert.equal((await h.handler(req())).status,403);
  assert.equal((await h.handler(req())).status,200);
+});
+
+// Regression: the deployed runtime must actually pass pinned optional IDs to the tested handler.
+test("operator runtime wires optional server-owned ad set/ad IDs and rejects malformed configured IDs",()=>{
+ const runtime=readFileSync(new URL("../lib/demand/meta-direct-runtime.ts",import.meta.url),"utf8");
+ const operator=runtime.slice(runtime.indexOf("const operatorStatusHandler=createDemandOperatorStatusHandler("));
+ assert.match(operator,/adsetId:process\.env\.BROS_DEMAND_META_ADSET_ID/);
+ assert.match(operator,/adId:process\.env\.BROS_DEMAND_META_AD_ID/);
+ assert.match(runtime,/process\.env\.BROS_DEMAND_META_ADSET_ID === undefined \|\| digits\.test\(process\.env\.BROS_DEMAND_META_ADSET_ID\)/);
+ assert.match(runtime,/process\.env\.BROS_DEMAND_META_AD_ID === undefined \|\| digits\.test\(process\.env\.BROS_DEMAND_META_AD_ID\)/);
+ assert.doesNotMatch(operator,/request\.headers\.(get|has)\(["']x-(adset|ad)-id/);
 });
