@@ -118,3 +118,13 @@ test("post-read membership timestamp regression and backwards clock deny release
   ()=>new Date(++ticks===1?"2026-11-09T02:00:10.000Z":"2026-11-09T02:00:09.000Z")),denied);
  assert.equal(ticks,2);
 });
+
+test("direct snapshot accepts 31 inclusive days and rejects 32 before credentials or Meta transport",async()=>{
+ const allowed=harness();
+ const within=await readDemandOperatorSnapshot({...request,since:"2026-10-01",until:"2026-10-31"},allowed.resolver,allowed.secret,allowed.transport,clock);
+ assert.equal(within.insights.state,"NO_ROWS_NOT_ZERO");
+ assert.deepEqual(allowed.counts(),{credentials:1,network:2});
+ const deniedWindow=harness();
+ await assert.rejects(readDemandOperatorSnapshot({...request,since:"2026-10-01",until:"2026-11-01"},deniedWindow.resolver,deniedWindow.secret,deniedWindow.transport,clock),denied);
+ assert.deepEqual(deniedWindow.counts(),{credentials:0,network:0});
+});
