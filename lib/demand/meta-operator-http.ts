@@ -41,7 +41,7 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
   // Bound concurrent read-only observations per handler instance; never queue or retry provider reads.
   if(inFlight>=2)return reply(429,{error:"DEMAND_STATUS_BUSY"});
   inFlight++;
-  let providerFailed=false, tokenMissing=false, providerReads=0, revalidationAttempted=false, scopeChecks=0;
+  let providerFailed=false, providerRateLimited=false, tokenMissing=false, providerReads=0, revalidationAttempted=false, scopeChecks=0;
   try{
    const resolveScope=async():Promise<VerifiedDemandScope>=>{
     if(++scopeChecks>1)revalidationAttempted=true;
@@ -61,7 +61,7 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
     const response=await deps.transport(url,init);
     // Meta non-2xx responses are provider failures, not tenant authorization denials.
     // Never parse or return provider error bodies, which can contain sensitive details.
-    if(!response||response.ok!==true){providerFailed=true;throw Error("META_PROVIDER_HTTP_FAILURE");}
+    if(!response||response.ok!==true){providerFailed=true;providerRateLimited=response?.status===429;throw Error("META_PROVIDER_HTTP_FAILURE");}
     // A successful HTTP status with an unreadable JSON body is still a provider failure.
     return {ok:true,json:async()=>{try{return await response.json();}catch{providerFailed=true;throw Error("META_PROVIDER_INVALID_JSON");}}};
    }catch{providerFailed=true;throw Error("META_PROVIDER_TRANSPORT_FAILURE");}},deps.now);
@@ -72,6 +72,7 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
    if(tokenMissing)return reply(503,{error:"DEMAND_META_CREDENTIAL_UNAVAILABLE"});
    // After a provider read, schema/semantic parse failures are provider failures too.
    // A subsequent tenant revalidation denial must remain an authorization failure.
+   if(providerRateLimited)return reply(503,{error:"DEMAND_META_PROVIDER_RATE_LIMITED"});
    if(providerFailed||(providerReads>0&&!revalidationAttempted))return reply(502,{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
    return reply(403,{error:"DEMAND_STATUS_DENIED"});
   }
