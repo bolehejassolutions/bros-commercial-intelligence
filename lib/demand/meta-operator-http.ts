@@ -41,9 +41,10 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
   // Bound concurrent read-only observations per handler instance; never queue or retry provider reads.
   if(inFlight>=2)return reply(429,{error:"DEMAND_STATUS_BUSY"});
   inFlight++;
-  let providerFailed=false, tokenMissing=false;
+  let providerFailed=false, tokenMissing=false, providerReads=0, revalidationAttempted=false, scopeChecks=0;
   try{
    const resolveScope=async():Promise<VerifiedDemandScope>=>{
+    if(++scopeChecks>1)revalidationAttempted=true;
     const scope=await deps.authorize(auth.slice(7));
     return {principalId:scope.principalId,tenantId:scope.tenantId,accountId:deps.accountId,
       permission:"DEMAND_META_READ",verifiedAt:deps.now().toISOString()};
@@ -56,7 +57,8 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
       ...(deps.adId?[{kind:"ad" as const,objectId:deps.adId}]:[])]
    },resolveScope,async()=>{
     const token=deps.readToken();if(!token){tokenMissing=true;throw Error("NO_SERVER_TOKEN");}return token;
-   },async(url,init)=>{try{const response=await deps.transport(url,init);
+   },async(url,init)=>{try{providerReads++;
+    const response=await deps.transport(url,init);
     // Meta non-2xx responses are provider failures, not tenant authorization denials.
     // Never parse or return provider error bodies, which can contain sensitive details.
     if(!response||response.ok!==true){providerFailed=true;throw Error("META_PROVIDER_HTTP_FAILURE");}
@@ -68,7 +70,9 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
     executionAllowed:false,providerAuthorizationIndependentlyAttested:false});
   }catch{
    if(tokenMissing)return reply(503,{error:"DEMAND_META_CREDENTIAL_UNAVAILABLE"});
-   if(providerFailed)return reply(502,{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
+   // After a provider read, schema/semantic parse failures are provider failures too.
+   // A subsequent tenant revalidation denial must remain an authorization failure.
+   if(providerFailed||(providerReads>0&&!revalidationAttempted))return reply(502,{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
    return reply(403,{error:"DEMAND_STATUS_DENIED"});
   }
   finally{inFlight--;}
