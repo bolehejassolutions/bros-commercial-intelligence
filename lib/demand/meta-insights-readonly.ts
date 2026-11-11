@@ -36,14 +36,15 @@ export async function readDemandMetaAccountInsights(req:InsightsRequest,token:st
   const body=await response.json() as Record<string,unknown>;
   if (!obj(body) || Object.hasOwn(body,"error") || !Array.isArray(body.data) || body.data.length>1 ||
    (Object.hasOwn(body,"paging") && (!obj(body.paging) || Object.hasOwn(body.paging,"next") || Object.hasOwn(body.paging,"previous") || Object.keys(body.paging).some(k=>k!=="cursors") || (Object.hasOwn(body.paging,"cursors") && (!obj(body.paging.cursors) || Object.keys(body.paging.cursors).some(k=>!["before","after"].includes(k)) || Object.values(body.paging.cursors).some(v=>typeof v!=="string")))))) deny();
+  const collectedAt=new Date().toISOString(); // Local collection time, not a Meta event timestamp.
   const rows=body.data as unknown[];
-  if (rows.length===0) return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,
+  if (rows.length===0) return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,collectedAt,
    accountId:req.accountId,since:req.since,until:req.until,state:"NO_ROWS_NOT_ZERO" as const,spend:null,impressions:null,clicks:null,executionAllowed:false as const});
   const row=rows[0] as Record<string,unknown>;
   if (!obj(row) || row.account_id!==req.accountId.slice(4) || row.date_start!==req.since || row.date_stop!==req.until) deny();
   const spend=spendMetric(row.spend),impressions=metric(row.impressions),clicks=metric(row.clicks);
   if (!Number.isSafeInteger(impressions) || !Number.isSafeInteger(clicks) || !Number.isSafeInteger(Math.round(spend*100))) deny();
-  return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,
+  return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,collectedAt,
    accountId:req.accountId,since:req.since,until:req.until,state:"PROVIDER_ROW" as const,spend,impressions,clicks,executionAllowed:false as const});
  } catch {deny();}
 }
