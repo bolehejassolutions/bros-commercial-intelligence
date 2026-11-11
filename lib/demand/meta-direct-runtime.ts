@@ -35,6 +35,8 @@ const enabled = () =>
   account.test(process.env.BROS_DEMAND_META_ACCOUNT_ID) &&
   typeof process.env.BROS_DEMAND_META_CAMPAIGN_ID === "string" &&
   digits.test(process.env.BROS_DEMAND_META_CAMPAIGN_ID) &&
+  (process.env.BROS_DEMAND_META_ADSET_ID === undefined || digits.test(process.env.BROS_DEMAND_META_ADSET_ID)) &&
+  (process.env.BROS_DEMAND_META_AD_ID === undefined || digits.test(process.env.BROS_DEMAND_META_AD_ID)) &&
   typeof process.env.BROS_DEMAND_META_API_VERSION === "string" &&
   version.test(process.env.BROS_DEMAND_META_API_VERSION) &&
   typeof process.env.BROS_DEMAND_META_TENANT_ID === "string" &&
@@ -259,6 +261,8 @@ const operatorStatusHandler=createDemandOperatorStatusHandler({
  enabled:()=>enabled() && process.env.BROS_DEMAND_META_OPERATOR_STATUS==="enabled",
  accountId:process.env.BROS_DEMAND_META_ACCOUNT_ID??"act_0",
  campaignId:process.env.BROS_DEMAND_META_CAMPAIGN_ID??"0",
+ adsetId:process.env.BROS_DEMAND_META_ADSET_ID,
+ adId:process.env.BROS_DEMAND_META_AD_ID,
  apiVersion:process.env.BROS_DEMAND_META_API_VERSION??"v26.0",
  authorize:jwt=>demandMetaPilotRuntime.authorize(jwt),
  readToken:()=>demandMetaPilotRuntime.readToken(),
