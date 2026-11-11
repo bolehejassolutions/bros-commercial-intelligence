@@ -14,7 +14,14 @@ test('multi-platform legacy label never guesses caption',()=>{
  const [row]=buildContentPublishPreview({captions:{facebook:'A'},publish_plan:[{day:1,platform:'facebook, instagram'}]});
  assert.equal(row.caption,null);
 });
-test('invalid publish plan is excluded and duplicate caption rows use first valid entry',()=>{
- const rows=buildContentPublishPreview({captions:[{platform:'facebook',caption:'First'},{platform:'facebook',caption:'Second'}],publish_plan:[{day:0,platform:'facebook'},{day:1,platform:'facebook'}]});
- assert.equal(rows.length,1);assert.equal(rows[0].caption,'First');
+test('invalid publish days are excluded and conflicting captions fail closed without affecting other platforms',()=>{
+ const source={captions:[{platform:'facebook',caption:'First'},{platform:' facebook ',caption:'Second'},{platform:'tiktok',caption:'Independent'}],publish_plan:[{day:0,platform:'facebook'},{day:1,platform:'facebook'},{day:2,platform:'tiktok'}]};
+ const snapshot=structuredClone(source);
+ const rows=buildContentPublishPreview(source);
+ assert.equal(rows.length,2);
+ assert.equal(rows[0].caption,null);
+ assert.equal(rows[0].captionAvailable,false);
+ assert.equal(rows[1].caption,'Independent');
+ assert.equal(rows[1].captionAvailable,true);
+ assert.deepEqual(source,snapshot);
 });
