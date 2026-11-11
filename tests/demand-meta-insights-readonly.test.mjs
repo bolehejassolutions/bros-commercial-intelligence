@@ -87,3 +87,16 @@ test("MYR spend parses exact cents and rejects unsafe or lossy numeric conversio
   assert.equal(observed.spend,expected,spend);
  }
 });
+
+test("collection timestamp is independently captured after provider response for both empty and populated results",async()=>{
+ for(const data of [{data:[]},{data:[row]}]){
+  const before=Date.now();
+  const result=await read(req,token,transport(data));
+  const after=Date.now();
+  assert.match(result.collectedAt,/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/);
+  assert.ok(Date.parse(result.collectedAt)>=before && Date.parse(result.collectedAt)<=after);
+  assert.equal(result.observedAt,req.observedAt);
+  assert.notEqual(result.collectedAt,req.observedAt);
+  assert.equal(result.executionAllowed,false);
+ }
+});
