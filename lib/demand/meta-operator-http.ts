@@ -60,7 +60,8 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
     // Meta non-2xx responses are provider failures, not tenant authorization denials.
     // Never parse or return provider error bodies, which can contain sensitive details.
     if(!response||response.ok!==true){providerFailed=true;throw Error("META_PROVIDER_HTTP_FAILURE");}
-    return response;
+    // A successful HTTP status with an unreadable JSON body is still a provider failure.
+    return {ok:true,json:async()=>{try{return await response.json();}catch{providerFailed=true;throw Error("META_PROVIDER_INVALID_JSON");}}};
    }catch{providerFailed=true;throw Error("META_PROVIDER_TRANSPORT_FAILURE");}},deps.now);
    return reply(200,{source:"META_GRAPH_API_UNATTESTED",observedAt:result.observedAt,
     insights:result.insights,status:result.status,verifiedPaidOrders:null,
