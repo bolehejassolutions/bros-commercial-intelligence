@@ -278,7 +278,7 @@ test("Meta provider rate limit is sanitized and recovery does not retain a stale
 });
 
 test("invalid server Meta tokens fail closed without contacting provider",async()=>{
- for(const invalid of ["", " ", "synthetic token", "abc\\ndef", "abc\\rdef", "abc\\tdef", "é", "x".repeat(4097), null]){
+ for(const invalid of ["", " ", "synthetic token", "abc\ndef", "abc\rdef", "abc\tdef", "é", "x".repeat(4097), null]){
   const h=build({readToken:()=>invalid});
   const response=await h.handler(req());
   assert.equal(response.status,503,JSON.stringify(invalid)?.slice(0,40));
