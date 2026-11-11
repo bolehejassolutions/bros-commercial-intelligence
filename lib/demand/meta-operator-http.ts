@@ -59,7 +59,7 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
     const token=deps.readToken();
     // Reject missing, malformed or oversized server credentials before any provider request.
     // Meta access tokens are opaque ASCII non-whitespace strings; never trim or repair them.
-    if(typeof token!=="string"||token.length<1||token.length>4096||!/^[\x21-\x7e]+$/.test(token)){
+    if(typeof token!=="string"||token.length<20||token.length>4096||!/^[\x21-\x7e]+$/.test(token)){
      tokenMissing=true;throw Error("INVALID_SERVER_TOKEN");
     }
     return token;
