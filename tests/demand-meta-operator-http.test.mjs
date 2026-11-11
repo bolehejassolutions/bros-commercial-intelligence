@@ -195,8 +195,8 @@ test("Meta non-2xx responses are provider failures, never tenant denials or leak
   let calls=0;
   const h=build({transport:async()=>{calls++;return {ok:false,status,json:async()=>{throw Error("provider secret must not be parsed");}};}});
   const response=await h.handler(req());
-  assert.equal(response.status,502,"provider HTTP "+status);
-  assert.deepEqual(await response.json(),{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
+  assert.equal(response.status,status===429?503:502,"provider HTTP "+status);
+  assert.deepEqual(await response.json(),{error:status===429?"DEMAND_META_PROVIDER_RATE_LIMITED":"DEMAND_META_PROVIDER_UNAVAILABLE"});
   assert.equal(calls,1);
  }
 });
@@ -257,4 +257,22 @@ test("post-provider tenant revocation remains 403 rather than a provider 502",as
  assert.deepEqual(await response.json(),{error:"DEMAND_STATUS_DENIED"});
  assert.equal(h.counts().reads,2);
  assert.equal(checks,2);
+});
+
+test("Meta provider rate limit is sanitized and recovery does not retain a stale rate-limit state",async()=>{
+ let calls=0;
+ const h=build({transport:async(u)=>{
+  calls++;
+  if(calls===1)return {ok:false,status:429,json:async()=>{throw Error("private provider retry details");}};
+  if(u.includes("/insights?"))return {ok:true,json:async()=>({data:[]})};
+  return {ok:true,json:async()=>({id,account_id:"1997776120879476",configured_status:"PAUSED",effective_status:"PAUSED"})};
+ }});
+ const limited=await h.handler(req());
+ assert.equal(limited.status,503);
+ assert.deepEqual(await limited.json(),{error:"DEMAND_META_PROVIDER_RATE_LIMITED"});
+ assert.equal(limited.headers.get("cache-control"),"private, no-store, max-age=0");
+ const recovered=await h.handler(req());
+ assert.equal(recovered.status,200);
+ assert.equal((await recovered.json()).insights.state,"NO_ROWS_NOT_ZERO");
+ assert.equal(calls,3);
 });
