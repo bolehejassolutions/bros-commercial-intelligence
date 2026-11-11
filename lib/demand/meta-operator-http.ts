@@ -13,6 +13,7 @@ const headers={"Cache-Control":"private, no-store, max-age=0","Pragma":"no-cache
 const reply=(status:number,body:unknown)=>Response.json(body,{status,headers});
 /** Independently gated GET-only DEMAND operator status/Insights endpoint. Never accepts caller account, object IDs or credentials. */
 export function createDemandOperatorStatusHandler(deps:Deps) {
+ let inFlight=0;
  return async(request:Request):Promise<Response>=>{
   if(!deps.enabled())return reply(404,{error:"DEMAND_STATUS_DISABLED"});
   if(request.method!=="GET")return reply(405,{error:"METHOD_NOT_ALLOWED"});
@@ -27,6 +28,9 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
      url.searchParams.getAll("until").length!==1)return reply(400,{error:"INVALID_REQUEST"});
   const auth=request.headers.get("authorization");
   if(!auth||auth.length>16007||!/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(auth))return reply(401,{error:"UNAUTHORIZED"});
+  // Bound concurrent read-only observations per handler instance; never queue or retry provider reads.
+  if(inFlight>=2)return reply(429,{error:"DEMAND_STATUS_BUSY"});
+  inFlight++;
   try{
    const resolveScope=async():Promise<VerifiedDemandScope>=>{
     const scope=await deps.authorize(auth.slice(7));
@@ -46,5 +50,6 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
     insights:result.insights,status:result.status,verifiedPaidOrders:null,
     executionAllowed:false,providerAuthorizationIndependentlyAttested:false});
   }catch{return reply(403,{error:"DEMAND_STATUS_DENIED"});}
+  finally{inFlight--;}
  };
 }
