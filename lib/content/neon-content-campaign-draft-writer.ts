@@ -7,7 +7,7 @@ type Row=Record<string,unknown>;
 type Query=(sql:string,params:readonly unknown[])=>Promise<{rows:readonly Row[]}>;
 type Transaction=<T>(fn:(query:Query)=>Promise<T>)=>Promise<T>;
 type Principal=Readonly<{userId:string;authenticated:true}>;
-type Draft=Readonly<{product_service:string;audience:string;description:string;problem:string;objective:string;duration_days:number;platforms:string[]}>;
+type Draft=Readonly<{product_service:string;audience:string;description:string;problem:string;objective:string;duration_days:number;platforms:readonly string[]}>;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const deny=():never=>{throw new ContentReadDenied();};
 const validText=(value:unknown,max:number,required=true)=>typeof value==='string'&&(!required||value.trim().length>0)&&value.length<=max;
