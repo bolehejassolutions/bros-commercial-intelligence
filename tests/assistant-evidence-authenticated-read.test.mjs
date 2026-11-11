@@ -451,3 +451,27 @@ test("token remaining valid through final membership recheck can disclose scoped
   assert.equal(clocks, 3);
   assert.equal((await response.json()).access, "read_only");
 });
+
+test("async membership adapter cannot mutate parsed tenant/product selection", async () => {
+  let grants = 0, reads = 0;
+  const { handler } = fixture({
+    hasEvidenceReadGrant: async (_subject, scope) => {
+      grants++;
+      try { scope.tenantId = "org-B"; } catch {}
+      try { scope.product = "content"; } catch {}
+      assert.equal(scope.tenantId, "org-A");
+      assert.equal(scope.product, "demand");
+      return true;
+    },
+    listScopedReceipts: async scope => {
+      reads++;
+      assert.equal(scope.tenantId, "org-A");
+      assert.equal(scope.product, "demand");
+      return [record()];
+    },
+  });
+  const response = await handler(get());
+  assert.equal(response.status, 200);
+  assert.equal(grants, 2);
+  assert.equal(reads, 1);
+});
