@@ -15,6 +15,11 @@ export function createContentCampaignDraftPost(verify:Verify,create:Create) {
  return async (request:Request,workspaceId:string):Promise<Response>=>{
   if(request.method!=='POST')return reply(405,'method_not_allowed');
   if(!UUID.test(workspaceId))return reply(404,'not_found');
+  // Bind the authenticated write scope to the HTTP route, not merely a caller-supplied argument.
+  // Reject mismatches before authentication or any writer invocation.
+  let routePath:string;
+  try{routePath=new URL(request.url).pathname;}catch{return reply(404,'not_found');}
+  if(routePath!==`/api/content/dev/workspaces/${workspaceId}/campaign-drafts`)return reply(404,'not_found');
   // Reject cross-origin browser writes before authentication or database access.
   // Browser clients must use same-origin requests; no permissive CORS is offered.
   const origin=request.headers.get('origin');
