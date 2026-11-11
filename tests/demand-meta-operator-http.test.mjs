@@ -228,3 +228,29 @@ test("Meta malformed JSON after HTTP 200 is a sanitized provider failure, not te
   assert.equal(calls,stage==="insights"?1:2);
  }
 });
+
+test("Meta HTTP 200 malformed Insights schema is a sanitized 502, never a tenant denial",async()=>{
+ const h=build({transport:async()=>({ok:true,json:async()=>({data:[{spend:"not-a-number"}]})})});
+ const response=await h.handler(req());
+ assert.equal(response.status,502);
+ assert.deepEqual(await response.json(),{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
+ assert.deepEqual(h.counts(),{reads:1,auth:1,tokenReads:1});
+});
+test("Meta HTTP 200 malformed object status is a sanitized 502 after valid Insights",async()=>{
+ const h=build({transport:async(u)=>u.includes("/insights?")
+  ?{ok:true,json:async()=>({data:[]})}
+  :{ok:true,json:async()=>({id:"wrong-object",effective_status:"PAUSED"})}});
+ const response=await h.handler(req());
+ assert.equal(response.status,502);
+ assert.deepEqual(await response.json(),{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
+ assert.deepEqual(h.counts(),{reads:2,auth:1,tokenReads:1});
+});
+test("post-provider tenant revocation remains 403 rather than a provider 502",async()=>{
+ let checks=0;
+ const h=build({authorize:async()=>{if(++checks===2)throw Error("revoked");return {principalId:"principal_123",tenantId:"tenant_12345"};}});
+ const response=await h.handler(req());
+ assert.equal(response.status,403);
+ assert.deepEqual(await response.json(),{error:"DEMAND_STATUS_DENIED"});
+ assert.equal(h.counts().reads,2);
+ assert.equal(checks,2);
+});
