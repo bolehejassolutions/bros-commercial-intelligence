@@ -53,3 +53,15 @@ test("direct Insights reader accepts exactly 31 inclusive days and rejects 32 be
   assert.equal(calls,0);
  }
 });
+
+
+test("MYR spend rejects fractional cents rather than silently rounding provider observations",async()=>{
+ for(const spend of ["0.001","0.009","1.999","0.000","12.345","1e-3","-0.01"]){
+  await assert.rejects(read(req,token,transport({data:[{...row,spend}]})),denied,spend);
+ }
+ for(const [spend,expected] of [["0",0],["0.00",0],["0.01",0.01],["1.2",1.2],["124.93",124.93]]){
+  const observed=await read(req,token,transport({data:[{...row,spend}]}));
+  assert.equal(observed.spend,expected,spend);
+  assert.equal(observed.state,"PROVIDER_ROW");
+ }
+});
