@@ -43,6 +43,7 @@ test('HTTP does not disclose writer exceptions or acknowledge a failed commit',a
  const handler=createContentCampaignDraftPost(auth,async()=>{throw new Error(secret);});
  const response=await handler(makeRequest(),workspace);
  assert.equal(response.status,503);
- assert.deepEqual(await response.json(),{error:'draft_unavailable'});
- assert.equal((await response.clone().text()).includes(secret),false);
+ const raw=await response.text();
+ assert.deepEqual(JSON.parse(raw),{error:'draft_unavailable'});
+ assert.equal(raw.includes(secret),false);
 });
