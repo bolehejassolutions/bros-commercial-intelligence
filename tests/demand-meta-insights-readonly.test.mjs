@@ -77,3 +77,13 @@ test("Meta impression and click counters reject fractional, exponential and unsa
   }
  }
 });
+
+test("MYR spend parses exact cents and rejects unsafe or lossy numeric conversion",async()=>{
+ for(const spend of ["90071992547409.92","900719925474099.00","999999999999999999.99"]){
+  await assert.rejects(read(req,token,transport({data:[{...row,spend}]})),denied,spend);
+ }
+ for(const [spend,expected] of [["1000.01",1000.01],["123456.78",123456.78],["0.99",0.99]]){
+  const observed=await read(req,token,transport({data:[{...row,spend}]}));
+  assert.equal(observed.spend,expected,spend);
+ }
+});
