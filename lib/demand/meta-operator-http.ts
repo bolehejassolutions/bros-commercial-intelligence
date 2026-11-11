@@ -41,6 +41,7 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
   // Bound concurrent read-only observations per handler instance; never queue or retry provider reads.
   if(inFlight>=2)return reply(429,{error:"DEMAND_STATUS_BUSY"});
   inFlight++;
+  let providerFailed=false, tokenMissing=false;
   try{
    const resolveScope=async():Promise<VerifiedDemandScope>=>{
     const scope=await deps.authorize(auth.slice(7));
@@ -54,12 +55,16 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
       ...(deps.adsetId?[{kind:"adset" as const,objectId:deps.adsetId}]:[]),
       ...(deps.adId?[{kind:"ad" as const,objectId:deps.adId}]:[])]
    },resolveScope,async()=>{
-    const token=deps.readToken();if(!token)throw Error("NO_SERVER_TOKEN");return token;
-   },deps.transport,deps.now);
+    const token=deps.readToken();if(!token){tokenMissing=true;throw Error("NO_SERVER_TOKEN");}return token;
+   },async(url,init)=>{try{return await deps.transport(url,init);}catch(error){providerFailed=true;throw error;}},deps.now);
    return reply(200,{source:"META_GRAPH_API_UNATTESTED",observedAt:result.observedAt,
     insights:result.insights,status:result.status,verifiedPaidOrders:null,
     executionAllowed:false,providerAuthorizationIndependentlyAttested:false});
-  }catch{return reply(403,{error:"DEMAND_STATUS_DENIED"});}
+  }catch{
+   if(tokenMissing)return reply(503,{error:"DEMAND_META_CREDENTIAL_UNAVAILABLE"});
+   if(providerFailed)return reply(502,{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
+   return reply(403,{error:"DEMAND_STATUS_DENIED"});
+  }
   finally{inFlight--;}
  };
 }
