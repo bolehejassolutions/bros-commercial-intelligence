@@ -26,6 +26,12 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
      url.searchParams.size!==2||
      url.searchParams.getAll("since").length!==1||
      url.searchParams.getAll("until").length!==1)return reply(400,{error:"INVALID_REQUEST"});
+  // Reject malformed or oversized reporting windows before membership/provider work.
+  const validDay=(value:string|null)=>typeof value==="string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+    Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10)===value;
+  const since=url.searchParams.get("since"),until=url.searchParams.get("until");
+  if(!validDay(since)||!validDay(until)||since!>until!||
+    (Date.parse(until!)-Date.parse(since!))/86400000>31)return reply(400,{error:"INVALID_REPORTING_WINDOW"});
   const auth=request.headers.get("authorization");
   if(!auth||auth.length>16007||!/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(auth))return reply(401,{error:"UNAUTHORIZED"});
   // Bound concurrent read-only observations per handler instance; never queue or retry provider reads.
