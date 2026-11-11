@@ -37,3 +37,19 @@ test("Meta may report multiple clicks per impression; retain exact provider coun
  assert.equal(observed.spend,0.2);
  assert.equal(observed.executionAllowed,false);
 });
+
+test("direct Insights reader accepts exactly 31 inclusive days and rejects 32 before Meta transport",async()=>{
+ const accepted={...req,since:"2026-10-01",until:"2026-10-31"};
+ let acceptedCalls=0;
+ const valid=await read(accepted,token,async()=>{acceptedCalls++;return {ok:true,json:async()=>({data:[]})};});
+ assert.equal(valid.state,"NO_ROWS_NOT_ZERO");
+ assert.equal(acceptedCalls,1);
+ for(const invalid of [
+  {...req,since:"2026-10-01",until:"2026-11-01"},
+  {...req,since:"2026-01-01",until:"2026-02-01"}
+ ]){
+  let calls=0;
+  await assert.rejects(read(invalid,token,async()=>{calls++;throw Error("unexpected provider access");}),denied);
+  assert.equal(calls,0);
+ }
+});
