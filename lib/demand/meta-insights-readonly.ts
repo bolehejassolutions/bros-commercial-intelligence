@@ -4,7 +4,7 @@ export type InsightsRequest = Readonly<{accountId:string;apiVersion:string;since
 const deny = ():never => {throw Error("BROS_DEMAND_META_INSIGHTS_READ_FAILED");};
 const obj = (x:unknown):x is Record<string,unknown> => !!x && typeof x==="object" && !Array.isArray(x);
 const date = (x:unknown):x is string => typeof x==="string" && /^\d{4}-\d{2}-\d{2}$/.test(x) && !Number.isNaN(Date.parse(x)) && new Date(Date.parse(x)).toISOString().slice(0,10)===x;
-const metric = (x:unknown):number => typeof x==="string" && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(x) && Number.isFinite(Number(x)) ? Number(x) : deny();
+// Impression and click counts are discrete observations: never coerce fractional textual counts.\nconst metric = (x:unknown):number => typeof x==="string" && /^(?:0|[1-9]\d*)$/.test(x) && Number.isSafeInteger(Number(x)) ? Number(x) : deny();
 // MYR account spend must be an exact non-negative cent amount; never silently round sub-cent provider values.
 const spendMetric = (x:unknown):number => typeof x==="string" && /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(x) &&
  Number.isSafeInteger(Math.round(Number(x)*100)) ? Number(x) : deny();
