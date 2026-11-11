@@ -30,7 +30,8 @@ const validIssuer = (value: unknown): value is string => {
   if (typeof value !== "string" || !value.startsWith("https://") || /[\u0000-\u0020\u007f]/.test(value)) return false;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && !!url.hostname && !url.username &&
+    return (url.href === value || (url.href === `${value}/` && url.pathname === "/")) &&
+      url.protocol === "https:" && !!url.hostname && !url.username &&
       !url.password && !url.search && !url.hash;
   } catch { return false; }
 };
