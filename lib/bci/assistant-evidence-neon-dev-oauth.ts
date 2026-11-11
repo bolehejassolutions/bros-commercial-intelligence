@@ -107,7 +107,7 @@ export function createBusinessOsDevOAuthVerifier(
           !unixTime(v.exp) || v.exp * 1000 <= clock ||
           v.exp * 1000 - clock > MAX_TTL_S * 1000 ||
           (v.nbf !== undefined && (!unixTime(v.nbf) || v.nbf * 1000 > clock)) ||
-          (v.iat !== undefined && (!unixTime(v.iat) || v.iat * 1000 > clock)) ||
+          (v.iat !== undefined && (!unixTime(v.iat) || v.iat * 1000 > clock ||\n            v.iat > v.exp || v.exp - v.iat > MAX_TTL_S)) ||
           (v.scope !== undefined && typeof v.scope !== "string")) return null;
       // A JWT can remain valid despite logout or resource disablement.
       // An independent LIVE check is required on EVERY call, including the
