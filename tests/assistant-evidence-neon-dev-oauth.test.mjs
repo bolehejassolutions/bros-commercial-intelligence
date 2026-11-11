@@ -112,7 +112,7 @@ test("expiry, not-before, future issuance, oversized TTL and invalid clock deny"
     { exp: now }, { exp: now - 1 }, { exp: now + 3601 },
     { exp: "future" }, { exp: 99999999999999 },
     { nbf: now + 1 }, { nbf: "future" },
-    { iat: now + 1 }, { iat: null },
+    { iat: now + 1 }, { iat: null },\n    { iat: now - 7200 }, { iat: now + 1800, exp: now + 1200 },
   ]) assert.equal(await harness({ claims: claims(change) }).verifyToken("fixture.jwt.signature"), null);
   assert.equal(await harness({ now: NaN }).verifyToken("fixture.jwt.signature"), null);
 });
