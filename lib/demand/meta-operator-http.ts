@@ -56,7 +56,13 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
       ...(deps.adsetId?[{kind:"adset" as const,objectId:deps.adsetId}]:[]),
       ...(deps.adId?[{kind:"ad" as const,objectId:deps.adId}]:[])]
    },resolveScope,async()=>{
-    const token=deps.readToken();if(!token){tokenMissing=true;throw Error("NO_SERVER_TOKEN");}return token;
+    const token=deps.readToken();
+    // Reject missing, malformed or oversized server credentials before any provider request.
+    // Meta access tokens are opaque ASCII non-whitespace strings; never trim or repair them.
+    if(typeof token!=="string"||token.length<1||token.length>4096||!/^[\x21-\x7e]+$/.test(token)){
+     tokenMissing=true;throw Error("INVALID_SERVER_TOKEN");
+    }
+    return token;
    },async(url,init)=>{try{providerReads++;
     const response=await deps.transport(url,init);
     // Meta non-2xx responses are provider failures, not tenant authorization denials.
