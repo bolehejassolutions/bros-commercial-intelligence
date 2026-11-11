@@ -163,3 +163,19 @@ test("invalid and overlong reporting windows are rejected before authentication 
   assert.deepEqual(h.counts(),{reads:0,auth:0,tokenReads:0});
  }
 });
+
+test("Insights accepts 31 inclusive historical days and rejects future and 32-day windows before authorization",async()=>{
+ const accepted="https://internal.example/api/internal/demand-meta-status?since=2026-10-01&until=2026-10-31";
+ const valid=build();assert.equal((await valid.handler(req(accepted))).status,200);
+ for(const query of [
+  "since=2026-10-01&until=2026-11-01",
+  "since=2026-11-11&until=2026-11-12",
+  "since=2026-12-01&until=2026-12-01"
+ ]){
+  const h=build();
+  const response=await h.handler(req("https://internal.example/api/internal/demand-meta-status?"+query));
+  assert.equal(response.status,400,query);
+  assert.deepEqual(await response.json(),{error:"INVALID_REPORTING_WINDOW"});
+  assert.deepEqual(h.counts(),{reads:0,auth:0,tokenReads:0});
+ }
+});
