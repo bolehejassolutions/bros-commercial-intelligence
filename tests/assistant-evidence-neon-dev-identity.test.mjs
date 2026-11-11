@@ -125,6 +125,7 @@ test("issuer configuration rejects credential-bearing, malformed and query/fragm
     "https://", "https://user:password@auth.example.test",
     "https://auth.example.test?issuer=other", "https://auth.example.test#other",
     "https://auth.example.test:invalid", "https://auth.example.test" + String.fromCharCode(10) + ".evil.test",
+    "https://auth.example.test\\\\@evil.test", "https://auth.example.test/%2e%2e/other",
   ]) {
     assert.throws(() => createBusinessOsDevIdentityVerifier(async () => session,
       { issuer: invalidIssuer, audience }, () => NOW),
