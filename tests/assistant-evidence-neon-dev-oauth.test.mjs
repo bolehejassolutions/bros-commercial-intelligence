@@ -167,3 +167,24 @@ test("non-routed HTTP OAuth composition denies revoked token BEFORE either restr
   assert.equal(memberships, 0);
   assert.equal(evidence, 0);
 });
+
+
+test("live-status adapter cannot rewrite verified principal or expiry during await", async () => {
+  const signedClaims = claims();
+  const originalExpiry = new Date(EXP * 1000).toISOString();
+  const verifier = createBusinessOsDevOAuthVerifier(config,
+    async () => signedClaims,
+    async ({ subjectId, clientId }) => {
+      assert.equal(subjectId, sub);
+      assert.equal(clientId, client);
+      signedClaims.sub = "22222222-2222-4222-8222-222222222222";
+      signedClaims.client_id = otherClient;
+      signedClaims.exp = EXP + 99999;
+      await Promise.resolve();
+      return true;
+    }, () => NOW);
+  const result = await verifier("fixture.jwt.signature");
+  assert.equal(result.subjectId, sub);
+  assert.equal(result.expiresAt, originalExpiry);
+  assert.equal(Object.isFrozen(result), true);
+});
