@@ -85,7 +85,12 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
           !Number.isFinite(now) || Date.parse(principal.expiresAt) <= now) {
         return reply(401, { error: "authentication_required" });
       }
-      // Snapshot the validated identity before awaiting mutable server adapters.\n      // Never compare against an object that an asynchronous adapter can mutate.\n      const verifiedSubjectId = principal.subjectId;\n      const verifiedSessionId = principal.sessionId;\n      const verifiedExpiry = principal.expiresAt;\n      const granted = await deps.hasEvidenceReadGrant(verifiedSubjectId, selection);
+      // Snapshot the validated identity before awaiting mutable server adapters.
+      // Never compare against an object that an asynchronous adapter can mutate.
+      const verifiedSubjectId = principal.subjectId;
+      const verifiedSessionId = principal.sessionId;
+      const verifiedExpiry = principal.expiresAt;
+      const granted = await deps.hasEvidenceReadGrant(verifiedSubjectId, selection);
       if (granted !== true) return reply(403, { error: "access_denied" });
       const rows = await deps.listScopedReceipts({ ...selection, maxRows: 20 });
       // A restricted repository must enforce its SQL LIMIT independently; never
