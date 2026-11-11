@@ -122,7 +122,11 @@ export function createBusinessOsDevOAuthVerifier(
       const active = await verifyLiveTokenStatus({
         bearer, subjectId, clientId: verifiedClientId, tokenDigest,
       });
-      if (active !== true) return null;
+      // The live-status check is asynchronous: expiry can occur while awaiting it.
+      // Re-check the clock immediately before returning an authorized principal.
+      const disclosureClock = now();
+      if (active !== true || !Number.isFinite(disclosureClock) ||
+          v.exp * 1000 <= disclosureClock) return null;
       return Object.freeze({
         subjectId,
         sessionId: "oauth:" + tokenDigest,
