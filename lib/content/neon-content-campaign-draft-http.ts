@@ -5,7 +5,7 @@ import { ContentReadDenied } from './neon-content-workspace-reader.ts';
 type Principal = Readonly<{userId:string;authenticated:true}>;
 type Verify = (request:Request)=>Promise<Principal|null>;
 type Create = (principal:Principal, workspaceId:string, draft:Draft, key:string)=>Promise<unknown>;
-type Draft = {product_service:string;audience:string;description:string;problem:string;objective:string;duration_days:number;platforms:string[]};
+type Draft = {product_service:string;audience:string;description:string;problem:string;objective:string;duration_days:number;platforms:readonly string[]};
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const reply=(status:number,error:string)=>new Response(JSON.stringify({error}),{status,headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff','vary':'Cookie, Authorization'}});
 const own=(o:object,k:string)=>Object.prototype.hasOwnProperty.call(o,k);
@@ -54,7 +54,7 @@ export function createContentCampaignDraftPost(verify:Verify,create:Create) {
    return reply(400,'invalid_draft');
   const draft:Draft={product_service:(v.product_service as string).trim(),audience:(v.audience as string).trim(),
    description:(v.description as string)||'',problem:(v.problem as string)||'',objective:(v.objective as string)||'',
-   duration_days:(v.duration_days as number)||7,platforms:Object.freeze((v.platforms as string[]).map(p=>p.toLowerCase())) as unknown as string[]};
+   duration_days:(v.duration_days as number)||7,platforms:Object.freeze((v.platforms as string[]).map(p=>p.toLowerCase()))};
   try{
    const data=await create(Object.freeze({userId:principal.userId,authenticated:true}),workspaceId,Object.freeze(draft),key);
    // Never acknowledge a saved draft unless the restricted writer returns a persisted draft identity.
