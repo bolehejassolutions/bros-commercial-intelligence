@@ -9,6 +9,7 @@ import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft
 import {confirmContentDraftReadback} from '@/lib/content/neon-content-draft-readback';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
 import {scopeContentCampaignItems} from '@/lib/content/neon-content-campaign-items';
+import {summarizeContentCampaignInventory} from '@/lib/content/neon-content-campaign-inventory';
 import {filterContentCampaigns} from '@/lib/content/neon-content-campaign-search';
 import {buildContentCampaignBrief} from '@/lib/content/neon-content-campaign-brief';
 import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-preview';
@@ -256,8 +257,12 @@ export default function ContentWorkspaceClient(){
      <div style={{display:'grid',gap:12}}>{filterContentCampaigns(detailLoad.data.campaigns,campaignQuery).map(c=>{
       const scopedItems=scopeContentCampaignItems(c.id,detailLoad.data.contentItems,detailLoad.data.scenes);
       const items=scopedItems.map(row=>row.item);
+      const inventory=summarizeContentCampaignInventory(scopedItems);
       return <article key={c.id} style={{borderTop:'1px solid #34445c',paddingTop:12}}>
        <p style={{fontSize:11,letterSpacing:1,color:gold,margin:'0 0 6px'}}>{safeText(c.status).toUpperCase()} · {items.length} KANDUNGAN</p>
+       <p style={{fontSize:12,color:'#b6c1cf',margin:'0 0 8px'}} aria-label="Inventori kandungan tersimpan">
+        {inventory.scripts} skrip · {inventory.visualPrompts} prompt visual · {inventory.scenes} scene · {inventory.other+inventory.sceneGroups} item lain. Inventori teks sahaja; aset media belum disahkan.
+       </p>
        <h3 style={{fontSize:17,margin:'4px 0 8px'}}>{safeText(c.product_service)}</h3>
        <details style={{margin:'8px 0'}}><summary style={{cursor:'pointer',color:gold,fontSize:13}}>Lihat butiran draf / brief asal</summary>
         <dl style={{margin:'10px 0',display:'grid',gap:8}}>
