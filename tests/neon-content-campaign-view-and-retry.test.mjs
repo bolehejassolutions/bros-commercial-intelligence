@@ -74,7 +74,8 @@ test('untrusted content cannot inject unknown platforms, duplicate captions, or 
     {day:91,platform:'tiktok',content_type:'video',objective:'Wrong day'}],
   angles:[null,{title:'Valid',hook:'Short',reason:'Context'}]
  });
- // Both normalized Facebook entries are ambiguous; never select the first.\n assert.deepEqual(v.captions,[]);
+ // Both normalized Facebook entries are ambiguous; never select the first.
+ assert.deepEqual(v.captions,[]);
  assert.equal(v.publishPlan.length,1);
  assert.equal(v.angles.length,1);
 });
