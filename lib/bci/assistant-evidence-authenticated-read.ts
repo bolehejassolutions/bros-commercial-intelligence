@@ -105,9 +105,7 @@ export function createDevEvidenceReadHandler(deps: ReadEvidenceDependencies) {
       const nowAfterRead = deps.now ? deps.now() : Date.now();
       if (!stillVerified || stillVerified.subjectId !== principal.subjectId ||
           stillVerified.expiresAt !== principal.expiresAt ||
-          (principal.sessionId !== undefined &&
-            (typeof principal.sessionId !== "string" || !ID.test(principal.sessionId) ||
-              stillVerified.sessionId !== principal.sessionId)) ||
+          stillVerified.sessionId !== principal.sessionId ||
           !Number.isFinite(nowAfterRead) ||
           Date.parse(principal.expiresAt) <= nowAfterRead) {
         return reply(401, { error: "authentication_required" });
