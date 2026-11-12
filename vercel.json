@@ -2,7 +2,8 @@
   "git": {
     "deploymentEnabled": {
       "work/demand-campaign-insights-20261113": false,
-      "work/demand-monitor-response-validation-20261113": false
+      "work/demand-monitor-response-validation-20261113": false,
+      "work/demand-monitor-browser-acceptance-20261113": false
     }
   },
   "crons": [
