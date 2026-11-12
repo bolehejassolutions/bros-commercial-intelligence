@@ -1,0 +1,33 @@
+name: DEMAND monitor browser acceptance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/demand-monitor-browser.yml'
+      - 'app/internal/demand-meta-test/**'
+      - 'app/api/internal/demand-meta/**'
+      - 'lib/demand/meta-monitor-response.ts'
+      - 'lib/demand/meta-insights-readonly.ts'
+      - 'lib/demand/meta-status-*.ts'
+      - 'lib/demand/meta-operator-*.ts'
+      - 'tests/browser/demand-monitor*'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install project and isolated Chromium test dependencies
+        run: npm install --ignore-scripts --no-package-lock --no-save playwright@1.62.1
+      - name: Install Chromium
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+      - name: Test the real monitor and route with an isolated operator and provider fixture
+        run: node --test tests/browser/demand-monitor.browser.test.mjs
