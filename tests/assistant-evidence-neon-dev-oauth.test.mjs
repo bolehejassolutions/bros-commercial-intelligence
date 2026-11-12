@@ -214,3 +214,20 @@ test("token remains valid when live-status verification completes before expiry"
     }, () => clock);
   assert.equal((await verifier("fixture.jwt.signature"))?.subjectId, sub);
 });
+
+test("mutable OAuth configuration cannot retarget issuer or audience after construction", async () => {
+  const mutable = { issuer, resource, allowedClientIds: [client] };
+  const verifier = createBusinessOsDevOAuthVerifier(mutable,
+    async () => claims(), async () => true, () => NOW);
+  mutable.issuer = "https://attacker.example.test/auth";
+  mutable.resource = "https://attacker.example.test/mcp";
+  mutable.allowedClientIds[0] = otherClient;
+  assert.equal((await verifier("fixture.jwt.signature"))?.subjectId, sub);
+  assert.equal(await createBusinessOsDevOAuthVerifier(mutable,
+    async () => claims(), async () => true, () => NOW)("fixture.jwt.signature"), null);
+  const forged = createBusinessOsDevOAuthVerifier(
+    { issuer, resource, allowedClientIds: [client] },
+    async () => claims({ iss: mutable.issuer, aud: mutable.resource }),
+    async () => true, () => NOW);
+  assert.equal(await forged("fixture.jwt.signature"), null);
+});
