@@ -60,7 +60,7 @@ async function waitForApp(origin, child) {
   throw Error('DEMAND fixture app did not start');
 }
 
-test('DEMAND browser renders account and campaign reports and withholds invalid figures', { timeout: 120000 }, async t => {
+test('DEMAND browser displays and copies validated reports and withholds invalid figures', { timeout: 120000 }, async t => {
   const scratch = join(repo, '.next');
   await mkdir(scratch, { recursive: true });
   const root = await mkdtemp(join(scratch, 'demand-monitor-browser-'));
@@ -88,10 +88,13 @@ test('DEMAND browser renders account and campaign reports and withholds invalid 
     assert.equal((await fetch(requestUrl('2025-03-03'))).status, 401);
     browser = await chromium.launch({ executablePath: process.env.DEMAND_BROWSER_CHROMIUM });
     const context = await browser.newContext();
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
     await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
     const page = await context.newPage();
     await page.goto(origin);
     const monitor = page.getByRole('region', { name: 'Meta Ads monitor' });
+    const copy = monitor.getByRole('button', { name: 'Copy report for comparison' });
+    assert.equal(await copy.count(), 0);
     const start = monitor.getByLabel('Insights start date');
     await start.fill('2025-03-03');
     await monitor.getByLabel('Insights end date').fill(until);
@@ -113,15 +116,42 @@ test('DEMAND browser renders account and campaign reports and withholds invalid 
     await monitor.getByText(/^RM\s*25\.67$/).waitFor();
     await monitor.getByText(/^RM\s*12\.34$/).waitFor();
 
+    const copiedReport = async () => {
+      await copy.click();
+      await monitor.getByText('Report copied.', { exact: true }).waitFor();
+      return page.evaluate(() => navigator.clipboard.readText());
+    };
+    assert.equal(await copiedReport(), [
+      'BROS DEMAND Meta Ads report',
+      'Source: Meta Graph API',
+      'Account: act_10000000001',
+      'Campaign: 20000000001',
+      'Window: 2025-03-03 to 2025-03-09 inclusive (Asia/Kuala_Lumpur)',
+      'Currency: MYR',
+      `Collected: ${first.collectedAt}`,
+      'Account Insights: Spend MYR 25.67 | Impressions 900 | Clicks 30',
+      'Campaign Insights: Spend MYR 12.34 | Impressions 315 | Clicks 9',
+    ].join('\n'));
+
     const empty = await read('2025-03-04');
     assert.equal(empty.campaignInsights.state, 'NO_ROWS_NOT_ZERO');
     await monitor.getByText('Meta returned no rows. Spend, impressions and clicks are unknown.').waitFor();
     assert.equal(await monitor.getByText(/^RM\s*12\.34$/).count(), 0);
     await monitor.getByText(/^RM\s*25\.67$/).waitFor();
+    assert.match(await copiedReport(), /Campaign Insights: Spend unknown \| Impressions unknown \| Clicks unknown \(Meta returned no rows\)/);
 
     const zero = await read('2025-03-05');
     assert.equal(zero.campaignInsights.spend, 0);
     await monitor.getByText(/^RM\s*0\.00$/).waitFor();
+    const zeroReport = await copiedReport();
+    assert.match(zeroReport, /Campaign Insights: Spend MYR 0\.00 \| Impressions 0 \| Clicks 0/);
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = async () => { throw new DOMException('Fixture denial', 'NotAllowedError'); };
+    });
+    await copy.click();
+    const manual = monitor.getByRole('textbox', { name: 'Meta report for manual copy' });
+    await manual.waitFor();
+    assert.equal(await manual.inputValue(), zeroReport);
 
     await page.route(requestUrl('2025-03-06'), async route => {
       const response = await route.fetch();
@@ -133,6 +163,8 @@ test('DEMAND browser renders account and campaign reports and withholds invalid 
     await monitor.getByText('The Meta report was incomplete or did not match the requested scope.').waitFor();
     assert.equal(await monitor.getByRole('heading', { name: 'Account Insights', exact: true }).count(), 0);
     assert.equal(await monitor.getByRole('heading', { name: 'Campaign Insights', exact: true }).count(), 0);
+    assert.equal(await copy.count(), 0);
+    assert.equal(await manual.count(), 0);
   } catch (error) {
     t.diagnostic(output);
     throw error;
