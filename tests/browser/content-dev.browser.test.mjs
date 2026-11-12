@@ -249,6 +249,20 @@ test('browser verifies authenticated campaign content, draft persistence and ten
       [workspaceId, newDraft],
     );
     assert.deepEqual(rows, [{status: 'draft', platforms: ['instagram']}]);
+    // An expired browser session must not retain authenticated workspace access.
+    // This is synthetic-session acceptance, not connected Neon Auth acceptance.
+    await ownerContext.clearCookies();
+    await page.reload();
+    await page.getByText('Sesi Neon Auth belum disahkan.').waitFor();
+    assert.equal((await ownerContext.request.get(apiUrl)).status(), 401);
+    assert.equal(await page.getByRole('heading', {name: existingCampaign, exact: true}).count(), 0);
+    assert.equal(await page.getByRole('heading', {name: newDraft, exact: true}).count(), 0);
+
+    // Re-authentication should recover the same durable draft from PostgreSQL.
+    await ownerContext.addCookies([{name: 'content-browser-fixture', value: ownerSession, url: origin, httpOnly: true}]);
+    await page.reload();
+    await page.getByRole('button', {name: workspaceName, exact: true}).click();
+    await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
   } catch (error) {
     t.diagnostic(nextOutput);
     throw error;
