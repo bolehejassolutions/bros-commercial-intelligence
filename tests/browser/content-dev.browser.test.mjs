@@ -21,6 +21,7 @@ const workspaceName = 'Kedai Rimba — ujian pelayar ' + workspaceId.slice(0, 8)
 const businessDna = {brand_name: 'Kedai Rimba', audience: {segment: 'Pemilik bengkel kecil'}};
 const existingCampaign = 'Kempen susulan Kedai Rimba';
 const newDraft = 'Sesi servis hujung minggu';
+const deniedDraft = {product_service: 'Denied tenant draft', audience: 'Fixture audience', description: '', problem: '', objective: '', duration_days: 7, platforms: ['instagram']};
 const brief = {
   product_service: existingCampaign, audience: businessDna.audience.segment,
   description: 'Servis berkala untuk pelanggan bengkel', problem: 'Pelanggan terlepas tarikh servis',
@@ -199,7 +200,8 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await anonymousPage.getByText('Sesi Neon Auth belum disahkan.').waitFor();
     assert.equal((await anonymousContext.request.get(apiUrl)).status(), 401);
     const anonymousDraftWrite = await anonymousContext.request.post(apiUrl + '/campaign-drafts', {
-      data: {product_service: 'Anonymous draft should never persist'},
+      headers: {'idempotency-key': 'anonymous-denied-fixture-20261112'},
+      data: deniedDraft,
     });
     assert.equal(anonymousDraftWrite.status(), 401);
 
@@ -213,8 +215,8 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     // An authenticated user from another tenant must not write into this workspace,
     // even when supplying the owner's identity in an untrusted request header.
     const foreignDraftWrite = await foreignContext.request.post(apiUrl + '/campaign-drafts', {
-      headers: {'x-user-id': owner},
-      data: {product_service: 'Cross-tenant draft should never persist'},
+      headers: {'x-user-id': owner, 'idempotency-key': 'foreign-denied-fixture-20261112'},
+      data: deniedDraft,
     });
     assert.equal(foreignDraftWrite.status(), 404);
     assert.deepEqual(await foreignDraftWrite.json(), {error: 'not_found'});
