@@ -83,8 +83,8 @@ async function prepareFixtureApp(root) {
       },
       include: ['app/**/*.ts', 'app/**/*.tsx'],
     })),
-    writeFile(join(root, 'app/layout.tsx'),
-      'export default function Layout({children}: {children: React.ReactNode}) {return <html lang="ms"><body>{children}</body></html>;}'),
+    cp(join(repo, 'app/layout.tsx'), join(root, 'app/layout.tsx')),
+    cp(join(repo, 'app/globals.css'), join(root, 'app/globals.css')),
     writeFile(join(pageDirectory, 'page.tsx'),
       "export const dynamic = 'force-dynamic';\nexport {default} from '@/app/content/dev/page';\n"),
     cp(join(repo, 'app/api/content/dev'), join(root, 'app/api/content/dev'), {recursive: true}),
@@ -141,7 +141,9 @@ test('browser verifies authenticated campaign content, draft persistence and ten
   });
   await prepareFixtureApp(fixtureRoot);
   const port = await findLocalPort();
-  const origin = 'http://127.0.0.1:' + port;
+  // Next dev normalizes the loopback IPv4 bind to localhost in Route Handler
+  // Request URLs. Use the same host in the browser's Origin.
+  const origin = 'http://localhost:' + port;
   const ownerSession = randomUUID();
   const foreignSession = randomUUID();
   const child = spawn(process.execPath, [
@@ -199,7 +201,7 @@ test('browser verifies authenticated campaign content, draft persistence and ten
 
     const foreignPage = await foreignContext.newPage();
     await foreignPage.goto(contentUrl);
-    await foreignPage.getByText('Other tenant campaign', {exact: true}).waitFor();
+    await foreignPage.getByRole('heading', {name: 'Other tenant campaign', exact: true}).waitFor();
     assert.equal(await foreignPage.getByRole('button', {name: workspaceName}).count(), 0);
     const denial = await foreignContext.request.get(apiUrl, {headers: {'x-user-id': owner}});
     assert.equal(denial.status(), 404);
