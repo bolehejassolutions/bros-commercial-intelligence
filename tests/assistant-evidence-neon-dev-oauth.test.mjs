@@ -231,3 +231,24 @@ test("mutable OAuth configuration cannot retarget issuer or audience after const
     async () => true, () => NOW);
   assert.equal(await forged("fixture.jwt.signature"), null);
 });
+
+test("accessor-backed verified claims cannot swap client identity after allowlist validation", async () => {
+  let reads = 0;
+  let statusCalls = 0;
+  const changingClaims = claims();
+  Object.defineProperty(changingClaims, "client_id", {
+    enumerable: true,
+    get() { return ++reads === 1 ? client : otherClient; },
+  });
+  const verifier = createBusinessOsDevOAuthVerifier(config,
+    async () => changingClaims,
+    async ({ clientId }) => {
+      statusCalls++;
+      assert.equal(clientId, client);
+      return true;
+    }, () => NOW);
+  const result = await verifier("fixture.jwt.signature");
+  assert.equal(result?.subjectId, sub);
+  assert.equal(reads, 1, "claim must be read once, not re-evaluated after validation");
+  assert.equal(statusCalls, 1);
+});
