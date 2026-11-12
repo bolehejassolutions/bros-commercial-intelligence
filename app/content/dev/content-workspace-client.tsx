@@ -3,6 +3,7 @@
  * No generative, credit, billing, campaign launch or publishing controls.
  */
 import {useEffect,useRef,useState,type FormEvent} from 'react';
+import ContentCreativeDraft from './content-creative-draft';
 import {createContentDetailReadGuard} from '@/lib/content/content-detail-read-guard';
 import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,shouldClearContentDraftAttempt,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
 import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
@@ -28,7 +29,7 @@ type Campaign={id:string;product_service?:string;audience?:string;status?:string
 type ContentItem={id:string;campaign_id:string;type?:string;title?:string;body?:unknown};
 type Scene={id:string;content_item_id:string;scene_number?:number;narration?:string;dialogue?:string;visual_prompt?:string;
  motion_prompt?:string;duration_seconds?:number|string;};
-type Details={workspace:Workspace;campaigns:Campaign[];contentItems:ContentItem[];scenes:Scene[]};
+type Details={workspace:Workspace;campaigns:Campaign[];contentItems:ContentItem[];scenes:Scene[];nextCursor?:string|null};
 type Draft={product_service:string;audience:string;description:string;problem:string;objective:string;duration_days:number;platforms:string[]};
 const initialDraft:Draft={product_service:'',audience:'',description:'',problem:'',objective:'',duration_days:7,platforms:['facebook']};
 const card:React.CSSProperties={background:'#14243a',border:'1px solid #34445c',borderRadius:14,padding:20};
@@ -158,6 +159,9 @@ export default function ContentWorkspaceClient(){
  const[notice,setNotice]=useState('');
  const[refresh,setRefresh]=useState(0);
  const[campaignQuery,setCampaignQuery]=useState('');
+ const[campaignPages,setCampaignPages]=useState<{workspaceId:string;cursors:string[]}>({workspaceId:'',cursors:[]});
+ const pageCursors=campaignPages.workspaceId===selected?campaignPages.cursors:[];
+ const before=pageCursors.at(-1);
  const pendingDraftAttempt=useRef<ContentDraftAttempt|null>(null);
  // Invalidate older campaign GET responses after a verified draft POST readback.
  const detailReadGuard=useRef(createContentDetailReadGuard());
@@ -173,6 +177,7 @@ export default function ContentWorkspaceClient(){
   if(!shouldResetContentDraftOnWorkspaceSwitch(previousWorkspaceRef.current,selected))return;
   previousWorkspaceRef.current=selected;
   setDraft(initialDraft);setCampaignQuery('');setError('');setNotice('');
+  setCampaignPages({workspaceId:selected,cursors:[]});
   setDetailLoad(initialWorkspaceLoad());
  },[selected]);
  useEffect(()=>{
@@ -194,7 +199,8 @@ export default function ContentWorkspaceClient(){
   let active=true;const readEpoch=detailReadGuard.current.beginRead();setDetailLoad(loadingWorkspace());
   (async()=>{
    try{
-    const res=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected),{cache:'no-store',credentials:'same-origin'});
+    const suffix=before?'?before='+encodeURIComponent(before):'';
+    const res=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected)+suffix,{cache:'no-store',credentials:'same-origin'});
     if(!res.ok)throw new Error(contentWorkspaceReadError(res.status));
     const detail=parseContentWorkspaceDetail(await res.json(),selected);
     if(active&&detailReadGuard.current.isCurrent(readEpoch))setDetailLoad(loadedWorkspace(detail));
@@ -202,7 +208,11 @@ export default function ContentWorkspaceClient(){
   
   })();
   return()=>{active=false;};
- },[selected,refresh]);
+ },[selected,refresh,before]);
+ function changeCampaignPage(cursors:string[]){
+  setDetailLoad(loadingWorkspace());
+  setCampaignPages({workspaceId:selected,cursors});
+ }
  function togglePlatform(platform:string){
   setDraft(previous=>({...previous,platforms:previous.platforms.includes(platform)
    ?previous.platforms.filter(p=>p!==platform):[...previous.platforms,platform]}));
@@ -234,6 +244,7 @@ export default function ContentWorkspaceClient(){
    const verified=confirmContentDraftReadback(await readback.json(),selected,receipt.id,submittedDraft);
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current)){
     detailReadGuard.current.supersedeWithVerifiedDraft();
+    setCampaignPages({workspaceId:selected,cursors:[]});
     setDetailLoad(loadedWorkspace(verified));
     setNotice('Draf kempen sudah disimpan. Anda boleh membukanya dalam senarai kempen.');
    }
@@ -242,8 +253,8 @@ export default function ContentWorkspaceClient(){
    if(shouldClearContentDraftAttempt(pendingDraftAttempt.current,attempt))pendingDraftAttempt.current=null;
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
     setDraft(current=>JSON.stringify(current)===submitted?initialDraft:current);
-   // The authenticated GET above is already the verified latest snapshot.
-   // Do not issue another GET: its loading/error state could hide a successful save.
+   // The authenticated GET above already verified the newest page. A save
+   // from an older page returns the user to the first page.
   }catch(e){if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
    setError(e instanceof Error?e.message:'Ralat menyimpan draf.');}
   finally{setSaving(false);}
@@ -285,7 +296,7 @@ export default function ContentWorkspaceClient(){
       </button>
      </div>
      <label style={{display:'grid',gap:6,margin:'12px 0',fontSize:13}}>
-      Cari kempen dalam workspace ini
+      Cari kempen pada halaman ini
       <input type="search" value={campaignQuery} onChange={event=>setCampaignQuery(event.target.value)}
        placeholder="Produk, sasaran, status atau objektif" style={field}/>
      </label>
@@ -317,7 +328,15 @@ export default function ContentWorkspaceClient(){
         </dl>
        </details>
        <CampaignLayers campaign={c} content={scopedItems}/>
+       <ContentCreativeDraft businessDna={detailLoad.data.workspace.business_dna} campaign={c}/>
       </article>})}</div>}
+     {(pageCursors.length>0||(detailLoad.status==='ready'&&detailLoad.data.nextCursor))&&<nav aria-label="Halaman kempen" style={{display:'flex',gap:10,marginTop:14}}>
+       <button type="button" disabled={saving||detailLoad.status==='loading'||pageCursors.length===0} onClick={()=>changeCampaignPage(pageCursors.slice(0,-1))}>
+        Halaman sebelumnya
+       </button>
+       {detailLoad.status==='ready'&&detailLoad.data.nextCursor&&<button type="button" disabled={saving}
+        onClick={()=>changeCampaignPage([...pageCursors,detailLoad.data.nextCursor!])}>Halaman seterusnya</button>}
+      </nav>}
     </section>
     {isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)?<section style={card}>
      <h2 style={{fontSize:20,marginTop:0}}>Draf kempen baharu</h2>

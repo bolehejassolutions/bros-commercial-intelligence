@@ -2,6 +2,8 @@
  * Not an HTTP route. Requires a separately provisioned restricted direct-login role.
  * No permissions are granted by this module.
  */
+import {MAX_CONTENT_SCENES_PER_ITEM} from './neon-content-generation-contract.ts';
+
 export class ContentReadDenied extends Error { constructor() { super("CONTENT access denied"); } }
 /** Valid access but too many rows for a complete response; never report this as 404. */
 export class ContentReadIncomplete extends Error { constructor() { super("CONTENT result exceeds supported read limit"); } }
@@ -19,8 +21,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const deny = (): never => {throw new ContentReadDenied();};
 export function createContentWorkspaceReader(transaction: Transaction) {
   if (typeof transaction !== "function") deny();
-  return async (principal: Principal, workspaceId: string) => {
-    if (principal?.authenticated !== true || !UUID.test(principal.userId) || !UUID.test(workspaceId)) deny();
+  return async (principal: Principal, workspaceId: string, before?: string) => {
+    if (principal?.authenticated !== true || !UUID.test(principal.userId) || !UUID.test(workspaceId) ||
+        (before !== undefined && !UUID.test(before))) deny();
     return transaction(async query => {
       const role = (await query(`SELECT current_user AS name, session_user AS login,
         rolcanlogin AS can_login, rolinherit AS inherits, rolbypassrls AS bypass,
@@ -57,14 +60,19 @@ export function createContentWorkspaceReader(transaction: Transaction) {
       if (workspace.length !== 1 || !UUID.test(String(workspace[0].tenant_id))) deny();
       if (workspace[0].id !== workspaceId) deny();
       const tenant = String(workspace[0].tenant_id);
-      const campaigns = (await query(`SELECT id,product_service,description,audience,problem,objective,
+      // Compare both ordering fields in PostgreSQL so timestamp precision is preserved.
+      // An out-of-scope cursor matches no row and cannot expose another tenant's data.
+      const cursorFilter = before ? `AND (created_at,id) < (
+        SELECT cursor_row.created_at,cursor_row.id FROM content_dev.campaigns cursor_row
+        WHERE cursor_row.tenant_id=$1::uuid AND cursor_row.workspace_id=$2::uuid
+        AND cursor_row.owner_principal_id=$3::uuid AND cursor_row.id=$4::uuid)` : '';
+      const scope = [tenant,workspaceId,principal.userId];
+      const page = (await query(`SELECT id,product_service,description,audience,problem,objective,
         duration_days,platforms,status,strategy,angles,captions,publish_plan,created_at,updated_at
         FROM content_dev.campaigns WHERE tenant_id=$1::uuid AND workspace_id=$2::uuid
-        AND owner_principal_id=$3::uuid ORDER BY created_at DESC,id DESC LIMIT 101`,
-        [tenant,workspaceId,principal.userId])).rows;
-      // Never present a truncated campaign list as a complete workspace.
-      // Fetch one sentinel row beyond the supported UI maximum.
-      requireCompleteContentRows(campaigns,100);
+        AND owner_principal_id=$3::uuid ${cursorFilter} ORDER BY created_at DESC,id DESC LIMIT 101`,
+        before ? [...scope,before] : scope)).rows;
+      const campaigns = page.slice(0,100);
       const contentItems: Row[] = [], scenes: Row[] = [];
       for (const campaign of campaigns) {
         if (!UUID.test(String(campaign.id))) deny();
@@ -80,12 +88,13 @@ export function createContentWorkspaceReader(transaction: Transaction) {
         const itemScenes=(await query(`SELECT id,content_item_id,scene_number,duration_seconds,
           narration,dialogue,visual_prompt,motion_prompt,continuity_lock
           FROM content_dev.scenes WHERE tenant_id=$1::uuid AND content_item_id=$2::uuid
-          ORDER BY scene_number,id LIMIT 101`,[tenant,String(item.id)])).rows;
-        requireCompleteContentRows(itemScenes,100);
+          ORDER BY scene_number,id LIMIT ${MAX_CONTENT_SCENES_PER_ITEM+1}`,[tenant,String(item.id)])).rows;
+        requireCompleteContentRows(itemScenes,MAX_CONTENT_SCENES_PER_ITEM);
         if (itemScenes.some(row => row.content_item_id !== item.id || !UUID.test(String(row.id)))) deny();
         scenes.push(...itemScenes);
       }
-      return {workspace:workspace[0],campaigns,contentItems,scenes};
+      const nextCursor = page.length>100 ? campaigns.at(-1)!.id : null;
+      return {workspace:workspace[0],campaigns,contentItems,scenes,nextCursor};
     });
   };
 }

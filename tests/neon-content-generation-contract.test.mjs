@@ -94,3 +94,26 @@ test('fail before paid call for invalid input or DNA; fail closed for broken fir
  });
  await assert.rejects(second(input,dna),ContentGenerationRejected);
 });
+
+
+test('tenant creative configuration reaches both planning and editorial QC',async()=>{
+ const calls=[];
+ const planner=createContentCampaignPlanner(async(prompt,_schema,name)=>{
+  calls.push(prompt);
+  return name==='bros_campaign'?plan:review;
+ });
+ const context={content_creative:{brand_id:'bros-sell',preset_ids:['SELL_MANGA_STORY','REAL_PRODUCT_SHOWCASE'],
+  communication_standard:'bros-sell-plain-language-v1'}};
+ const visual={presetId:'SELL_MANGA_STORY',aspectRatio:'4:5'};
+ await assert.rejects(planner(input,dna,visual),ContentGenerationRejected);
+ await assert.rejects(planner(input,context,{presetId:'REAL_PRODUCT_SHOWCASE',aspectRatio:'16:9'}),ContentGenerationRejected);
+ assert.equal(calls.length,0);
+ await planner(input,context,visual);
+ assert.match(calls[0],/KENA.*NAMPAK NILAI/);
+ assert.match(calls[0],/SELL_MANGA_STORY at 4:5/);
+ assert.match(calls[1],/kedai kopi/);
+ assert.match(calls[1],/SELL_MANGA_STORY and 4:5/);
+ await planner(input,{content_creative:{...context.content_creative,brand_id:'other-brand'}},visual);
+ assert.doesNotMatch(calls[2],/NAMPAK NILAI|BROS SELL/);
+ assert.doesNotMatch(calls[3],/kedai kopi|BROS SELL/);
+});

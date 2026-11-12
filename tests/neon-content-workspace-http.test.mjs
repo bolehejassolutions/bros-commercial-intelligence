@@ -41,3 +41,17 @@ test('database errors fail closed without leaking details',async()=>{
  assert.equal(res.status,503);
  assert.equal((await res.text()).includes('secret'),false);
 });
+
+
+test('cursor is bounded and is sent only with a verified principal and workspace',async()=>{
+ const cursor='44444444-4444-4444-8444-444444444444';
+ let reads=0;
+ const handler=createContentWorkspaceGet(async()=>({userId:A,authenticated:true}),async(p,id,before)=>{
+  reads++;assert.equal(p.userId,A);assert.equal(id,W);assert.equal(before,cursor);return {campaigns:[]};
+ });
+ for(const query of ['?before=', '?before=other', `?before=${cursor}&before=${cursor}`])
+  assert.equal((await handler(new Request(req().url+query),W)).status,400);
+ assert.equal(reads,0);
+ assert.equal((await handler(new Request(req().url+`?before=${cursor}`),W)).status,200);
+ assert.equal(reads,1);
+});
