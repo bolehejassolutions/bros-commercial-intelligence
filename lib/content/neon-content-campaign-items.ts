@@ -19,16 +19,26 @@ function canonicalJson(value:unknown):string{
  };
  return JSON.stringify(normalize(value));
 }
+// PostgreSQL JSONB rows are plain data. Reject accessor/prototype-backed rows
+// before any property reads, including the later filter and sort passes.
+function isPlainDataRow(value:unknown):boolean{
+ if(!value||typeof value!=='object'||Array.isArray(value))return false;
+ const proto=Object.getPrototypeOf(value);
+ if(proto!==Object.prototype&&proto!==null)return false;
+ return Object.values(Object.getOwnPropertyDescriptors(value)).every(d=>'value' in d);
+}
 export function scopeContentCampaignItems<I extends Item,S extends Scene>(
  campaignId:string,items:readonly I[],scenes:readonly S[]
 ):ReadonlyArray<Readonly<{item:I;scenes:readonly S[]}>>{
  if(!campaignId||!Array.isArray(items)||!Array.isArray(scenes))return Object.freeze([]);
+ const safeItems=items.filter(isPlainDataRow);
+ const safeScenes=scenes.filter(isPlainDataRow);
  // A scene carries only content_item_id. If the same item ID is claimed by
  // another campaign, its scene ownership cannot be established safely.
  const ambiguous=new Set<string>();
  const ownership=new Map<string,string>();
  const itemFingerprint=new Map<string,string>();
- for(const item of items){
+ for(const item of safeItems){
   if(!item||typeof item.id!=='string'||!item.id.length||typeof item.campaign_id!=='string')continue;
   const prior=ownership.get(item.id);
   if(prior!==undefined&&prior!==item.campaign_id)ambiguous.add(item.id);
@@ -46,7 +56,7 @@ export function scopeContentCampaignItems<I extends Item,S extends Scene>(
  const sceneOwner=new Map<string,string>();
  const sceneFingerprint=new Map<string,string>();
  const ambiguousScenes=new Set<string>();
- for(const scene of scenes){
+ for(const scene of safeScenes){
   if(!scene||typeof scene.id!=='string'||!scene.id.length||typeof scene.content_item_id!=='string')continue;
   const prior=sceneOwner.get(scene.id);
   if(prior!==undefined&&prior!==scene.content_item_id)ambiguousScenes.add(scene.id);
@@ -60,14 +70,14 @@ export function scopeContentCampaignItems<I extends Item,S extends Scene>(
   if(previous!==undefined&&previous!==fingerprint)ambiguousScenes.add(scene.id);
   else sceneFingerprint.set(scene.id,fingerprint);
  }
- const owned=items.filter(i=>i&&i.campaign_id===campaignId&&typeof i.id==='string'&&i.id.length>0&&!ambiguous.has(i.id));
+ const owned=safeItems.filter(i=>i&&i.campaign_id===campaignId&&typeof i.id==='string'&&i.id.length>0&&!ambiguous.has(i.id));
  const unique=new Set<string>();
  return Object.freeze(owned.filter(i=>{if(unique.has(i.id))return false;unique.add(i.id);return true;})
   .map(item=>{
    // Duplicate scene rows can otherwise render twice after a replay/readback.
    // Sort first, then keep one occurrence of each scene ID for this item.
    const sceneIds=new Set<string>();
-   const ordered=scenes.filter(s=>s&&s.content_item_id===item.id&&
+   const ordered=safeScenes.filter(s=>s&&s.content_item_id===item.id&&
     typeof s.id==='string'&&s.id.length>0&&!ambiguousScenes.has(s.id)).sort((a,b)=>
     (Number.isInteger(a.scene_number)&&Number(a.scene_number)>0?Number(a.scene_number):Number.MAX_SAFE_INTEGER)-
     (Number.isInteger(b.scene_number)&&Number(b.scene_number)>0?Number(b.scene_number):Number.MAX_SAFE_INTEGER));

@@ -120,3 +120,20 @@ test('non-JSON and cyclic replay payloads fail closed without affecting valid it
  const rows=scopeContentCampaignItems(a,[cycle,{id:'valid',campaign_id:a}],[]);
  assert.deepEqual(rows.map(row=>row.item.id),['valid']);
 });
+
+test('accessor-backed item and scene rows cannot execute getters during workspace projection',()=>{
+ let reads=0;
+ const badItem={campaign_id:a};
+ Object.defineProperty(badItem,'id',{enumerable:true,get(){reads++;throw new Error('untrusted getter');}});
+ const badScene={content_item_id:'safe'};
+ Object.defineProperty(badScene,'id',{enumerable:true,get(){reads++;throw new Error('untrusted getter');}});
+ const rows=scopeContentCampaignItems(a,[badItem,{id:'safe',campaign_id:a}],[badScene,{id:'valid',content_item_id:'safe'}]);
+ assert.equal(reads,0);
+ assert.deepEqual(rows.map(r=>r.item.id),['safe']);
+ assert.deepEqual(rows[0].scenes.map(s=>s.id),['valid']);
+});
+test('prototype-backed rows are rejected without hiding unrelated persisted content',()=>{
+ const forged=Object.create({id:'forged',campaign_id:a});
+ const rows=scopeContentCampaignItems(a,[forged,{id:'safe',campaign_id:a}],[]);
+ assert.deepEqual(rows.map(r=>r.item.id),['safe']);
+});
