@@ -258,11 +258,18 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await page.reload();
     await page.getByRole('button', {name: workspaceName, exact: true}).click();
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
+    // Rejected anonymous and foreign-tenant writes must leave no visible campaign records.
+    assert.equal(await page.getByRole('heading', {name: deniedDraft.product_service, exact: true}).count(), 0);
     const {rows} = await admin.query(
       'SELECT status, platforms FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
       [workspaceId, newDraft],
     );
     assert.deepEqual(rows, [{status: 'draft', platforms: ['instagram']}]);
+    const deniedRows = await admin.query(
+      'SELECT id FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
+      [workspaceId, deniedDraft.product_service],
+    );
+    assert.equal(deniedRows.rowCount, 0, 'rejected writes must not persist campaigns');
     // An expired browser session must not retain authenticated workspace access.
     // This is synthetic-session acceptance, not connected Neon Auth acceptance.
     await ownerContext.clearCookies();
