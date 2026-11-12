@@ -198,6 +198,10 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await anonymousPage.goto(contentUrl);
     await anonymousPage.getByText('Sesi Neon Auth belum disahkan.').waitFor();
     assert.equal((await anonymousContext.request.get(apiUrl)).status(), 401);
+    const anonymousDraftWrite = await anonymousContext.request.post(apiUrl + '/campaign-drafts', {
+      data: {product_service: 'Anonymous draft should never persist'},
+    });
+    assert.equal(anonymousDraftWrite.status(), 401);
 
     const foreignPage = await foreignContext.newPage();
     await foreignPage.goto(contentUrl);
@@ -206,6 +210,14 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     const denial = await foreignContext.request.get(apiUrl, {headers: {'x-user-id': owner}});
     assert.equal(denial.status(), 404);
     assert.deepEqual(await denial.json(), {error: 'not_found'});
+    // An authenticated user from another tenant must not write into this workspace,
+    // even when supplying the owner's identity in an untrusted request header.
+    const foreignDraftWrite = await foreignContext.request.post(apiUrl + '/campaign-drafts', {
+      headers: {'x-user-id': owner},
+      data: {product_service: 'Cross-tenant draft should never persist'},
+    });
+    assert.equal(foreignDraftWrite.status(), 404);
+    assert.deepEqual(await foreignDraftWrite.json(), {error: 'not_found'});
 
     const page = await ownerContext.newPage();
     await page.route(apiUrl, route => route.fulfill({
