@@ -97,3 +97,26 @@ test('byte-identical item replay remains visible exactly once',()=>{
  assert.deepEqual(rows[0].scenes.map(scene=>scene.id),['scene']);
  assert.equal(source.length,2);
 });
+
+test('JSONB key-order changes do not suppress identical item and scene replays',()=>{
+ const item={id:'jsonb',campaign_id:a,metadata:{z:1,a:{two:2,one:1}}};
+ const replay={metadata:{a:{one:1,two:2},z:1},campaign_id:a,id:'jsonb'};
+ const scene={id:'jsonb-scene',content_item_id:'jsonb',visual:{z:'last',a:'first'}};
+ const sceneReplay={visual:{a:'first',z:'last'},content_item_id:'jsonb',id:'jsonb-scene'};
+ const rows=scopeContentCampaignItems(a,[item,replay],[scene,sceneReplay]);
+ assert.deepEqual(rows.map(row=>row.item.id),['jsonb']);
+ assert.deepEqual(rows[0].scenes.map(row=>row.id),['jsonb-scene']);
+});
+test('nested JSONB value changes still suppress conflicting replay records',()=>{
+ const rows=scopeContentCampaignItems(a,[
+  {id:'changed',campaign_id:a,metadata:{nested:{value:'original'}}},
+  {id:'changed',campaign_id:a,metadata:{nested:{value:'tampered'}}},
+  {id:'safe',campaign_id:a}
+ ],[{id:'scene',content_item_id:'changed'}]);
+ assert.deepEqual(rows.map(row=>row.item.id),['safe']);
+});
+test('non-JSON and cyclic replay payloads fail closed without affecting valid items',()=>{
+ const cycle={id:'cycle',campaign_id:a};cycle.self=cycle;
+ const rows=scopeContentCampaignItems(a,[cycle,{id:'valid',campaign_id:a}],[]);
+ assert.deepEqual(rows.map(row=>row.item.id),['valid']);
+});
