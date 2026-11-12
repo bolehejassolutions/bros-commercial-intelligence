@@ -11,11 +11,19 @@ export function scopeContentCampaignItems<I extends Item,S extends Scene>(
  // another campaign, its scene ownership cannot be established safely.
  const ambiguous=new Set<string>();
  const ownership=new Map<string,string>();
+ const itemFingerprint=new Map<string,string>();
  for(const item of items){
   if(!item||typeof item.id!=='string'||!item.id.length||typeof item.campaign_id!=='string')continue;
   const prior=ownership.get(item.id);
   if(prior!==undefined&&prior!==item.campaign_id)ambiguous.add(item.id);
   else ownership.set(item.id,item.campaign_id);
+  // Replayed item IDs with conflicting payloads cannot be safely displayed.
+  // Suppress every copy rather than picking whichever arrived first.
+  let fingerprint:string;
+  try{fingerprint=JSON.stringify(item);}catch{ambiguous.add(item.id);continue;}
+  const previous=itemFingerprint.get(item.id);
+  if(previous!==undefined&&previous!==fingerprint)ambiguous.add(item.id);
+  else itemFingerprint.set(item.id,fingerprint);
  }
  // Scene identifiers must not be attributed to two different content items.
  // A malformed or mixed readback must never guess which item owns the scene.
