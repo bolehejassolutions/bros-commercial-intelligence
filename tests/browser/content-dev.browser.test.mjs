@@ -290,7 +290,7 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     }, {times: 1});
     await fillDraft();
     await submit.click();
-    await page.getByRole('alert').waitFor();
+    await page.getByRole('alert').filter({hasText: 'Simpanan draf belum dapat disahkan.'}).waitFor();
     assert.equal(firstPost.status(), 201);
     const initialReceipt = (await firstPost.json()).data;
     assert.equal(initialReceipt.status, 'draft');

@@ -240,6 +240,8 @@ export default function ContentWorkspaceClient(){
    const response=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected)+'/campaign-drafts',{
     method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','idempotency-key':attempt.key},
     body:submitted
+   }).catch(()=>{
+    throw new Error('Simpanan draf belum dapat disahkan. Cuba semula dengan butiran yang sama.');
    });
    if(!response.ok)throw new Error(contentDraftSaveHttpError(response.status));
    const receipt=parseContentDraftAcknowledgement(await response.json(),response.status);
