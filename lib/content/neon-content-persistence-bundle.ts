@@ -10,7 +10,7 @@
 import {createHash} from 'node:crypto';
 import {
  validateCampaignInput,validateCampaignPlan,validateQualityReview,
- evaluateQualityGate,ContentGenerationRejected,
+ evaluateQualityGate,ContentGenerationRejected,MAX_CONTENT_SCENES_PER_ITEM,
  type CampaignInput,type CampaignPlan,type QualityReview
 } from './neon-content-generation-contract.ts';
 
@@ -100,7 +100,7 @@ export function compileContentPersistenceBundle(
   visual_prompt:s.visual_prompt,motion_prompt:s.motion_prompt,
   continuity_lock:{} as Readonly<Record<string,never>>
  }));
- if(items.length>500||scenes.length>300)reject('Campaign exceeds persistence limits');
+ if(items.length>500||scenes.length>MAX_CONTENT_SCENES_PER_ITEM)reject('Campaign exceeds persistence limits');
  const expectedCounts={
   scripts:plan.scripts.length,visuals:plan.visuals.length,
   sceneCollections:plan.scenes.length?1:0,scenes:plan.scenes.length

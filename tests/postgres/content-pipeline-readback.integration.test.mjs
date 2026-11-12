@@ -7,6 +7,7 @@
  */
 import test,{after} from 'node:test';
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
 import pg from 'pg';
 import {createContentTransaction} from '../../lib/content/neon-content-transaction.ts';
 import {createContentCampaignPlanner} from '../../lib/content/neon-content-generation-orchestrator.ts';
@@ -328,4 +329,24 @@ test('disposable real PostgreSQL: deterministic seven-layer preview → QC → w
   const restored=await read(principal,WORKSPACE);
   assert.equal(restored.campaigns.some(x=>x.id===created.id),true);
  });
+});
+
+
+test('restricted campaign cursor pages equal timestamps and cannot cross a workspace or tenant',async()=>{
+ const workspaceId=randomUUID();
+ await admin.query(`INSERT INTO content_dev.workspaces (id,tenant_id,owner_principal_id,name)
+  VALUES ($1,$2,$3,'Pagination fixture')`,[workspaceId,TENANT,OWNER]);
+ await admin.query(`INSERT INTO content_dev.campaigns
+  (tenant_id,workspace_id,owner_principal_id,product_service,audience,duration_days,created_at)
+  SELECT $1,$2,$3,'Synthetic '||n,'Fixture',7,now() FROM generate_series(1,102) AS n`,[TENANT,workspaceId,OWNER]);
+ const first=await read(principal,workspaceId);
+ assert.equal(first.campaigns.length,100);
+ assert.equal(first.nextCursor,first.campaigns.at(-1).id);
+ const second=await read(principal,workspaceId,first.nextCursor);
+ assert.equal(second.campaigns.length,2);
+ assert.equal(second.nextCursor,null);
+ assert.equal(new Set([...first.campaigns,...second.campaigns].map(c=>c.id)).size,102);
+ assert.ok(second.campaigns.every(c=>c.id<first.nextCursor));
+ assert.deepEqual((await read(principal,WORKSPACE,first.nextCursor)).campaigns,[]);
+ await assert.rejects(read(otherPrincipal,workspaceId,first.nextCursor),ContentReadDenied);
 });

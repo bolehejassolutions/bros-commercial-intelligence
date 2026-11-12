@@ -7,7 +7,7 @@ import {
  validateCampaignInput,validateCampaignPlan,validateQualityReview,
  buildCampaignPlanPrompt,buildQualityPrompt,evaluateQualityGate,
  ContentGenerationRejected,
- type CampaignInput,type CampaignPlan,type QualityReview,
+ type CampaignInput,type CampaignPlan,type QualityReview,type ContentVisualSelection,
 } from './neon-content-generation-contract.ts';
 import {campaignPlanSchema,qualityReviewSchema} from './neon-content-structured-provider.ts';
 
@@ -20,16 +20,16 @@ export type PreparedCampaign=Readonly<{
 }>;
 export function createContentCampaignPlanner(generate:Generator){
  if(typeof generate!=='function')throw new Error('Missing structured generation provider');
- return async function planCampaign(rawInput:unknown,businessDna:unknown):Promise<PreparedCampaign>{
+ return async function planCampaign(rawInput:unknown,businessDna:unknown,visual?:ContentVisualSelection):Promise<PreparedCampaign>{
   // Validate everything before the first costly API call.
   const input:CampaignInput=validateCampaignInput(rawInput);
-  const prompt=buildCampaignPlanPrompt(input,businessDna);
+  const prompt=buildCampaignPlanPrompt(input,businessDna,visual);
   let rawPlan:unknown;
   try{rawPlan=await generate(prompt,campaignPlanSchema,'bros_campaign');}
   catch{throw new ContentGenerationRejected('Campaign generation failed');}
   const plan=validateCampaignPlan(rawPlan);
   let rawReview:unknown;
-  try{rawReview=await generate(buildQualityPrompt(input,businessDna,plan),qualityReviewSchema,'bros_qc');}
+  try{rawReview=await generate(buildQualityPrompt(input,businessDna,plan,visual),qualityReviewSchema,'bros_qc');}
   catch{throw new ContentGenerationRejected('Quality review failed');}
   const review=validateQualityReview(rawReview);
   const gate=evaluateQualityGate(review);

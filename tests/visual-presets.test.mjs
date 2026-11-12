@@ -69,3 +69,28 @@ test("BROS SELL Malay language and public lockup gate",()=>{
  assert.ok(validateBrosSellCopy("Closing OS — kebutuhan pelanggan").includes("retired_public_lockup"));
  assert.ok(validateBrosSellCopy("Closing OS — kebutuhan pelanggan").includes("non_malaysian_register"));
 });
+
+
+test("workspace selection honors explicit tenant configuration and BROS SELL opt-in",async()=>{
+ const {readWorkspaceCreativeConfig,buildWorkspaceCreativeDraft}=await import('../lib/visual-presets/workspace-creative.mjs');
+ const presets=['SELL_MANGA_STORY','REAL_PRODUCT_SHOWCASE','FOUNDER_EDITORIAL_PORTRAIT','UNKNOWN','SELL_MANGA_STORY'];
+ const standard='bros-sell-plain-language-v1';
+ const dna=(brandId,communicationStandard)=>({content_creative:{
+  brand_id:brandId,preset_ids:presets,communication_standard:communicationStandard,
+ }});
+ assert.equal(readWorkspaceCreativeConfig({brand_name:'BROS SELL'}),null);
+ const other=dna('other-brand',standard);
+ assert.deepEqual(readWorkspaceCreativeConfig(other).presets.map(x=>x.id),presets.slice(0,3));
+ assert.equal(buildWorkspaceCreativeDraft(other,'SELL_MANGA_STORY','4:5').communication,null);
+ assert.equal(buildWorkspaceCreativeDraft(dna('bros-sell'),'SELL_MANGA_STORY','4:5').communication,null);
+ const sell=dna('bros-sell',standard);
+ const draft=buildWorkspaceCreativeDraft(sell,'SELL_MANGA_STORY','4:5');
+ assert.equal(draft.status,'DRAFT_NOT_GENERATED');
+ assert.equal(draft.aspectRatio,'4:5');
+ assert.doesNotMatch(draft.guidance,/9:16/);
+ assert.match(draft.communication.sequence,/KENA.*NAMPAK NILAI/);
+ assert.equal(buildWorkspaceCreativeDraft(sell,'SYSTEM_EXPLAINER','4:5'),null);
+ assert.equal(buildWorkspaceCreativeDraft(sell,'SELL_MANGA_STORY','16:9'),null);
+ assert.equal(buildWorkspaceCreativeDraft(sell,'REAL_PRODUCT_SHOWCASE','16:9').status,'REFERENCE_REQUIRED');
+ assert.equal(buildWorkspaceCreativeDraft(sell,'FOUNDER_EDITORIAL_PORTRAIT','4:5').status,'REFERENCE_REQUIRED');
+});

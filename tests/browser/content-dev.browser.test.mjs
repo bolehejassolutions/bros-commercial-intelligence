@@ -18,7 +18,11 @@ const foreign = '11111111-1111-4111-8111-111111111111';
 const tenant = '33333333-3333-4333-8333-333333333333';
 const workspaceId = randomUUID();
 const workspaceName = 'Kedai Rimba — ujian pelayar ' + workspaceId.slice(0, 8);
-const businessDna = {brand_name: 'Kedai Rimba', audience: {segment: 'Pemilik bengkel kecil'}};
+const businessDna = {
+  brand_name: 'Kedai Rimba',
+  audience: {segment: 'Pemilik bengkel kecil'},
+  content_creative: {brand_id: 'kedai-rimba', preset_ids: ['NATURAL_MY_UGC', 'REAL_PRODUCT_SHOWCASE']},
+};
 const existingCampaign = 'Kempen susulan Kedai Rimba';
 const newDraft = 'Sesi servis hujung minggu';
 const deniedDraft = {product_service: 'Denied tenant draft', audience: 'Fixture audience', description: '', problem: '', objective: '', duration_days: 7, platforms: ['instagram']};
@@ -36,7 +40,10 @@ const plan = {
     body: 'Cari tarikh terakhir dalam buku servis.', cta: 'Tanya bengkel bila perlu datang semula.'}],
   scenes: [{scene_number: 1, duration_seconds: 5, visual_prompt: 'Pelanggan buka buku servis di bengkel',
     motion_prompt: 'Kamera mendekati buku servis', narration: 'Buka buku servis dan semak tarikhnya',
-    dialogue: 'Bila patut saya datang lagi?'}],
+    dialogue: 'Bila patut saya datang lagi?'}, ...Array.from({length: 100}, (_, index) => ({
+    scene_number: index + 2, duration_seconds: 1, visual_prompt: 'Sambungan babak ujian ' + (index + 2),
+    motion_prompt: '', narration: '', dialogue: '',
+  }))],
   visuals: [{title: 'Buku servis di kaunter', prompt: 'Cahaya pagi di kaunter bengkel, tanpa logo'}],
   captions: [{platform: 'instagram', caption: 'Lupa tarikh servis? Cuba semak buku servis kereta dulu.'}],
   publish_plan: [{day: 1, platform: 'instagram', content_type: 'Video pendek', objective: 'Ingatkan tarikh servis'}],
@@ -209,6 +216,7 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await foreignPage.goto(contentUrl);
     await foreignPage.getByRole('heading', {name: 'Other tenant campaign', exact: true}).waitFor();
     assert.equal(await foreignPage.getByRole('button', {name: workspaceName}).count(), 0);
+    assert.equal(await foreignPage.getByText('Sediakan arahan visual', {exact: true}).count(), 0);
     const denial = await foreignContext.request.get(apiUrl, {headers: {'x-user-id': owner}});
     assert.equal(denial.status(), 404);
     assert.deepEqual(await denial.json(), {error: 'not_found'});
@@ -245,6 +253,21 @@ test('browser verifies authenticated campaign content, draft persistence and ten
       await campaign.getByRole('heading', {name: heading, exact: true}).waitFor();
       await campaign.getByText(content, {exact: false}).first().waitFor();
     }
+
+    await campaign.getByText('Visual: Sambungan babak ujian 101', {exact: true}).waitFor();
+    await campaign.getByText('Sediakan arahan visual', {exact: true}).click();
+    const presetSelect = campaign.getByLabel('Gaya visual', {exact: true});
+    assert.deepEqual(await presetSelect.locator('option').evaluateAll(options => options.map(option => option.value)),
+      ['', 'NATURAL_MY_UGC', 'REAL_PRODUCT_SHOWCASE']);
+    await presetSelect.selectOption('NATURAL_MY_UGC');
+    await campaign.getByLabel('Nisbah gambar', {exact: true}).selectOption('4:5');
+    const creativeDraft = campaign.getByLabel('Arahan visual untuk disalin', {exact: true});
+    assert.match(await creativeDraft.inputValue(), /Foto candid gaya Malaysia · 4:5/);
+    assert.match(await creativeDraft.inputValue(), /Kempen susulan Kedai Rimba/);
+    assert.doesNotMatch(await creativeDraft.inputValue(), /BROS SELL|Jangan suruh pelanggan terjemah/);
+    await presetSelect.selectOption('REAL_PRODUCT_SHOWCASE');
+    await campaign.getByRole('status').filter({hasText: /Perlu tangkap layar produk asal/}).waitFor();
+    assert.equal(await creativeDraft.count(), 0);
 
     await page.getByLabel('Produk / servis').fill(newDraft);
     await page.getByLabel('Sasaran pelanggan').fill('Pelanggan yang bekerja pada hari biasa');
@@ -289,6 +312,21 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await page.reload();
     await page.getByRole('button', {name: workspaceName, exact: true}).click();
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
+
+    // Fill the first page with equally-timestamped campaigns. The original
+    // campaign and durable draft must remain reachable on the next page.
+    await admin.query(`INSERT INTO content_dev.campaigns
+      (tenant_id, workspace_id, owner_principal_id, product_service, audience, duration_days, created_at)
+      SELECT $1, $2, $3, 'Kempen halaman ' || n, 'Ujian', 7, now() + interval '1 day'
+      FROM generate_series(1, 100) AS n`, [tenant, workspaceId, owner]);
+    await page.getByRole('button', {name: 'Muat semula kempen workspace ini'}).click();
+    await page.getByRole('button', {name: 'Halaman seterusnya'}).click();
+    await page.getByRole('heading', {name: existingCampaign, exact: true}).waitFor();
+    await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
+    assert.equal(await page.getByRole('heading', {name: /^Kempen halaman /}).count(), 0);
+    await page.getByRole('button', {name: 'Halaman sebelumnya'}).click();
+    await page.getByRole('button', {name: 'Halaman seterusnya'}).waitFor();
+    assert.equal(await page.getByRole('heading', {name: /^Kempen halaman /}).count(), 100);
   } catch (error) {
     t.diagnostic(nextOutput);
     throw error;

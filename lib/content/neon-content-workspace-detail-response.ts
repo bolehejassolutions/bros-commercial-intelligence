@@ -17,6 +17,7 @@ export type WorkspaceDetail=Readonly<{
  campaigns:WorkspaceDetailCampaign[];
  contentItems:WorkspaceDetailItem[];
  scenes:WorkspaceDetailScene[];
+ nextCursor?:string|null;
 }>;
 function uniqueIds(rows:unknown[],parentField?:string,parentIds?:Set<string>){
  const ids=new Set<string>();
@@ -44,10 +45,14 @@ export function parseContentWorkspaceDetail(payload:unknown,expectedWorkspaceId:
  const campaignIds=uniqueIds(d.campaigns as unknown[]);
  const itemIds=uniqueIds(d.contentItems as unknown[],'campaign_id',campaignIds);
  uniqueIds(d.scenes as unknown[],'content_item_id',itemIds);
+ const campaigns=d.campaigns as WorkspaceDetailCampaign[];
+ if(d.nextCursor!==undefined&&d.nextCursor!==null&&
+    (!validId(d.nextCursor)||campaigns.length!==100||campaigns.at(-1)?.id!==d.nextCursor))invalid();
  return {
   workspace:d.workspace as WorkspaceDetail['workspace'],
-  campaigns:d.campaigns as WorkspaceDetailCampaign[],
+  campaigns,
   contentItems:d.contentItems as WorkspaceDetailItem[],
-  scenes:d.scenes as WorkspaceDetailScene[]
+  scenes:d.scenes as WorkspaceDetailScene[],
+  ...(typeof d.nextCursor==='string'?{nextCursor:d.nextCursor}:{})
  };
 }
