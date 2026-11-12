@@ -33,6 +33,17 @@ const dateOffset = (days: number) => demandMetaReportingDate(new Date(Date.now()
 const money = new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR" });
 const count = new Intl.NumberFormat("en-MY");
 
+function InsightMetrics({ insights }: { insights: Snapshot["insights"] }) {
+  if (insights.state === "NO_ROWS_NOT_ZERO") {
+    return <p>Meta returned no rows. Spend, impressions and clicks are unknown.</p>;
+  }
+  return <dl>
+    <div><dt>Spend</dt><dd>{money.format(insights.spend)}</dd></div>
+    <div><dt>Impressions</dt><dd>{count.format(insights.impressions)}</dd></div>
+    <div><dt>Clicks</dt><dd>{count.format(insights.clicks)}</dd></div>
+  </dl>;
+}
+
 export default function MetaMonitor({ getToken }: { getToken: () => Promise<string> }) {
   const [since, setSince] = useState(() => dateOffset(7));
   const [until, setUntil] = useState(() => dateOffset(1));
@@ -67,7 +78,10 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
         return;
       }
       const result = await response.json() as Snapshot;
-      if (result.source !== "META_GRAPH_API_UNATTESTED" || result.executionAllowed !== false ||
+      const campaign = result.status.rows.find(row => row.kind === "campaign");
+      if (!campaign || result.campaignInsights.campaignId !== campaign.objectId ||
+          result.campaignInsights.since !== since || result.campaignInsights.until !== until ||
+          result.source !== "META_GRAPH_API_UNATTESTED" || result.executionAllowed !== false ||
           result.verifiedPaidOrders !== null || result.insights.since !== since ||
           result.insights.until !== until) throw Error();
       setSnapshot(result);
@@ -108,17 +122,12 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
           </dl>
           {(["adset", "ad"] as const).filter(kind => !snapshot.status.rows.some(row => row.kind === kind))
             .map(kind => <p key={kind}>{objectLabels[kind]} status unavailable in this Preview’s configured scope.</p>)}
+          <h3>Campaign Insights</h3>
+          <p>Campaign {snapshot.campaignInsights.campaignId} · {snapshot.campaignInsights.since} to {snapshot.campaignInsights.until} · Meta Graph API</p>
+          <InsightMetrics insights={snapshot.campaignInsights} />
           <h3>Account Insights</h3>
           <p>{snapshot.insights.since} to {snapshot.insights.until} · Meta Graph API</p>
-          {snapshot.insights.state === "NO_ROWS_NOT_ZERO" ? (
-            <p>Meta returned no rows. Spend, impressions and clicks are unknown.</p>
-          ) : (
-            <dl>
-              <div><dt>Spend</dt><dd>{money.format(snapshot.insights.spend)}</dd></div>
-              <div><dt>Impressions</dt><dd>{count.format(snapshot.insights.impressions)}</dd></div>
-              <div><dt>Clicks</dt><dd>{count.format(snapshot.insights.clicks)}</dd></div>
-            </dl>
-          )}
+          <InsightMetrics insights={snapshot.insights} />
           <p>Read started <time dateTime={snapshot.observedAt}>{snapshot.observedAt}</time> · Completed{" "}
             <time dateTime={snapshot.collectedAt}>{snapshot.collectedAt}</time></p>
         </>

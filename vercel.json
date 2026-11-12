@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "work/demand-campaign-insights-20261113": false
+    }
+  },
   "crons": [
     { "path": "/api/cron/operator", "schedule": "0 0 * * *" }
   ]

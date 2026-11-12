@@ -39,12 +39,15 @@ test("authenticated GET returns pinned campaign status and NO_ROWS_NOT_ZERO with
  const h=build();const response=await h.handler(req());const data=await response.json();
  assert.equal(response.status,200);assert.equal(data.insights.state,"NO_ROWS_NOT_ZERO");
  assert.equal(data.insights.spend,null);assert.equal(data.status.rows[0].effectiveStatus,"PAUSED");
+ assert.equal(data.campaignInsights.campaignId,id);
+ assert.equal(data.campaignInsights.state,"NO_ROWS_NOT_ZERO");
+ assert.equal(data.campaignInsights.spend,null);
  assert.equal(data.executionAllowed,false);assert.equal(data.verifiedPaidOrders,null);
  assert.equal(response.headers.get("cache-control"),"private, no-store, max-age=0");
  assert.ok(!JSON.stringify(data).includes(token));assert.ok(!JSON.stringify(data).includes("principal_123"));
  assert.deepEqual(data.account,{accountId,statusCode:1,currency:"MYR",timezone:"Asia/Kuala_Lumpur",observedAt:clock});
  assert.equal(data.collectedAt,clock);
- assert.deepEqual(h.counts(),{reads:3,auth:2,tokenReads:1});
+ assert.deepEqual(h.counts(),{reads:4,auth:2,tokenReads:1});
 });
 test("default OFF prevents authentication and provider access",async()=>{
  const h=build({enabled:()=>false});assert.equal((await h.handler(req())).status,404);
@@ -71,7 +74,7 @@ test("revoked membership during post-read revalidation never exposes a partial r
  const h=build({authorize:async()=>{if(++calls===2)throw Error("sensitive membership error");return {principalId:"principal_123",tenantId:"tenant_12345"};}});
  const response=await h.handler(req());assert.equal(response.status,403);
  assert.deepEqual(await response.json(),{error:"DEMAND_STATUS_DENIED"});
- assert.equal(h.counts().reads,3);assert.equal(calls,2);
+ assert.equal(h.counts().reads,4);assert.equal(calls,2);
 });
 test("provider failure is sanitized; no partial results or token leakage",async()=>{
  const h=build({transport:async()=>{throw Error("sensitive provider token");}});
@@ -102,7 +105,7 @@ test("server-pinned campaign, ad set and ad are observed together with no caller
  assert.equal(response.status,200);
  assert.deepEqual(body.status.rows.map(x=>[x.kind,x.objectId]),[["campaign",campaign],["adset",adset],["ad",ad]]);
  assert.equal(body.insights.state,"NO_ROWS_NOT_ZERO");assert.equal(body.executionAllowed,false);
- assert.equal(seen.length,5);
+ assert.equal(seen.length,6);
 });
 test("invalid server-pinned ad object fails closed before any provider request",async()=>{
  for (const config of [{adsetId:"invalid"}, {adId:"120251348178960697"}, {adsetId:id}, {campaignId:"0"}]) {
@@ -281,7 +284,7 @@ test("post-provider tenant revocation remains 403 rather than a provider 502",as
  const response=await h.handler(req());
  assert.equal(response.status,403);
  assert.deepEqual(await response.json(),{error:"DEMAND_STATUS_DENIED"});
- assert.equal(h.counts().reads,3);
+ assert.equal(h.counts().reads,4);
  assert.equal(checks,2);
 });
 
@@ -299,7 +302,7 @@ test("Meta provider rate limit is sanitized and recovery does not retain a stale
  const recovered=await h.handler(req());
  assert.equal(recovered.status,200);
  assert.equal((await recovered.json()).insights.state,"NO_ROWS_NOT_ZERO");
- assert.equal(calls,4);
+ assert.equal(calls,5);
 });
 
 test("invalid server Meta tokens fail closed without contacting provider",async()=>{
@@ -320,7 +323,7 @@ test("invalid server Meta tokens fail closed without contacting provider",async(
   return fixture(u);
  }});
  assert.equal((await valid.handler(req())).status,200);
- assert.equal(validCalls,3);
+ assert.equal(validCalls,4);
 });
 
 test("the Neon-authenticated status view accepts only its exact query contract", async () => {
@@ -332,7 +335,7 @@ test("the Neon-authenticated status view accepts only its exact query contract",
    target.replace("view=status", "view=other"), url + "&view=status"]) {
   assert.equal((await h.handler(req(invalid))).status, 400);
  }
- assert.deepEqual(h.counts(), { reads: 3, auth: 2, tokenReads: 1 });
+ assert.deepEqual(h.counts(), { reads: 4, auth: 2, tokenReads: 1 });
 });
 
 test("account and child-object scope mismatches withhold the entire observation", async () => {
@@ -382,4 +385,42 @@ test("an aborted provider read withholds the snapshot and performs no retries", 
  assert.equal(response.status, 504);
  assert.deepEqual(await response.json(), { error: "DEMAND_META_PROVIDER_TIMEOUT" });
  assert.equal(calls, 1);
+});
+
+
+test("campaign performance uses the pinned campaign URL and an independent reporting row",async()=>{
+ const common={account_id:accountId.slice(4),account_currency:"MYR",date_start:"2026-11-01",date_stop:"2026-11-07"};
+ const requests=[];
+ const h=build({transport:async(raw,init)=>{
+  const graph=new URL(raw);
+  assert.equal(init.method,"GET");
+  if(!graph.pathname.endsWith("/insights"))return fixture(raw);
+  requests.push([graph.pathname,graph.searchParams.get("level")]);
+  assert.deepEqual(JSON.parse(graph.searchParams.get("time_range")),{since:common.date_start,until:common.date_stop});
+  if(graph.pathname===`/v26.0/${id}/insights`){
+   assert.ok(graph.searchParams.get("fields").split(",").includes("campaign_id"));
+   return json({data:[{...common,campaign_id:id,spend:"12.34",impressions:"315",clicks:"9"}]});
+  }
+  return json({data:[{...common,spend:"25.67",impressions:"900",clicks:"30"}]});
+ }});
+ const response=await h.handler(req());
+ assert.equal(response.status,200);
+ const data=await response.json();
+ assert.deepEqual(requests,[[`/v26.0/${accountId}/insights`,"account"],[`/v26.0/${id}/insights`,"campaign"]]);
+ assert.deepEqual([data.insights.spend,data.insights.impressions,data.insights.clicks],[25.67,900,30]);
+ assert.deepEqual([data.campaignInsights.campaignId,data.campaignInsights.spend,
+  data.campaignInsights.impressions,data.campaignInsights.clicks],[id,12.34,315,9]);
+ assert.equal(data.verifiedPaidOrders,null);
+});
+
+test("a mismatched campaign Insights row withholds the whole monitor response",async()=>{
+ const row={account_id:accountId.slice(4),account_currency:"MYR",campaign_id:id,
+  date_start:"2026-11-01",date_stop:"2026-11-07",spend:"0",impressions:"0",clicks:"0"};
+ for(const mismatch of [{campaign_id:"120251158023300697"},{account_id:"10000"},{date_stop:"2026-11-06"}]){
+  const h=build({transport:async(raw)=>new URL(raw).pathname===`/v26.0/${id}/insights`
+   ?json({data:[{...row,...mismatch}]}):fixture(raw)});
+  const response=await h.handler(req());
+  assert.equal(response.status,502);
+  assert.deepEqual(await response.json(),{error:"DEMAND_META_PROVIDER_UNAVAILABLE"});
+ }
 });

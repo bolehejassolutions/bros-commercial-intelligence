@@ -1,4 +1,4 @@
-import { readDemandMetaAccountInsights, type InsightsRequest, type InsightsTransport } from "./meta-insights-readonly.ts";
+import { readDemandMetaAccountInsights, readDemandMetaCampaignInsights, type InsightsRequest, type InsightsTransport } from "./meta-insights-readonly.ts";
 import { readDemandMetaAccountStatus, readDemandMetaStatusSnapshot, type MetaStatusBinding, type MetaStatusTransport } from "./meta-status-readonly.ts";
 
 /** Server-only composition; HTTP authentication and membership resolution are external prerequisites. */
@@ -63,6 +63,7 @@ export async function readDemandOperatorSnapshot(
   const insights=await readDemandMetaAccountInsights(insightsRequest,token,transport);
   const status=await readDemandMetaStatusSnapshot(bindings,token,observedAt,transport);
   const account = await readDemandMetaAccountStatus(scope.accountId, request.apiVersion, token, observedAt, transport);
+  const campaignInsights=await readDemandMetaCampaignInsights(insightsRequest,campaign.objectId,token,transport);
   // Membership can be revoked while sequential provider reads are in flight.
   // Revalidate before releasing any observation; never return partial results.
   const finalScope=await resolveScope();
@@ -79,6 +80,6 @@ export async function readDemandOperatorSnapshot(
     finishedAt.getTime()-Date.parse(finalScope.verifiedAt)>60000||
     Date.parse(finalScope.verifiedAt)>finishedAt.getTime()+5000)fail();
   return Object.freeze({tenantId:scope.tenantId,accountId:scope.accountId,
-    observedAt, collectedAt: finishedAt.toISOString(), account, insights, status, executionAllowed:false as const});
+    observedAt, collectedAt: finishedAt.toISOString(), account, insights, campaignInsights, status, executionAllowed:false as const});
  }catch{return fail();}
 }

@@ -26,7 +26,18 @@ const spendMetric = (x:unknown):number => {
     BigInt(Math.round(spend*100))!==cents || serializedCents!==cents) deny();
  return spend;
 };
-export async function readDemandMetaAccountInsights(req:InsightsRequest,token:string,transport:InsightsTransport) {
+export function readDemandMetaAccountInsights(req:InsightsRequest,token:string,transport:InsightsTransport) {
+ return readInsights(req,token,transport,null);
+}
+
+/** The campaign ID comes from the authenticated server's configured scope. */
+export async function readDemandMetaCampaignInsights(req:InsightsRequest,campaignId:string,token:string,transport:InsightsTransport) {
+ if(typeof campaignId!=="string" || !/^\d{5,30}$/.test(campaignId)) return deny();
+ const report=await readInsights(req,token,transport,campaignId);
+ return Object.freeze({...report,campaignId});
+}
+
+async function readInsights(req:InsightsRequest,token:string,transport:InsightsTransport,campaignId:string|null) {
  try {
   if (!obj(req) || typeof req.accountId!=="string" || !/^act_\d{5,30}$/.test(req.accountId) ||
    typeof req.apiVersion!=="string" || !/^v[1-9]\d?\.\d+$/.test(req.apiVersion) ||
@@ -35,8 +46,11 @@ export async function readDemandMetaAccountInsights(req:InsightsRequest,token:st
    typeof req.observedAt!=="string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(req.observedAt) ||
    !Number.isFinite(Date.parse(req.observedAt)) || new Date(req.observedAt).toISOString().slice(0,19)!==req.observedAt.slice(0,19) ||
    typeof token!=="string" || token.length<20 || token.length>4096 || /[^\x21-\x7e]/.test(token) || typeof transport!=="function") deny();
-  const params=new URLSearchParams({fields:"account_id,account_currency,date_start,date_stop,spend,impressions,clicks",level:"account",time_range:JSON.stringify({since:req.since,until:req.until}),limit:"1"});
-  const response=await transport(`https://graph.facebook.com/${req.apiVersion}/${req.accountId}/insights?${params}`,{
+  const fields=["account_id","account_currency","date_start","date_stop","spend","impressions","clicks"];
+  if(campaignId!==null) fields.push("campaign_id");
+  const params=new URLSearchParams({fields:fields.join(","),level:campaignId===null?"account":"campaign",
+   time_range:JSON.stringify({since:req.since,until:req.until}),limit:"1"});
+  const response=await transport(`https://graph.facebook.com/${req.apiVersion}/${campaignId??req.accountId}/insights?${params}`,{
    method:"GET",headers:{Authorization:`Bearer ${token}`,Accept:"application/json"},signal:AbortSignal.timeout(8000),redirect:"error",cache:"no-store"
   });
   if (!response || response.ok!==true) deny();
@@ -48,7 +62,9 @@ export async function readDemandMetaAccountInsights(req:InsightsRequest,token:st
   if (rows.length===0) return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,collectedAt,
    accountId:req.accountId,since:req.since,until:req.until,state:"NO_ROWS_NOT_ZERO" as const,spend:null,impressions:null,clicks:null,executionAllowed:false as const});
   const row=rows[0] as Record<string,unknown>;
-  if (!obj(row) || row.account_id!==req.accountId.slice(4) || row.account_currency!=="MYR" || row.date_start!==req.since || row.date_stop!==req.until) deny();
+  if (!obj(row) || row.account_id!==req.accountId.slice(4) || row.account_currency!=="MYR" ||
+   row.date_start!==req.since || row.date_stop!==req.until ||
+   (campaignId!==null && row.campaign_id!==campaignId)) deny();
   const spend=spendMetric(row.spend),impressions=metric(row.impressions),clicks=metric(row.clicks);
   if (!Number.isSafeInteger(impressions) || !Number.isSafeInteger(clicks) || !Number.isSafeInteger(Math.round(spend*100))) deny();
   return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,collectedAt,

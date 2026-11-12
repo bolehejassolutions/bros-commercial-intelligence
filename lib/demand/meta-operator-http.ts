@@ -103,7 +103,8 @@ export function createDemandOperatorStatusHandler(deps:Deps) {
     }
    }, deps.now);
    return reply(200,{source:"META_GRAPH_API_UNATTESTED",observedAt:result.observedAt,
-    collectedAt:result.collectedAt,account:result.account,insights:result.insights,status:result.status,verifiedPaidOrders:null,
+    collectedAt:result.collectedAt,account:result.account,insights:result.insights,campaignInsights:result.campaignInsights,
+    status:result.status,verifiedPaidOrders:null,
     executionAllowed:false,providerAuthorizationIndependentlyAttested:false});
   }catch{
    if(invalidScope)return reply(503,{error:"DEMAND_META_SCOPE_UNAVAILABLE"});
