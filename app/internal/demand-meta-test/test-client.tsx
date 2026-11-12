@@ -5,12 +5,14 @@ import { createAuthClient, type VanillaBetterAuthClient } from "@neondatabase/au
 import { BetterAuthVanillaAdapter, type BetterAuthVanillaAdapterInstance } from "@neondatabase/auth/vanilla/adapters";
 import { requestNeonPreviewToken, requestNeonPreviewSession, NeonPreviewTokenUnavailable } from "@/lib/bci/neon-preview-client-token";
 import CampaignPilot from "./campaign-pilot";
+import MetaMonitor from "./meta-monitor";
 import PortfolioLineagePanel from "./portfolio-lineage-panel";
 import { demandMetaBrowserDiagnostic, type DemandMetaBrowserPhase } from "@/lib/demand/meta-browser-diagnostic";
 
 const operatorEmail = "rasymokh@gmail.com";
 const authBase = "https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth";
 const endpoint = "/api/internal/demand-meta?since=2026-10-01&until=2026-10-30";
+const statusEndpoint = endpoint + "&view=status";
 const historicalEndpoint = "/api/internal/demand-meta?cohort=historical_bros_sell_202610&since=2026-10-08&until=2026-10-27";
 let neonClient: VanillaBetterAuthClient | undefined;
 
@@ -107,17 +109,24 @@ export default function DemandMetaTestClient() {
         fetch(endpoint, { headers: { "x-tenant-id": "unauthorized-scope" }, cache: "no-store", redirect: "error" }),
         fetch(endpoint, { headers: { Authorization: "Bearer invalid.token.value" }, cache: "no-store", redirect: "error" }),
         fetch("/api/internal/demand-meta-evidence", { method: "POST", cache: "no-store", redirect: "error" }),
+        fetch(statusEndpoint, { cache: "no-store", redirect: "error" }),
+        fetch(statusEndpoint, { method: "POST", cache: "no-store", redirect: "error" }),
+        fetch(statusEndpoint + "&account_id=123456", { cache: "no-store", redirect: "error" }),
       ]);
       const mode = calls[0].status === 404 ? "OFF" : calls[0].status === 401 ? "ENABLED" : "UNKNOWN";
       const expected = mode === "OFF" ? [404, 404, 404, 404] : [401, 405, 400, 403];
+      const statusMode = calls[5].status === 404 ? "OFF" : calls[5].status === 401 ? "ENABLED" : "UNKNOWN";
+      const expectedStatusView = statusMode === "OFF" ? [404, 404, 404] : [401, 405, 400];
       // Invalid-but-shaped JWT can yield a sanitized 403 only after the enable gate.
-      const statusesOK = mode !== "UNKNOWN" && calls.every((r, i) => (
+      const statusesOK = mode !== "UNKNOWN" && calls.slice(0, 5).every((r, i) => (
         i === 4 ? (r.status === 401 || r.status === 404) :
         i === 3 && mode === "ENABLED" ? (r.status === 403 || r.status === 401) : r.status === expected[i]
       ));
+      const monitorOK = statusMode !== "UNKNOWN" && calls.slice(5).every((r, i) => r.status === expectedStatusView[i]);
       const headersOK = calls.every(probeHeaders);
-      if (!statusesOK || !headersOK) throw new Error();
-      setNotice("PASS — " + mode + " mode. All 5 denial probes and no-store/security headers verified, including the bodyless DEV POST (HTTP " + calls[4].status + "). This does not verify Neon DB or Meta access.");
+      if (!statusesOK || !monitorOK || !headersOK) throw new Error();
+      setNotice("PASS — campaign reads " + mode + ", status monitor " + statusMode +
+        ". All 8 denials and private response headers verified. Provider access requires a signed-in read.");
     } catch {
       setNotice("FAIL — denial checks not independently verified. Do not enable live reads.");
     } finally { setBusy(false); }
@@ -345,6 +354,7 @@ export default function DemandMetaTestClient() {
           <p className="demand-lede">Research, diagnose and prepare Meta campaigns with evidence-led controls. Publishing and spending remain separately authorized.</p>
           <p className="luminous-note">Vercel Authentication protects this Preview. Neon Auth is a separate operator sign-in. This is an internal build, not a customer-ready product.</p>
           <nav className="luminous-nav" aria-label="DEMAND workspace sections">
+            {stage === "ready" ? <a href="#demand-monitor">Meta Ads monitor</a> : null}
             <a href="#demand-tools">Diagnostics & access</a>
             <a href="#demand-campaigns">Campaign studio</a>
             <a href="#demand-attribution">CONTENT handoff</a>
@@ -352,6 +362,14 @@ export default function DemandMetaTestClient() {
         </div>
         <p role="status" aria-live="polite">{notice}</p>
         {stage === "ready" && evidenceNotice !== null ? <p role="status" aria-label="DEV evidence receipt">{evidenceNotice}</p> : null}
+        {stage === "ready" ? <MetaMonitor getToken={async () => {
+          if (!(await verifiedSession())) {
+            setStage("start");
+            setNotice("Sign in again to read Meta status and Insights.");
+            throw new Error("DEMAND_SESSION_EXPIRED");
+          }
+          return requestNeonPreviewToken(auth());
+        }} /> : null}
         <div id="demand-tools" className="demand-toolkit">
           <div className="luminous-section-heading">
             <h2 className="demand-tools-title">Workspace access & diagnostics</h2>

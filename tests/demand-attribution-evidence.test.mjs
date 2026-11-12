@@ -20,3 +20,31 @@ test('reject noncanonical and normalized provider timestamps',()=>{
   for(const observedAt of ['2026-11-09T10:00:00Z','2026-02-30T10:00:00.000Z','2026-11-09T10:00:00.000+00:00','2026-11-09','not-a-date']) assert.throws(()=>reconcile(scope,[{...pixel,observedAt}],[]),/DEMAND_ATTRIBUTION_EVIDENCE_DENIED/);
   for(const settledAt of ['2026-11-09T10:01:00Z','2026-02-30T10:01:00.000Z','2026-11-09T10:01:00.000+00:00']) assert.throws(()=>reconcile(scope,[],[{...paid,settledAt}]),/DEMAND_ATTRIBUTION_EVIDENCE_DENIED/);
 });
+
+test('duplicate Pixel references and a non-settled HitPay order never become verified sales', () => {
+  const sameReference = { ...pixel, eventId: 'pixel_87654321' };
+  const pending = { ...paid, status: 'PENDING', settledAt: null };
+  const pendingEvidence = reconcile(scope, [pixel, sameReference], [pending]);
+  assert.equal(pendingEvidence.pixelPurchaseEvents, 2);
+  assert.equal(pendingEvidence.settledHitPayOrders, 0);
+  assert.equal(pendingEvidence.settledWithPixelReference, 0);
+  const settledEvidence = reconcile(scope, [pixel, sameReference], [paid]);
+  assert.equal(settledEvidence.settledHitPayOrders, 1);
+  assert.equal(settledEvidence.settledWithPixelReference, 1);
+  assert.equal(settledEvidence.verifiedPixelOrderJoins, null);
+  assert.equal(settledEvidence.verifiedSettledHitPayOrders, null);
+  assert.equal(settledEvidence.verifiedSettledRevenueMinor, null);
+});
+
+test('projection rejects accessor-backed row or list without executing it', () => {
+  let invoked = 0;
+  const getter = () => { invoked++; return paid; };
+  const order = { ...paid };
+  Object.defineProperty(order, 'settledAt', { enumerable: true, get: getter });
+  const orders = [paid];
+  Object.defineProperty(orders, '0', { enumerable: true, get: getter });
+  for (const input of [[order], orders]) {
+    assert.throws(() => reconcile(scope, [pixel], input), /DEMAND_ATTRIBUTION_EVIDENCE_DENIED/);
+  }
+  assert.equal(invoked, 0);
+});

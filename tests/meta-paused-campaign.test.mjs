@@ -1,20 +1,50 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {preparePausedCampaignPlan,restorePausedCampaignPlan,pausedCampaignBodies} from '../lib/demand/meta-paused-campaign-plan.ts';
 import {createPausedCampaignService} from '../lib/demand/meta-paused-campaign-service.ts';
 import {createPausedCampaignHttpHandler} from '../lib/demand/meta-paused-campaign-http.ts';
 import {createPilotLedger,PilotReconciliationRequired} from '../lib/demand/meta-pilot-ledger.ts';
 import {PILOT} from '../lib/demand/meta-pilot-policy.ts';
 import {creativeRetryNamespace,sealCreativeRecovery,verifyCreativeRecovery} from '../lib/demand/meta-paused-recovery-receipt.ts';
+import {createDemandCreativeAdmission} from '../lib/demand/creative-admission.ts';
+import {bindDemandCreativeForReview} from '../lib/demand/creative-plan-binding.ts';
 const now=Date.parse('2026-11-07T00:00:00.000Z');
 const scope={tenantId:'11111111-1111-4111-8111-111111111111',principalId:'22222222-2222-4222-8222-222222222222'};
 const draft=()=>({name:'BROS SELL reviewed test',budgetMinor:14000,durationDays:7,startTime:'2026-11-07T02:00:00.000Z',
   landingUrl:'https://bros.bolehejas.com/?utm_source=facebook&utm_medium=paid_social&utm_campaign=test',
   primaryText:'Synthetic education copy, not a real approved advert.',headline:'Understand the next step',description:'Synthetic fixture',imageHash:'a'.repeat(32)});
 const identities={universal_beneficiary:'99999999000001',universal_payer:'99999999000002'};
-function fixture(disabled=false){
+const creativeBytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==','base64');
+const creativeRecord={
+  tenantId:scope.tenantId,assetId:'asset:immutable:001',creativeVersion:'version:001',
+  brandInstanceId:'brand:bros_sell',presetId:'preset:natural_my_ugc',presetVersion:'preset:v1',
+  sha256:createHash('sha256').update(creativeBytes).digest('hex'),bytes:creativeBytes.length,mime:'image/png',
+  mediaQa:'PASSED',editorialQa:'APPROVED',status:'APPROVED',logoEvidence:'OFFICIAL_APPROVED',
+  claimsEvidence:'NO_CLAIMS',aiDisclosure:'REVIEWED',approvalEvidenceId:'approval:editorial:001',
+};
+async function verifyMockCreativePlan(tenantScope,plan){
+  const approvedPlan=preparePausedCampaignPlan(scope,draft(),14000,now);
+  if(tenantScope.tenantId!==scope.tenantId||tenantScope.principalId!==scope.principalId||
+     plan.planSha256!==approvedPlan.planSha256)return null;
+  const intake=await createDemandCreativeAdmission({
+    authenticate:async()=>({userId:scope.principalId,authenticated:true}),
+    membershipsFor:async()=>[{tenantId:scope.tenantId,principalId:scope.principalId,product:'demand',active:true}],
+    approvedRecordFor:async()=>creativeRecord,mediaFor:async()=>creativeBytes,
+    verifyApproval:async({tenantId,assetId,creativeVersion,brandInstanceId,sha256,approvalEvidenceId})=>({
+      tenantId,product:'demand',purpose:'CREATIVE_REVIEW',assetId,creativeVersion,brandInstanceId,
+      mediaSha256:sha256,approvalEvidenceId,logoAssetVersionId:'logo:approved:001',
+    }),
+  })({assetId:creativeRecord.assetId,creativeVersion:creativeRecord.creativeVersion});
+  const {accountId,imageHash,planSha256}=approvedPlan;
+  return {intake,accountId,imageHash,planSha256,reviewDigest:bindDemandCreativeForReview(intake,{
+    tenantId:scope.tenantId,accountId,campaignPlanDigest:planSha256,
+  }).digest};
+}
+function fixture(disabled=false, approval=preparePausedCampaignPlan(scope,draft(),14000,now).planSha256, beforeCreate=async()=>{}){
   const env={META_APP_ID:'1315572270590189',META_APP_SECRET:'synthetic-app-secret-value',META_ADS_MANAGEMENT_TOKEN:'synthetic-management-token-value',
-    BROS_DEMAND_META_PAUSED_CREATE:disabled?undefined:'operator-approved-v1',BROS_DEMAND_META_CREATOR_LEDGER:'reviewed-v1'};
+    BROS_DEMAND_META_PAUSED_CREATE:disabled?undefined:'operator-approved-v1',BROS_DEMAND_META_CREATOR_LEDGER:'reviewed-v1',
+    BROS_DEMAND_META_PAUSED_APPROVED_PLAN_SHA256:approval??undefined};
   const calls=[],objects=new Map(),ledgers=new Map();let counter=0,corrupt=false,failCreativeReadback=false,validationAllowed=false,denyCreativePost=false,clock=now;
   const account={id:PILOT.account,account_id:PILOT.account.slice(4),account_status:1,currency:'MYR',timezone_name:'Asia/Kuala_Lumpur',
     business:{id:'2091328444802994'},user_tasks:['ADVERTISE']};
@@ -28,6 +58,7 @@ function fixture(disabled=false){
         if(validationAllowed)return Response.json({success:true});
         return Response.json({error:{code:100,error_subcode:1885183,message:'Synthetic validation rejection',
           error_user_title:'Synthetic title',error_user_msg:'Synthetic reason '+env.META_ADS_MANAGEMENT_TOKEN}},{status:400});}
+      await beforeCreate();
       if(path[1]==='adcreatives'&&denyCreativePost)return Response.json({error:{code:100,error_subcode:1885183}},{status:400});
       for(const key of ['special_ad_categories','targeting','promoted_object','regional_regulated_categories','regional_regulation_identities','object_story_spec','creative'])
         if(key in r)r[key]=JSON.parse(r[key]);
@@ -58,8 +89,10 @@ function fixture(disabled=false){
         try{const r=await fn();snapshot[step]=r;pending.delete(step);return r;}catch(cause){const error=new PilotReconciliationRequired();error.cause=cause;throw error;}}});}
     return ledgers.get(sha);
   };
-  const service=createPausedCampaignService({environment:env,ledger,reauthorize:async()=>{},now:()=>clock,transport});
-  return {service,env,calls,objects,ledger,transport,corrupt:()=>{corrupt=true;},interruptCreative:()=>{failCreativeReadback=true;},
+  const makeService=(environment=env,verifyCreativeForPlan=verifyMockCreativePlan)=>createPausedCampaignService({
+    environment,ledger,reauthorize:async()=>{},now:()=>clock,transport,verifyCreativeForPlan:verifyCreativeForPlan??undefined,
+  });
+  return {service:makeService(),makeService,env,calls,objects,ledger,ledgers,transport,corrupt:()=>{corrupt=true;},interruptCreative:()=>{failCreativeReadback=true;},
     rejectCreative:()=>{denyCreativePost=true;},allowValidation:()=>{validationAllowed=true;denyCreativePost=false;},advance:ms=>{clock+=ms;}};
 }
 test('plan binds exact input and scope; budget, host and caller authority injection deny',()=>{
@@ -87,6 +120,46 @@ test('wrong reviewed hash, missing explicit authority and disabled gate cannot i
     await assert.rejects(f.service.stage(scope,draft(),variant==='hash'?'0'.repeat(64):p.planSha256,
       variant==='authority'?'APPROVE_ACTIVE':'CREATE_PAUSED_ONLY'));
     assert.equal(f.calls.filter(x=>x.init.method==='POST').length,0);
+  }
+});
+test('server approval defaults OFF and binds to a single exact tenant and campaign plan', async () => {
+  const plan = preparePausedCampaignPlan(scope, draft(), 14000, now);
+  const changedDraft = { ...draft(), headline: 'A different reviewed headline' };
+  const changedPlan = preparePausedCampaignPlan(scope, changedDraft, 14000, now);
+  const otherScope = { ...scope, tenantId: scope.principalId };
+  const otherPlan = preparePausedCampaignPlan(otherScope, draft(), 14000, now);
+  const disabled = fixture(false, null);
+  const approved = fixture();
+
+  for (const [f, tenantScope, input, hash] of [
+    [disabled, scope, draft(), plan.planSha256],
+    [approved, scope, changedDraft, changedPlan.planSha256],
+    [approved, otherScope, draft(), otherPlan.planSha256],
+  ]) {
+    await assert.rejects(f.service.stage(tenantScope, input, hash, 'CREATE_PAUSED_ONLY'), /OWNER_APPROVAL_REQUIRED/);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.ledgers.size, 0);
+  }
+
+  const preview = await disabled.service.preview(scope, draft());
+  assert.equal(preview.canCreate, false);
+  assert.ok(preview.blockers.includes('PAUSED_PLAN_OWNER_APPROVAL_REQUIRED'));
+  assert.ok(disabled.calls.every(call => call.init.method === 'GET'));
+});
+test('exact owner approval still requires authoritative original creative, copy and account image binding', async () => {
+  const p=preparePausedCampaignPlan(scope,draft(),14000,now);
+  const valid=await verifyMockCreativePlan(scope,p);
+  for(const verifier of [null,async()=>null,async()=>{throw Error('private asset service unavailable');},
+    async()=>({...valid,planSha256:'0'.repeat(64)}),async()=>({...valid,accountId:'act_123456'}),
+    async()=>({...valid,imageHash:'c'.repeat(32)}),async()=>({...valid,reviewDigest:'d'.repeat(64)}),
+    async()=>({...valid,intake:{...valid.intake}})]){
+    const f=fixture(),service=f.makeService(f.env,verifier);
+    const preview=await service.preview(scope,draft());
+    assert.ok(preview.blockers.includes('PAUSED_CREATIVE_EVIDENCE_REQUIRED'));
+    assert.equal(preview.canCreate,false);
+    await assert.rejects(service.stage(scope,draft(),p.planSha256,'CREATE_PAUSED_ONLY'),/CREATIVE_EVIDENCE_REQUIRED/);
+    assert.deepEqual(await f.ledger(scope,p.planSha256).recoveryState(),{confirmed:{},pending:[]});
+    assert.ok(f.calls.every(call=>call.init.method==='GET'));
   }
 });
 test('ambiguous provider result keeps durable intent and blocks automatic duplicate creation',async()=>{
@@ -164,6 +237,86 @@ async function rejectedCreative(){
   return {f,p,receipt:readback.recoveryReceipt};
 }
 const creationPosts=f=>f.calls.filter(x=>x.init.method==='POST'&&!new URLSearchParams(x.init.body).has('execution_options')).length;
+test('revoked owner approval keeps historical reconciliation GET-only and blocks a sealed retry', async () => {
+  const { f, p, receipt } = await rejectedCreative();
+  const disabled = f.makeService({ ...f.env, BROS_DEMAND_META_PAUSED_APPROVED_PLAN_SHA256: undefined });
+  const before = f.calls.length;
+  const held = await disabled.reconcile(scope, draft(), p.planSha256, 'RECONCILE_PAUSED_ONLY');
+  assert.equal(held.status, 'RECOVERY_HELD');
+  assert.equal(held.discovery.status, 'NO_MATCH');
+  assert.equal(held.discovery.validation, undefined);
+  assert.equal(held.recoveryReceipt, undefined);
+  const readback = f.calls.slice(before);
+  assert.ok(readback.length > 0);
+  assert.ok(readback.every(call => call.init.method === 'GET'));
+  await assert.rejects(disabled.retryCreative(scope, draft(), p.planSha256, receipt, 'RETRY_RECONCILED_PAUSED_CREATIVE'),
+    /OWNER_APPROVAL_REQUIRED/);
+  assert.equal(f.calls.length, before + readback.length);
+});
+
+test('complete historical PAUSED records still verify without current execution approval', async () => {
+  const f = fixture(), p = preparePausedCampaignPlan(scope, draft(), 14000, now);
+  for (let step = 0; step < 4; step++) await f.service.stage(scope, draft(), p.planSha256, 'CREATE_PAUSED_ONLY');
+  const disabled = f.makeService({ ...f.env, BROS_DEMAND_META_PAUSED_APPROVED_PLAN_SHA256: undefined }, null);
+  const before = f.calls.length;
+  const readback = await disabled.reconcile(scope, draft(), p.planSha256, 'RECONCILE_PAUSED_ONLY');
+  assert.equal(readback.status, 'CREATED_PAUSED_VERIFIED');
+  assert.equal(readback.canContinue, false);
+  assert.equal(Object.keys(readback.objects).length, 4);
+  assert.ok(f.calls.slice(before).every(call => call.init.method === 'GET'));
+  assert.equal(creationPosts(f), 4);
+});
+
+test('missing current creative evidence leaves recovery GET-only and disables a previously sealed retry', async () => {
+  const {f,p,receipt}=await rejectedCreative();
+  const service=f.makeService(f.env,null),before=f.calls.length;
+  const readback=await service.reconcile(scope,draft(),p.planSha256,'RECONCILE_PAUSED_ONLY');
+  assert.equal(readback.status,'RECOVERY_HELD');
+  assert.equal(readback.discovery.status,'NO_MATCH');
+  assert.equal(readback.discovery.validation,undefined);
+  assert.equal(readback.recoveryReceipt,undefined);
+  assert.ok(f.calls.slice(before).every(call=>call.init.method==='GET'));
+  const beforeRetry=f.calls.length;
+  await assert.rejects(service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE'),
+    /CREATIVE_EVIDENCE_REQUIRED/);
+  assert.equal(f.calls.length,beforeRetry);
+});
+
+test('creative proof revoked during recovery validation blocks the retry before intent or creation', async () => {
+  const {f,p,receipt}=await rejectedCreative();
+  f.allowValidation();
+  const before=f.calls.length;
+  const service=f.makeService(f.env,async(tenantScope,plan)=>{
+    const validated=f.calls.slice(before).some(call=>call.init.method==='POST'&&
+      new URLSearchParams(call.init.body).has('execution_options'));
+    return validated?null:verifyMockCreativePlan(tenantScope,plan);
+  });
+  await assert.rejects(service.retryCreative(scope,draft(),p.planSha256,receipt,'RETRY_RECONCILED_PAUSED_CREATIVE'),
+    /CREATIVE_EVIDENCE_REQUIRED/);
+  const posts=f.calls.slice(before).filter(call=>call.init.method==='POST');
+  assert.equal(posts.length,1);
+  assert.ok(new URLSearchParams(posts[0].init.body).has('execution_options'));
+  assert.deepEqual(await f.ledger(scope,creativeRetryNamespace(p.planSha256)).recoveryState(),{confirmed:{},pending:[]});
+});
+
+test('concurrent submissions of one approved plan issue at most one initial provider POST', async () => {
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const p = preparePausedCampaignPlan(scope, draft(), 14000, now);
+  const f = fixture(false, p.planSha256, () => { entered.resolve(); return release.promise; });
+  const submit = () => f.service.stage(scope, draft(), p.planSha256, 'CREATE_PAUSED_ONLY');
+  const first = submit();
+  try {
+    await Promise.race([entered.promise, first]);
+    await assert.rejects(submit(), PilotReconciliationRequired);
+  } finally {
+    release.resolve();
+  }
+  assert.equal((await first).completedSteps, 1);
+  assert.equal(creationPosts(f), 1);
+  assert.equal(f.objects.size, 1);
+});
+
 test('machine recovery receipt is scoped, authenticated, short-lived and cannot become human/activation authority',()=>{
   const sha='d'.repeat(64),secret='synthetic-private-server-key',r=sealCreativeRecovery(scope,sha,secret,now);
   verifyCreativeRecovery(scope,sha,r,secret,now+1000);

@@ -55,3 +55,33 @@ test('forged server source string never establishes verified revenue',async()=>{
  assert.equal(v.settledRevenueMinor,999999);
  assert.equal(v.verifiedSettledRevenueMinor,null);
 });
+
+test('revoked membership during asynchronous provider read suppresses settlement disclosure', async () => {
+  let authorized = true;
+  const authorizationChecks = [];
+  await assert.rejects(call({
+    authorizeTenant: async id => { authorizationChecks.push(id); return authorized; },
+    readSettlements: async () => { authorized = false; return payload; },
+  }), /DEMAND_SETTLEMENT_SOURCE_UNVERIFIED/);
+  assert.deepEqual(authorizationChecks, [tenantId, tenantId]);
+});
+
+test('only snapshotted data properties can contribute to totals and retrieval time', async () => {
+  const proxiedOrder = new Proxy(order, {
+    get(target, key, receiver) {
+      if (key === 'amountMinor') return 999999;
+      if (key === 'settledAt') return now;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const response = new Proxy({ ...payload, orders: [proxiedOrder] }, {
+    get(target, key, receiver) {
+      if (key === 'retrievedAt') return now;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const value = await call({ readSettlements: async () => response });
+  assert.equal(value.sourceRetrievedAt, payload.retrievedAt);
+  assert.equal(value.settledRevenueMinor, order.amountMinor);
+  assert.equal(value.verifiedSettledHitPayOrders, null);
+});

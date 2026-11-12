@@ -1,5 +1,5 @@
 import { readDemandMetaAccountInsights, type InsightsRequest, type InsightsTransport } from "./meta-insights-readonly.ts";
-import { readDemandMetaStatusSnapshot, type MetaStatusBinding, type MetaStatusTransport } from "./meta-status-readonly.ts";
+import { readDemandMetaAccountStatus, readDemandMetaStatusSnapshot, type MetaStatusBinding, type MetaStatusTransport } from "./meta-status-readonly.ts";
 
 /** Server-only composition; HTTP authentication and membership resolution are external prerequisites. */
 export type VerifiedDemandScope = Readonly<{principalId:string;tenantId:string;accountId:string;permission:"DEMAND_META_READ";verifiedAt:string}>;
@@ -43,8 +43,14 @@ export async function readDemandOperatorSnapshot(
   const observedAt=timestamp.toISOString();
   if(request.objects.some(item=>!item||typeof item!=="object"||Array.isArray(item)||
     !ownKeys(item,["objectId","kind"])))fail();
-  const bindings:MetaStatusBinding[]=request.objects.map(item=>({
-    accountId:scope.accountId,apiVersion:request.apiVersion,objectId:item?.objectId,kind:item?.kind
+  const campaign = request.objects.find(item => item.kind === "campaign");
+  const adset = request.objects.find(item => item.kind === "adset");
+  const kinds = new Set(request.objects.map(item => item.kind));
+  if (!campaign || kinds.size !== request.objects.length || (kinds.has("ad") && !adset)) return fail();
+  const bindings: MetaStatusBinding[] = request.objects.map(item => ({
+    accountId: scope.accountId, apiVersion: request.apiVersion, ...item,
+    campaignId: item.kind === "campaign" ? undefined : campaign.objectId,
+    adsetId: item.kind === "ad" ? adset?.objectId : undefined,
   }));
   const ids=new Set<string>();
   if(!/^act_\d{5,30}$/.test(scope.accountId)||!/^v[1-9]\d?\.\d+$/.test(request.apiVersion)||
@@ -56,6 +62,7 @@ export async function readDemandOperatorSnapshot(
     since:request.since,until:request.until,observedAt};
   const insights=await readDemandMetaAccountInsights(insightsRequest,token,transport);
   const status=await readDemandMetaStatusSnapshot(bindings,token,observedAt,transport);
+  const account = await readDemandMetaAccountStatus(scope.accountId, request.apiVersion, token, observedAt, transport);
   // Membership can be revoked while sequential provider reads are in flight.
   // Revalidate before releasing any observation; never return partial results.
   const finalScope=await resolveScope();
@@ -72,6 +79,6 @@ export async function readDemandOperatorSnapshot(
     finishedAt.getTime()-Date.parse(finalScope.verifiedAt)>60000||
     Date.parse(finalScope.verifiedAt)>finishedAt.getTime()+5000)fail();
   return Object.freeze({tenantId:scope.tenantId,accountId:scope.accountId,
-    observedAt,insights,status,executionAllowed:false as const});
+    observedAt, collectedAt: finishedAt.toISOString(), account, insights, status, executionAllowed:false as const});
  }catch{return fail();}
 }

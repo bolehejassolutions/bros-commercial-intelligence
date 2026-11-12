@@ -6,6 +6,8 @@ type Preview={plan:Draft&{planSha256:string;endTime:string};blockers:string[];pr
 const endpoint='/api/internal/demand-meta-campaigns';
 const blockers:Record<string,string>={PAUSED_CREATION_NOT_ENABLED:'Paused campaign creation has not been enabled for this Preview.',
   CREATOR_LEDGER_NOT_REVIEWED:'The scoped campaign journal needs its development setup review.',
+  PAUSED_PLAN_OWNER_APPROVAL_REQUIRED:'The owner must approve this exact campaign plan before any new Meta creation.',
+  PAUSED_CREATIVE_EVIDENCE_REQUIRED:'The plan needs approved CONTENT copy and original media linked to the selected Meta image.',
   META_MANAGEMENT_OR_IMAGE_LIBRARY_UNVERIFIED:'The current Meta connection or image library could not be verified.',
   META_ACCOUNT_IMAGE_OR_IDENTITIES_UNVERIFIED:'Meta could not confirm the account, selected image or Malaysia identity mapping.',
   LEDGER_UNAVAILABLE_OR_RECONCILIATION_REQUIRED:'The campaign journal is unavailable or an earlier operation needs reconciliation.'};
@@ -15,7 +17,7 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
   const [url,setUrl]=useState('https://bros.bolehejas.com/'),[text,setText]=useState(''),[headline,setHeadline]=useState(''),[description,setDescription]=useState('');
   const [image,setImage]=useState(''),[images,setImages]=useState<{hash:string;name:string}[]>([]);
   const [busy,setBusy]=useState(false),[approved,setApproved]=useState(false),[preview,setPreview]=useState<Preview|null>(null);
-  const [notice,setNotice]=useState('Prepare a new campaign, review its exact settings, then create it in PAUSED status.');
+  const [notice,setNotice]=useState('Review a campaign plan or reconcile previously recorded PAUSED objects.');
   const [setup,setSetup]=useState<string[]>([]),[result,setResult]=useState<Record<string,string>|null>(null),[uncertain,setUncertain]=useState(false);
   const [recovery,setRecovery]=useState<unknown>(null);
   const [retryReceipt,setRetryReceipt]=useState<string|null>(null),[retryApproved,setRetryApproved]=useState(false);
@@ -57,7 +59,7 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
         if(data.source!=='BROS_DEMAND_PAUSED_CREATOR'||data.planSha256!==hash||data.providerReadbackVerified!==true||
            data.committedReadback!==true||data.activationAvailable!==false||data.spendAuthorized!==false)throw Error('Result unconfirmed; reconcile the saved plan.');
         setResult(data.objects);localStorage.setItem('bros-demand-paused:'+hash,JSON.stringify(data));
-        if(data.status==='CREATED_PAUSED_VERIFIED'){setNotice('Campaign, ad set, creative and ad are created. Meta readback confirms PAUSED. Review them before a separate launch decision.');setUncertain(true);return;}
+        if(data.status==='CREATED_PAUSED_VERIFIED'){setNotice('All four objects verified. The campaign, ad set and ad are PAUSED.');setUncertain(true);return;}
         if(data.status!=='CREATING_PAUSED')throw Error('Unexpected state; reconcile before retrying.');
         setNotice('PAUSED creation: '+data.completedSteps+' of 4 steps confirmed.');
       }
@@ -71,10 +73,18 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
       setRecovery(data.discovery||null);
       setRetryReceipt(data.recoveryReceipt||null);setRetryApproved(false);
       if(data.status==='RECOVERY_HELD'){setUncertain(true);setNotice(data.discovery.validation?.userTitle||('Recovery held: '+data.discovery.status+'. No creation or confirmation was performed.'));return;}
-      if(!data.providerReadbackVerified||!data.committedReadback)throw Error('Recovery readback unverified.');
-      setResult(data.objects);setUncertain(!data.canContinue);setPreview({...preview,canCreate:data.canContinue,blockers:[]});setApproved(false);
+      if(!data.providerReadbackVerified||!data.committedReadback||
+         !['CREATED_PAUSED_VERIFIED','RECOVERED_PAUSED'].includes(data.status))throw Error('Recovery readback unverified.');
+      const complete=data.status==='CREATED_PAUSED_VERIFIED';
+      const canContinue=!complete&&data.canContinue===true;
+      const continuationBlocked=!complete&&!canContinue;
+      setResult(data.objects);setUncertain(complete);
+      setPreview({...preview,canCreate:canContinue,blockers:continuationBlocked?preview.blockers:[]});
+      setApproved(false);
       localStorage.setItem('bros-demand-paused:'+preview.plan.planSha256,JSON.stringify(data));
-      setNotice(data.canContinue?'Existing PAUSED objects reconciled. Review the same plan to continue the remaining stages.':'All four existing objects verified PAUSED. No new provider write was made.');
+      setNotice(complete?'All four recorded objects verified. The campaign, ad set and ad are PAUSED.':
+        continuationBlocked?'Recorded steps checked. Any remaining creation requires exact owner approval and verified creative evidence.':
+        'Recorded steps checked. Review the same plan to continue the remaining stages.');
     }catch(e){setUncertain(true);setNotice(e instanceof Error?e.message:'Recovery unverified.');}finally{setBusy(false);}}
   async function retryCreative(){if(!preview||!retryReceipt||!retryApproved||busy)return;setBusy(true);
     try{const data=await request({action:'retry_creative',draft:draft(),planSha256:preview.plan.planSha256,
@@ -87,7 +97,7 @@ export default function PausedCampaignCreator({getToken,signedIn,onSessionExpire
       setRetryReceipt(null);setRetryApproved(false);setApproved(false);setNotice('Recovery creative verified. Continue the same reviewed plan to finish the remaining ad.');
     }catch(e){setUncertain(true);setNotice(e instanceof Error?e.message:'Retry outcome unverified; reconcile before continuing.');}finally{setBusy(false);}}
   return <section className='auth-form' aria-labelledby='paused-creator-title' style={{border:'1px solid #52647a',padding:'1.2rem',borderRadius:12,marginBottom:'2rem'}}>
-    <h3 id='paused-creator-title'>Create a Meta campaign</h3><p>Malaysia · ages 21–45 · Facebook and Instagram feeds · Website Purchase · maximum RM140 lifetime · PAUSED creation.</p>
+    <h3 id='paused-creator-title'>Review a PAUSED campaign plan</h3><p>Malaysia · ages 21–45 · Facebook and Instagram feeds · Website Purchase · RM140 lifetime plan ceiling.</p>
     <p role='status'>{notice}</p><button type='button' disabled={!signedIn||busy} onClick={connect}>Check connection and load images</button>
     {setup.length>0&&<ul>{setup.map(x=><li key={x}>{blockers[x]||'A setup requirement remains unverified.'}</li>)}</ul>}
     <label>Campaign name<input value={name} maxLength={100} disabled={busy} onChange={e=>{changed();setName(e.target.value);}}/></label>

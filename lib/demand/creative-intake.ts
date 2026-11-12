@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { inspectContentSourceImage } from "../content/source-image-attestation.ts";
 
 /**
  * DEMAND-only immutable creative handoff boundary. CONTENT owns generation,
@@ -22,6 +23,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const id = /^[a-zA-Z0-9][a-zA-Z0-9:_-]{7,127}$/;
 const hash = /^[0-9a-f]{64}$/;
 const deny = (): never => { throw new Error("BROS_DEMAND_CREATIVE_INTAKE_DENIED"); };
+const verifiedTenants = new WeakMap<object, string>();
 /** Validate PNG chunk framing and CRC32; a matching hash is not decoding proof. */
 function validPngChunks(data: Uint8Array): boolean {
   const read32 = (i: number) =>
@@ -95,9 +97,14 @@ function signature(mime: CreativeRecord["mime"], data: Uint8Array): boolean {
       data[data.length - 4] === 174 && data[data.length - 3] === 66 &&
       data[data.length - 2] === 96 && data[data.length - 1] === 130;
   }
-  if (mime === "image/jpeg") return data.length >= 4 &&
-    data[0] === 255 && data[1] === 216 && data[data.length - 2] === 255 &&
-    data[data.length - 1] === 217;
+  if (mime === "image/jpeg") {
+    try {
+      const image = inspectContentSourceImage(data, { declaredSourceMime: mime });
+      return image.sourceMimeMatches === true && image.width <= 8192 && image.height <= 8192;
+    } catch {
+      return false;
+    }
+  }
   // A WebP RIFF header must declare the exact container size. Otherwise a
   // matching hash can still describe a truncated or trailing-data container.
   if (data.length < 20 ||
@@ -108,13 +115,20 @@ function signature(mime: CreativeRecord["mime"], data: Uint8Array): boolean {
   const chunk = String.fromCharCode(...data.subarray(12,16));
   const chunkLength = (data[16] + data[17] * 256 + data[18] * 65536 +
     data[19] * 16777216) >>> 0;
-  return declared === data.length - 8 && ["VP8 ", "VP8L", "VP8X"].includes(chunk) &&
-    chunkLength > 0 && chunkLength <= data.length - 20 &&
-    20 + chunkLength + (chunkLength % 2) === data.length;
+  if (declared !== data.length - 8 || 20 + chunkLength + (chunkLength % 2) !== data.length) return false;
+  // VP8X is an extended header, and cannot itself be the only chunk.
+  if (chunk === "VP8L" && chunkLength > 5 && data[20] === 0x2f && data[24] >>> 5 === 0) {
+    const width = 1 + (data[21] | (data[22] & 0x3f) << 8);
+    const height = 1 + ((data[22] >>> 6) | data[23] << 2 | (data[24] & 0x0f) << 10);
+    return width <= 8192 && height <= 8192;
+  }
+  if (chunk !== "VP8 " || chunkLength <= 10 || (data[20] & 1) !== 0 ||
+      data[23] !== 0x9d || data[24] !== 0x01 || data[25] !== 0x2a) return false;
+  const width = data[26] | (data[27] & 0x3f) << 8;
+  const height = data[28] | (data[29] & 0x3f) << 8;
+  return width > 0 && height > 0 && width <= 8192 && height <= 8192;
 }
-export function prepareDemandCreativeIntake(
-  tenantId: string, record: CreativeRecord, media: Uint8Array,
-) {
+export function snapshotDemandCreativeRecord(tenantId: string, record: CreativeRecord): CreativeRecord {
   // Reject untrusted accessor/prototype/extra-key envelopes before reading any
   // attestation. This is a structural check, not independent approval proof.
   const expectedKeys = "aiDisclosure,approvalEvidenceId,assetId,brandInstanceId,bytes,claimsEvidence,creativeVersion,editorialQa,logoEvidence,mediaQa,mime,presetId,presetVersion,sha256,status,tenantId";
@@ -124,7 +138,8 @@ export function prepareDemandCreativeIntake(
       Reflect.ownKeys(record).length !== 16 ||
       Object.values(Object.getOwnPropertyDescriptors(record)).some(d =>
         !Object.hasOwn(d, "value") || !d.enumerable)) deny();
-  if (!uuid.test(tenantId) || !record || !uuid.test(record.tenantId) ||
+  if (typeof tenantId !== "string" || !uuid.test(tenantId) ||
+      typeof record.tenantId !== "string" || !uuid.test(record.tenantId) ||
       record.tenantId.toLowerCase() !== tenantId.toLowerCase() ||
       ![record.assetId, record.creativeVersion, record.brandInstanceId,
         record.presetId, record.presetVersion, record.approvalEvidenceId].every(v =>
@@ -136,11 +151,22 @@ export function prepareDemandCreativeIntake(
       record.aiDisclosure !== "REVIEWED" ||
       !["image/png", "image/jpeg", "image/webp"].includes(record.mime) ||
       !Number.isSafeInteger(record.bytes) || record.bytes < 32 ||
-      record.bytes > 15_000_000 || !hash.test(record.sha256) ||
-      !(media instanceof Uint8Array) || media.byteLength !== record.bytes ||
+      record.bytes > 15_000_000 || typeof record.sha256 !== "string" || !hash.test(record.sha256)) deny();
+
+  // Canonical field order makes equality independent of provider key order.
+  return Object.freeze(Object.fromEntries(
+    expectedKeys.split(",").map(key => [key, record[key as keyof CreativeRecord]]),
+  )) as CreativeRecord;
+}
+
+export function prepareDemandCreativeIntake(
+  tenantId: string, input: CreativeRecord, media: Uint8Array,
+) {
+  const record = snapshotDemandCreativeRecord(tenantId, input);
+  if (!(media instanceof Uint8Array) || media.byteLength !== record.bytes ||
       !signature(record.mime, media) ||
       createHash("sha256").update(media).digest("hex") !== record.sha256) deny();
-  return Object.freeze({
+  const result = Object.freeze({
     assetId: record.assetId, creativeVersion: record.creativeVersion,
     brandInstanceId: record.brandInstanceId,
     mediaSha256: record.sha256, mime: record.mime, bytes: record.bytes,
@@ -148,6 +174,8 @@ export function prepareDemandCreativeIntake(
     state: "INTAKE_VERIFIED_NOT_AD_APPROVED" as const,
     metaUploadAllowed: false as const, campaignExecutionAllowed: false as const,
   });
+  verifiedTenants.set(result, tenantId.toLowerCase());
+  return result;
 }
 
 /**
@@ -169,9 +197,8 @@ export function bindDemandCreativeForReview(
       Object.hasOwn(d, "value") && d.enumerable);
   if (!exactKeys(scope, "accountId,assetId,mediaSha256,tenantId") ||
       !exactKeys(plan, "accountId,assetId,mediaSha256,planId,tenantId") ||
-      !intake || intake.state !== "INTAKE_VERIFIED_NOT_AD_APPROVED" ||
-      intake.metaUploadAllowed !== false || intake.campaignExecutionAllowed !== false ||
-      !Object.isFrozen(intake) || !uuid.test(scope.tenantId) ||
+      typeof scope.tenantId !== "string" || !uuid.test(scope.tenantId) ||
+      verifiedTenants.get(intake) !== scope.tenantId.toLowerCase() ||
       scope.tenantId !== plan.tenantId ||
       !/^act_[0-9]{5,30}$/.test(scope.accountId) ||
       scope.accountId !== plan.accountId ||

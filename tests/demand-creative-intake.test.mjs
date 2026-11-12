@@ -91,9 +91,21 @@ test("WebP intake enforces RIFF declared length, exact chunk boundary and recogn
     Uint8Array.from([...webp, 0]),
     Uint8Array.from(webp, (v, i) => i === 4 ? 23 : v),
     Uint8Array.from(webp, (v, i) => i === 12 ? 88 : v),
+    Uint8Array.from(webp, (v, i) => i === 15 ? 88 : v), // VP8X without an image chunk
     Uint8Array.from(webp, (v, i) => i === 16 ? 13 : v),
     Uint8Array.from(webp, (v, i) => i === 16 ? 0 : v),
+    Uint8Array.from(webp, (v, i) => i === 20 ? 0 : v), // invalid VP8L signature
   ]) assert.throws(() => prepareDemandCreativeIntake(tenantId, withMedia(bad), bad), denied);
+});
+
+test("JPEG magic and matching hash alone cannot substitute for an image with dimensions", () => {
+  const forged = new Uint8Array(64);
+  forged.set([255, 216, 255], 0);
+  forged.set([255, 217], 62);
+  assert.throws(() => prepareDemandCreativeIntake(tenantId, {
+    ...approved, mime: "image/jpeg", bytes: forged.length,
+    sha256: createHash("sha256").update(forged).digest("hex"),
+  }, forged), denied);
 });
 
 test("PNG CRC, IDAT presence, exact chunk boundaries and forged matching hashes fail closed", () => {
@@ -284,4 +296,8 @@ test("operator review binds exact tenant/account/plan/media and never grants Met
   ]) assert.throws(() => bindDemandCreativeForReview(intake,s,p), denied);
   assert.throws(() => bindDemandCreativeForReview({...intake,metaUploadAllowed:true},scope,plan),denied);
   assert.throws(() => bindDemandCreativeForReview({...intake},scope,plan),denied);
+  const foreign = "22222222-2222-4222-8222-222222222222";
+  assert.throws(() => bindDemandCreativeForReview(intake, {...scope, tenantId: foreign},
+    {...plan, tenantId: foreign}), denied);
+  assert.throws(() => bindDemandCreativeForReview(Object.freeze({...intake}), scope, plan), denied);
 });

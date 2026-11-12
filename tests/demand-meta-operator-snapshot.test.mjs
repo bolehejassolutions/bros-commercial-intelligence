@@ -16,6 +16,9 @@ function harness(override={}) {
   assert.equal(init.method,"GET");assert.equal(init.redirect,"error");assert.equal(init.cache,"no-store");
   assert.equal(init.headers.Authorization,`Bearer ${token}`);assert.equal(url.includes(token),false);
   if(url.includes("/insights?"))return {ok:true,json:async()=>({data:[]})};
+  if(new URL(url).pathname.endsWith("/"+scope.accountId))return {ok:true,json:async()=>({
+   id:scope.accountId,account_id:scope.accountId.slice(4),account_status:1,currency:"MYR",timezone_name:"Asia/Kuala_Lumpur"
+  })};
   return {ok:true,json:async()=>({id:request.objects[0].objectId,account_id:scope.accountId.slice(4),configured_status:"PAUSED",effective_status:"PAUSED"})};
  };
  return {resolver,secret,transport,counts:()=>({credentials,network})};
@@ -24,7 +27,7 @@ test("authorized bounded snapshot preserves NO_ROWS_NOT_ZERO and read-only statu
  const h=harness();const r=await readDemandOperatorSnapshot(request,h.resolver,h.secret,h.transport,clock);
  assert.equal(r.insights.state,"NO_ROWS_NOT_ZERO");assert.equal(r.insights.spend,null);
  assert.equal(r.status.rows[0].effectiveStatus,"PAUSED");assert.equal(r.executionAllowed,false);
- assert.equal(r.observedAt,now);assert.deepEqual(h.counts(),{credentials:1,network:2});
+ assert.equal(r.observedAt,now);assert.deepEqual(h.counts(),{credentials:1,network:3});
 });
 test("missing, revoked, cross-account, stale and future membership deny before credentials",async()=>{
  for(const s of [null,{...scope,permission:"REVOKED"},{...scope,accountId:"act_123456789"},
@@ -66,7 +69,7 @@ test("canonical leap-day date is accepted while invalid leap-day is denied befor
  const h=harness();
  const accepted=await readDemandOperatorSnapshot({...request,since:"2024-02-29",until:"2024-03-01"},h.resolver,h.secret,h.transport,clock);
  assert.equal(accepted.executionAllowed,false);
- assert.deepEqual(h.counts(),{credentials:1,network:2});
+ assert.deepEqual(h.counts(),{credentials:1,network:3});
  const invalid=harness();
  await assert.rejects(readDemandOperatorSnapshot({...request,since:"2025-02-29",until:"2025-03-01"},invalid.resolver,invalid.secret,invalid.transport,clock),denied);
  assert.deepEqual(invalid.counts(),{credentials:0,network:0});
@@ -80,7 +83,7 @@ test("revoked, replaced or stale membership after provider reads never releases 
   const resolver=async()=>++calls===1?scope:replacement;
   await assert.rejects(readDemandOperatorSnapshot(request,resolver,h.secret,h.transport,clock),denied);
   assert.equal(calls,2);
-  assert.deepEqual(h.counts(),{credentials:1,network:2});
+  assert.deepEqual(h.counts(),{credentials:1,network:3});
  }
 });
 test("membership revalidation failure is sanitized and does not leak observations",async()=>{
@@ -123,7 +126,7 @@ test("direct snapshot accepts 31 inclusive days and rejects 32 before credential
  const allowed=harness();
  const within=await readDemandOperatorSnapshot({...request,since:"2026-10-01",until:"2026-10-31"},allowed.resolver,allowed.secret,allowed.transport,clock);
  assert.equal(within.insights.state,"NO_ROWS_NOT_ZERO");
- assert.deepEqual(allowed.counts(),{credentials:1,network:2});
+ assert.deepEqual(allowed.counts(),{credentials:1,network:3});
  const deniedWindow=harness();
  await assert.rejects(readDemandOperatorSnapshot({...request,since:"2026-10-01",until:"2026-11-01"},deniedWindow.resolver,deniedWindow.secret,deniedWindow.transport,clock),denied);
  assert.deepEqual(deniedWindow.counts(),{credentials:0,network:0});

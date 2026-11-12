@@ -27,7 +27,8 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const account = /^act_[0-9]+$/;
 const digits = /^[0-9]+$/;
 const version = /^v[1-9][0-9]?\.[0-9]+$/;
-const enabled = () =>
+const operatorAccountId = "act_1997776120879476";
+const admissionConfigured = () =>
   process.env.VERCEL_ENV === "preview" &&
   process.env.VERCEL_GIT_COMMIT_REF === BRANCH &&
   process.env.BROS_DEMAND_META_DIRECT_READS === "enabled" &&
@@ -41,9 +42,11 @@ const enabled = () =>
   version.test(process.env.BROS_DEMAND_META_API_VERSION) &&
   typeof process.env.BROS_DEMAND_META_TENANT_ID === "string" &&
   uuid.test(process.env.BROS_DEMAND_META_TENANT_ID) &&
-  typeof process.env.BROS_DEMAND_META_ADS_READ_TOKEN === "string" &&
-  process.env.BROS_DEMAND_META_ADS_READ_TOKEN.length >= 20 &&
   Boolean(process.env.BCI_NEON_DEV_MEMBERSHIP_DATABASE_URL);
+
+const enabled = () => admissionConfigured() &&
+  typeof process.env.BROS_DEMAND_META_ADS_READ_TOKEN === "string" &&
+  process.env.BROS_DEMAND_META_ADS_READ_TOKEN.length >= 20;
 
 /** Fixed-category, server-only Vercel secret shape check. No URI, values or secrets logged. */
 type ConnectionShape = "missing" | "url" | "protocol" | "host" | "port" |
@@ -76,7 +79,7 @@ function connectionShape(value: unknown): ConnectionShape {
 type MembershipStep = "configuration" | "connection" | "role" | "posture" | "scope" | "rows";
 let membershipPool: Pool | null = null;
 function getMemberships(mark: (step: MembershipStep) => void) {
-  if (!enabled()) throw new Error("DEMAND_META_PREVIEW_DISABLED");
+  if (!admissionConfigured()) throw new Error("DEMAND_META_PREVIEW_DISABLED");
   if (!membershipPool) {
     mark("configuration");
     let config: ReturnType<typeof parseNeonDevConnection>;
@@ -220,19 +223,24 @@ const pilotTransaction: PilotTransaction = async fn => {
   if (!enabled() || process.env.BROS_DEMAND_META_PILOT_LEDGER !== "reviewed-v1") throw Error();
   return createPgPilotTransaction(getEvidenceWriterPool())(fn);
 };
+
+async function authorizeDemandOperator(jwt: string) {
+  const principal = await verifier(jwt);
+  if (!principal || principal.authenticated !== true) throw Error();
+  const grants = await getMemberships(() => {})(principal.userId, "demand");
+  if (grants.length !== 1 || grants[0].active !== true || grants[0].product !== "demand" ||
+      grants[0].principalId !== principal.userId ||
+      grants[0].tenantId.toLowerCase() !== process.env.BROS_DEMAND_META_TENANT_ID?.toLowerCase()) throw Error();
+  return { tenantId: grants[0].tenantId.toLowerCase(), principalId: principal.userId };
+}
+
 export const demandMetaPilotRuntime = {
   enabled,
-  readToken: () => enabled() && process.env.BROS_DEMAND_META_ACCOUNT_ID === "act_1997776120879476"
+  readToken: () => enabled() && process.env.BROS_DEMAND_META_ACCOUNT_ID === operatorAccountId
     ? process.env.BROS_DEMAND_META_ADS_READ_TOKEN ?? null : null,
   async authorize(jwt: string) {
     if (!enabled()) throw Error();
-    const principal = await verifier(jwt);
-    if (!principal || principal.authenticated !== true) throw Error();
-    const grants = await getMemberships(() => {})(principal.userId, "demand");
-    if (grants.length !== 1 || grants[0].active !== true || grants[0].product !== "demand" ||
-        grants[0].principalId !== principal.userId ||
-        grants[0].tenantId.toLowerCase() !== process.env.BROS_DEMAND_META_TENANT_ID?.toLowerCase()) throw Error();
-    return { tenantId: grants[0].tenantId.toLowerCase(), principalId: principal.userId };
+    return authorizeDemandOperator(jwt);
   },
   async authorizeContentDemand(jwt: string) {
     // Cross-product candidate generation requires independent active membership
@@ -256,17 +264,44 @@ export const demandMetaPilotRuntime = {
   },
 };
 
+/** Never materialize an unbounded Graph response, including provider error bodies. */
+async function readOperatorGraphJson(response: Response): Promise<unknown> {
+  if (!response.body) throw Error("DEMAND_META_EMPTY_PROVIDER_BODY");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const chunks: string[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 64 * 1024) throw Error("DEMAND_META_PROVIDER_BODY_LIMIT");
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+    chunks.push(decoder.decode());
+    return JSON.parse(chunks.join("")) as unknown;
+  } finally {
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
 /** Isolated operator status/Insights GET: Preview-only, explicit additional flag, no Meta writes. */
 const operatorStatusHandler=createDemandOperatorStatusHandler({
- enabled:()=>enabled() && process.env.BROS_DEMAND_META_OPERATOR_STATUS==="enabled",
+ enabled:()=>admissionConfigured() && process.env.BROS_DEMAND_META_OPERATOR_STATUS==="enabled" &&
+  process.env.BROS_DEMAND_META_ACCOUNT_ID === operatorAccountId,
  accountId:process.env.BROS_DEMAND_META_ACCOUNT_ID??"act_0",
  campaignId:process.env.BROS_DEMAND_META_CAMPAIGN_ID??"0",
  adsetId:process.env.BROS_DEMAND_META_ADSET_ID,
  adId:process.env.BROS_DEMAND_META_AD_ID,
  apiVersion:process.env.BROS_DEMAND_META_API_VERSION??"v26.0",
- authorize:jwt=>demandMetaPilotRuntime.authorize(jwt),
- readToken:()=>demandMetaPilotRuntime.readToken(),
+ authorize:authorizeDemandOperator,
+ readToken:()=>process.env.BROS_DEMAND_META_ADS_READ_TOKEN ?? null,
  now:()=>new Date(),
- transport:async(url,init)=>fetch(url,init),
+ transport:async(url,init)=>{
+  const response = await fetch(url, init);
+  return { ok: response.ok, status: response.status, json: () => readOperatorGraphJson(response) };
+ },
 });
 export const handleDemandMetaOperatorStatus=(request:Request)=>operatorStatusHandler(request);

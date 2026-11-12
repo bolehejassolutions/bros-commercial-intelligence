@@ -23,9 +23,12 @@ const record = {
   aiDisclosure: "REVIEWED", approvalEvidenceId: "approval:editorial:001",
 };
 const grant = { principalId: userId, tenantId, product: "demand", active: true };
+const approval = { tenantId, product: "demand", purpose: "CREATIVE_REVIEW", assetId, creativeVersion,
+  brandInstanceId: record.brandInstanceId,
+  mediaSha256: record.sha256, approvalEvidenceId: record.approvalEvidenceId, logoAssetVersionId: null };
 const denied = /BROS_DEMAND_CREATIVE_ADMISSION_DENIED/;
 const fixture = (patch = {}) => {
-  const calls = { auth: 0, membership: 0, metadata: 0, bytes: 0 };
+  const calls = { auth: 0, membership: 0, metadata: 0, bytes: 0, approval: 0 };
   const deps = {
     authenticate: async () => { calls.auth++; return { userId, authenticated: true }; },
     membershipsFor: async id => { calls.membership++; assert.equal(id, userId); return [grant]; },
@@ -37,6 +40,9 @@ const fixture = (patch = {}) => {
       calls.bytes++; assert.equal(tenant, tenantId);
       assert.equal(asset, assetId); assert.equal(version, creativeVersion); return media;
     },
+    verifyApproval: async input => {
+      calls.approval++; assert.deepEqual(input, record); return approval;
+    },
     ...patch,
   };
   return { deps, calls };
@@ -44,12 +50,13 @@ const fixture = (patch = {}) => {
 test("authorized immutable bytes require membership and metadata recheck, remain non-executable", async () => {
   const { deps, calls } = fixture();
   const result = await createDemandCreativeAdmission(deps)(request);
-  assert.deepEqual(calls, { auth: 1, membership: 2, metadata: 2, bytes: 1 });
+  assert.deepEqual(calls, { auth: 1, membership: 2, metadata: 2, bytes: 1, approval: 1 });
   assert.equal(result.mediaSha256, record.sha256);
   assert.equal(result.state, "INTAKE_VERIFIED_NOT_AD_APPROVED");
   assert.equal(result.membershipRecheckedAfterRead, true);
   assert.equal(result.approvalRecheckedAfterRead, true);
-  assert.equal(result.approvalIndependentlyAttested, false);
+  assert.equal(result.approvalIndependentlyAttested, true);
+  assert.equal(result.logoAssetVersionId, null);
   assert.equal(result.metaUploadAllowed, false);
   assert.equal(result.campaignExecutionAllowed, false);
   assert.equal(JSON.stringify(result).includes(tenantId), false);
@@ -61,8 +68,9 @@ test("request cannot select tenant, principal, URL, approval or other asset", as
   for (const bad of [null, {}, { ...request, tenantId }, { ...request, userId },
     { ...request, url: "https://example.test/foreign" },
     { ...request, approved: true }, { assetId: "../foreign", creativeVersion },
-    { assetId, creativeVersion: "" }]) await assert.rejects(read(bad), denied);
-  assert.deepEqual(calls, { auth: 0, membership: 0, metadata: 0, bytes: 0 });
+    { assetId, creativeVersion: "" }, { assetId: [assetId], creativeVersion },
+    { assetId, creativeVersion: [creativeVersion] }]) await assert.rejects(read(bad), denied);
+  assert.deepEqual(calls, { auth: 0, membership: 0, metadata: 0, bytes: 0, approval: 0 });
 });
 test("authentication and grants deny before any media read", async () => {
   for (const patch of [
@@ -106,4 +114,37 @@ test("secret-bearing storage errors are sanitized and dependency validation is f
   await assert.rejects(createDemandCreativeAdmission(deps)(request),
     error => error.message === "BROS_DEMAND_CREATIVE_ADMISSION_DENIED" &&
       !error.message.includes("private-storage-secret"));
+});
+
+test("approval must bind the exact original, tenant, version and official logo proof", async () => {
+  const official = { ...record, logoEvidence: "OFFICIAL_APPROVED" };
+  const proof = { ...approval, logoAssetVersionId: "logo:approved:001" };
+  for (const badProof of [
+    null, { ...proof, tenantId: userId }, { ...proof, product: "content" },
+    { ...proof, purpose: "PUBLISH" }, { ...proof, creativeVersion: "version:other" },
+    { ...proof, brandInstanceId: "brand:other" }, { ...proof, mediaSha256: "a".repeat(64) },
+    { ...proof, approvalEvidenceId: "approval:other" }, { ...proof, logoAssetVersionId: null },
+    { ...proof, logoAssetVersionId: ["logo:approved:001"] },
+  ]) {
+    const { deps } = fixture({ approvedRecordFor: async () => official, verifyApproval: async () => badProof });
+    await assert.rejects(createDemandCreativeAdmission(deps)(request), denied);
+  }
+  const wrongLogo = fixture({ verifyApproval: async () => proof });
+  await assert.rejects(createDemandCreativeAdmission(wrongLogo.deps)(request), denied);
+  const { deps } = fixture({ approvedRecordFor: async () => official, verifyApproval: async () => proof });
+  const result = await createDemandCreativeAdmission(deps)(request);
+  assert.equal(result.logoAssetVersionId, proof.logoAssetVersionId);
+  assert.equal(result.metaUploadAllowed, false);
+});
+
+test("mutable callback records cannot swap evidence during a media read", async () => {
+  const mutable = { ...record };
+  const { deps } = fixture({
+    approvedRecordFor: async () => mutable,
+    mediaFor: async () => {
+      mutable.approvalEvidenceId = "approval:editorial:other";
+      return media;
+    },
+  });
+  await assert.rejects(createDemandCreativeAdmission(deps)(request), denied);
 });
