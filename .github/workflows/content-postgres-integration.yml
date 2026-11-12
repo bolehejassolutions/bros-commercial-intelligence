@@ -4,7 +4,11 @@ on:
   pull_request:
     paths:
       - '.github/workflows/content-postgres-integration.yml'
+      - 'app/api/content/dev/**'
+      - 'app/content/dev/**'
+      - 'tests/browser/**'
       - 'tests/postgres/**'
+      - 'lib/content/neon-content-business-profile.ts'
       - 'docs/sql-proposals/CONTENT_DEV_GENERATED_OUTPUT_WRITER_V1_NOT_APPLIED.sql'
       - 'lib/content/neon-content-generated-output-writer.ts'
       - 'lib/content/neon-content-replay-integrity.ts'
@@ -42,8 +46,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Install locked project dependencies for actual PostgreSQL driver
-        run: npm install --ignore-scripts --no-package-lock --no-save
+      - name: Install project and isolated browser test dependencies
+        run: npm install --ignore-scripts --no-package-lock --no-save playwright@1.62.1
+      - name: Install Chromium for local CONTENT acceptance
+        run: ./node_modules/.bin/playwright install --with-deps chromium
       - name: Verify exact CI-only database and execute reviewed permission proposal
         shell: bash
         run: |
@@ -70,6 +76,7 @@ jobs:
           export CONTENT_READER_DB_URL="postgresql://content_dev_reader_v2:${reader_pass}@127.0.0.1:5432/bros_intelligence_dev"
           export CONTENT_ADMIN_DB_URL="$ADMIN_DATABASE_URL"
           export CONTENT_PG_INTEGRATION_CI="disposable_only"
-          # Two test files share the disposable database; avoid inter-file
+          # The integration suites share the disposable database; avoid inter-file
           # concurrency so their tenant row-count assertions remain reliable.
           node --test --test-concurrency=1 tests/postgres/*.integration.test.mjs
+          node --test tests/browser/content-dev.browser.test.mjs

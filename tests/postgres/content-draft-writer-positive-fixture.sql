@@ -12,7 +12,8 @@ ALTER TABLE content_dev.campaign_draft_requests FORCE ROW LEVEL SECURITY;
 GRANT USAGE ON SCHEMA content_dev,bci_dev TO content_dev_draft_writer_v2;
 GRANT SELECT ON bci_dev.tenant_memberships,content_dev.workspaces TO content_dev_draft_writer_v2;
 GRANT SELECT,INSERT ON content_dev.campaigns TO content_dev_draft_writer_v2;
-GRANT SELECT,INSERT,UPDATE ON content_dev.campaign_draft_requests TO content_dev_draft_writer_v2;
+GRANT SELECT,INSERT ON content_dev.campaign_draft_requests TO content_dev_draft_writer_v2;
+GRANT UPDATE (campaign_id) ON content_dev.campaign_draft_requests TO content_dev_draft_writer_v2;
 CREATE POLICY draft_member ON bci_dev.tenant_memberships FOR SELECT TO content_dev_draft_writer_v2
  USING(principal_id=NULLIF(current_setting('bci.principal_id',true),'')::uuid AND product='content' AND active AND revoked_at IS NULL);
 CREATE POLICY draft_workspace ON content_dev.workspaces FOR SELECT TO content_dev_draft_writer_v2
