@@ -265,6 +265,11 @@ test('browser verifies authenticated campaign content, draft persistence and ten
       [workspaceId, newDraft],
     );
     assert.deepEqual(rows, [{status: 'draft', platforms: ['instagram']}]);
+    const deniedRows = await admin.query(
+      'SELECT id FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
+      [workspaceId, deniedDraft.product_service],
+    );
+    assert.equal(deniedRows.rowCount, 0, 'rejected writes must not persist campaigns');
     // An expired browser session must not retain authenticated workspace access.
     // This is synthetic-session acceptance, not connected Neon Auth acceptance.
     await ownerContext.clearCookies();
