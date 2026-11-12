@@ -1,10 +1,11 @@
+import { isDemandMetaStatus } from "./meta-status-codes.ts";
+
 /** Server-only, bounded, GET-only Meta object status observation. Never write authority. */
 export type MetaStatusKind = "campaign" | "adset" | "ad";
 export type MetaStatusBinding = Readonly<{ accountId: string; objectId: string; kind: MetaStatusKind; apiVersion: string; campaignId?: string; adsetId?: string }>;
 export type MetaStatusTransport = (url: string, init: { method: "GET"; headers: Record<string,string>; signal: AbortSignal; redirect: "error"; cache: "no-store" }) => Promise<{ ok: boolean; status?: number; json(): Promise<unknown> }>;
 const deny = (): never => { throw Error("BROS_DEMAND_META_STATUS_READ_FAILED"); };
 const object = (v: unknown): v is Record<string,unknown> => !!v && typeof v === "object" && !Array.isArray(v);
-const statuses = new Set(["ACTIVE", "PAUSED", "DELETED", "ARCHIVED", "IN_PROCESS", "WITH_ISSUES", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "DISAPPROVED", "PENDING_REVIEW", "PREAPPROVED", "PENDING_BILLING_INFO", "PENDING_BILLING_CAMPAIGN", "PENDING_BILLING_ADSET"]);
 
 /** Verify the exact account and its currency before interpreting account Insights. */
 export async function readDemandMetaAccountStatus(accountId: string, apiVersion: string, token: string, observedAt: string, transport: MetaStatusTransport) {
@@ -48,8 +49,7 @@ export async function readDemandMetaObjectStatus(binding: MetaStatusBinding, tok
       body.account_id !== binding.accountId.slice(4) ||
       (binding.campaignId !== undefined && body.campaign_id !== binding.campaignId) ||
       (binding.adsetId !== undefined && body.adset_id !== binding.adsetId) ||
-      typeof body.configured_status !== "string" || !statuses.has(body.configured_status) ||
-      typeof body.effective_status !== "string" || !statuses.has(body.effective_status)) return deny();
+      !isDemandMetaStatus(body.configured_status) || !isDemandMetaStatus(body.effective_status)) return deny();
     return Object.freeze({ source: "META_GRAPH_API_UNATTESTED" as const, observedAt,
       accountId: binding.accountId, objectId: binding.objectId, kind: binding.kind,
       configuredStatus: body.configured_status, effectiveStatus: body.effective_status,
