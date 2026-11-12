@@ -256,7 +256,8 @@ test('browser verifies authenticated campaign content, draft persistence and ten
 
     await campaign.getByText('Visual: Sambungan babak ujian 101', {exact: true}).waitFor();
     await campaign.getByText('Sediakan arahan visual', {exact: true}).click();
-    const presetSelect = campaign.getByLabel('Gaya visual', {exact: true});
+    const presetSelect = campaign.getByRole('combobox', {name: 'Gaya visual', exact: true});
+    await presetSelect.waitFor();
     assert.deepEqual(await presetSelect.locator('option').evaluateAll(options => options.map(option => option.value)),
       ['', 'NATURAL_MY_UGC', 'REAL_PRODUCT_SHOWCASE']);
     await presetSelect.selectOption('NATURAL_MY_UGC');

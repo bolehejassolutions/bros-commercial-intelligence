@@ -1,12 +1,13 @@
 'use client';
 
-import {useState} from 'react';
+import {useId, useState} from 'react';
 import {buildWorkspaceCreativeDraft, readWorkspaceCreativeConfig} from '@/lib/visual-presets/workspace-creative.mjs';
 
 export default function ContentCreativeDraft({businessDna, campaign}: {
   businessDna: unknown;
   campaign: {product_service?: string; audience?: string; problem?: string; objective?: string};
 }) {
+  const fieldId = useId();
   const config = readWorkspaceCreativeConfig(businessDna);
   const [presetId, setPresetId] = useState('');
   const [ratio, setRatio] = useState('');
@@ -17,8 +18,9 @@ export default function ContentCreativeDraft({businessDna, campaign}: {
   return <details style={{margin: '10px 0'}}>
     <summary style={{cursor: 'pointer'}}>Sediakan arahan visual</summary>
     <div style={{display: 'grid', gap: 8, marginTop: 8}}>
-      <label>Gaya visual{' '}
-        <select value={preset?.id ?? ''} onChange={event => {
+      <div>
+        <label htmlFor={fieldId + '-preset'}>Gaya visual</label>{' '}
+        <select id={fieldId + '-preset'} value={preset?.id ?? ''} onChange={event => {
           const next = config.presets.find(option => option.id === event.target.value);
           setPresetId(next?.id ?? '');
           setRatio(next?.defaultAspectRatio ?? '');
@@ -26,16 +28,18 @@ export default function ContentCreativeDraft({businessDna, campaign}: {
           <option value="">Pilih gaya</option>
           {config.presets.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select>
-      </label>
-      {preset && <label>Nisbah gambar{' '}
-        <select value={ratio} onChange={event => setRatio(event.target.value)}>
+      </div>
+      {preset && <div>
+        <label htmlFor={fieldId + '-ratio'}>Nisbah gambar</label>{' '}
+        <select id={fieldId + '-ratio'} value={ratio} onChange={event => setRatio(event.target.value)}>
           {preset.ratios.map(value => <option key={value}>{value}</option>)}
         </select>
-      </label>}
+      </div>}
       {draft?.status === 'REFERENCE_REQUIRED' && <p role="status">{draft.reason}</p>}
       {draft?.status === 'DRAFT_NOT_GENERATED' && <>
-        <label>Arahan visual untuk disalin
-          <textarea readOnly rows={8} style={{width: '100%', marginTop: 4}} value={[
+        <div>
+          <label htmlFor={fieldId + '-brief'}>Arahan visual untuk disalin</label>
+          <textarea id={fieldId + '-brief'} readOnly rows={8} style={{width: '100%', marginTop: 4}} value={[
             `Gaya visual ${preset?.label} · ${draft.aspectRatio}`,
             ...Object.entries({
               'Produk / servis': campaign.product_service,
@@ -47,7 +51,7 @@ export default function ContentCreativeDraft({businessDna, campaign}: {
             'Gunakan aset jenama yang telah diluluskan. Elakkan mereka semula logo dan membuat dakwaan tanpa bukti.',
             ...(draft.communication ? [draft.communication.principle, draft.communication.sequence] : []),
           ].join('\n\n')}/>
-        </label>
+        </div>
         <small>Draf arahan. Fail media belum dihasilkan.</small>
         {draft.communication && <div>
           <h4>Semakan editorial BROS SELL</h4>
