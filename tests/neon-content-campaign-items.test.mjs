@@ -76,3 +76,24 @@ test('byte-identical scene replay is displayed once without changing the source'
  assert.equal(source.length,2);
  assert.equal(Object.isFrozen(rows[0].scenes),true);
 });
+
+test('conflicting same-campaign item replay suppresses all copies and their scenes',()=>{
+ const rows=scopeContentCampaignItems(a,[
+  {id:'conflict',campaign_id:a,title:'Old script'},
+  {id:'conflict',campaign_id:a,title:'Different script'},
+  {id:'safe',campaign_id:a,title:'Stable script'}
+ ],[
+  {id:'scene-conflict',content_item_id:'conflict',scene_number:1},
+  {id:'scene-safe',content_item_id:'safe',scene_number:1}
+ ]);
+ assert.deepEqual(rows.map(row=>row.item.id),['safe']);
+ assert.deepEqual(rows[0].scenes.map(scene=>scene.id),['scene-safe']);
+});
+test('byte-identical item replay remains visible exactly once',()=>{
+ const item={id:'same-item',campaign_id:a,title:'Verified replay'};
+ const source=[item,{...item}];
+ const rows=scopeContentCampaignItems(a,source,[{id:'scene',content_item_id:item.id}]);
+ assert.deepEqual(rows.map(row=>row.item.id),['same-item']);
+ assert.deepEqual(rows[0].scenes.map(scene=>scene.id),['scene']);
+ assert.equal(source.length,2);
+});
