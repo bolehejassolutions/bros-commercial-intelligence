@@ -15,6 +15,7 @@ import {createContentTransaction} from '../../lib/content/neon-content-transacti
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const owner = '8ae086ff-3f10-4863-b5e7-4b67e062024d';
 const foreign = '11111111-1111-4111-8111-111111111111';
+const foreignCampaignId = '88888888-8888-4888-8888-888888888888';
 const tenant = '33333333-3333-4333-8333-333333333333';
 const workspaceId = randomUUID();
 const workspaceName = 'Kedai Rimba — ujian pelayar ' + workspaceId.slice(0, 8);
@@ -300,10 +301,20 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     assert.match(pending[0][0], /^bros\.content\.pending-draft\.v1\.[0-9a-f]{64}$/);
     assert.equal(pending[0][1], firstKey);
 
+    // Put the committed draft beyond the first page before the retry.
+    await admin.query(`INSERT INTO content_dev.campaigns
+      (tenant_id, workspace_id, owner_principal_id, product_service, audience, duration_days, created_at)
+      SELECT $1, $2, $3, 'Kempen halaman ' || n, 'Ujian', 7, now() + interval '1 day'
+      FROM generate_series(1, 100) AS n`, [tenant, workspaceId, owner]);
     await page.reload();
     await page.getByRole('button', {name: workspaceName, exact: true}).click();
-    await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
+    const nextPage = page.getByRole('button', {name: 'Halaman seterusnya'});
+    await nextPage.waitFor();
+    assert.equal(await page.getByRole('heading', {name: newDraft, exact: true}).count(), 0);
     await fillDraft();
+    const draftReadUrl = apiUrl + '?draft=' + initialReceipt.id;
+    const draftReadResponse = page.waitForResponse(response =>
+      response.url() === draftReadUrl && response.request().method() === 'GET');
     const draftResponse = page.waitForResponse(response =>
       response.url() === draftEndpoint && response.request().method() === 'POST');
     await submit.click();
@@ -311,10 +322,25 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     assert.equal(replay.status(), 201);
     assert.equal(replay.request().headers()['idempotency-key'], firstKey);
     assert.deepEqual((await replay.json()).data, {...initialReceipt, replayed: true});
-    await page.getByRole('status').filter({hasText: /Draf kempen sudah disimpan/}).waitFor();
+    const readback = await draftReadResponse;
+    assert.equal(readback.status(), 200);
+    assert.equal(readback.headers()['cache-control'], 'no-store');
+    const draftDetail = (await readback.json()).data;
+    assert.deepEqual(draftDetail.campaigns.map(row => row.id), [initialReceipt.id]);
+    assert.deepEqual(draftDetail.contentItems, []);
+    assert.deepEqual(draftDetail.scenes, []);
+    assert.equal(draftDetail.nextCursor, null);
+    await page.getByRole('status').filter({hasText: /Gunakan Halaman seterusnya untuk mencari draf ini/}).waitFor();
     assert.deepEqual(await pendingRetryEntries(), []);
-    await page.reload();
-    await page.getByRole('button', {name: workspaceName, exact: true}).click();
+    assert.equal(await page.getByRole('heading', {name: /^Kempen halaman /}).count(), 100);
+    assert.equal((await anonymousContext.request.get(draftReadUrl)).status(), 401);
+    const foreignDraftRead = await foreignContext.request.get(draftReadUrl, {headers: {'x-user-id': owner}});
+    assert.equal(foreignDraftRead.status(), 404);
+    assert.deepEqual(await foreignDraftRead.json(), {error: 'not_found'});
+    const mismatchedDraftRead = await ownerContext.request.get(apiUrl + '?draft=' + foreignCampaignId);
+    assert.equal(mismatchedDraftRead.status(), 404);
+    assert.deepEqual(await mismatchedDraftRead.json(), {error: 'not_found'});
+    await nextPage.click();
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
     // Rejected anonymous and foreign-tenant writes must leave no visible campaign records.
     assert.equal(await page.getByRole('heading', {name: deniedDraft.product_service, exact: true}).count(), 0);
@@ -346,16 +372,7 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await ownerContext.addCookies([{name: 'content-browser-fixture', value: ownerSession, url: origin, httpOnly: true}]);
     await page.reload();
     await page.getByRole('button', {name: workspaceName, exact: true}).click();
-    await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
-
-    // Fill the first page with equally-timestamped campaigns. The original
-    // campaign and durable draft must remain reachable on the next page.
-    await admin.query(`INSERT INTO content_dev.campaigns
-      (tenant_id, workspace_id, owner_principal_id, product_service, audience, duration_days, created_at)
-      SELECT $1, $2, $3, 'Kempen halaman ' || n, 'Ujian', 7, now() + interval '1 day'
-      FROM generate_series(1, 100) AS n`, [tenant, workspaceId, owner]);
-    await page.getByRole('button', {name: 'Muat semula kempen workspace ini'}).click();
-    await page.getByRole('button', {name: 'Halaman seterusnya'}).click();
+    await nextPage.click();
     await page.getByRole('heading', {name: existingCampaign, exact: true}).waitFor();
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
     assert.equal(await page.getByRole('heading', {name: /^Kempen halaman /}).count(), 0);

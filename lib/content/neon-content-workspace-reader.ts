@@ -21,9 +21,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const deny = (): never => {throw new ContentReadDenied();};
 export function createContentWorkspaceReader(transaction: Transaction) {
   if (typeof transaction !== "function") deny();
-  return async (principal: Principal, workspaceId: string, before?: string) => {
+  return async (principal: Principal, workspaceId: string, before?: string, draftId?: string) => {
     if (principal?.authenticated !== true || !UUID.test(principal.userId) || !UUID.test(workspaceId) ||
-        (before !== undefined && !UUID.test(before))) deny();
+        (before !== undefined && !UUID.test(before)) ||
+        (draftId !== undefined && (!UUID.test(draftId) || before !== undefined))) deny();
     return transaction(async query => {
       const role = (await query(`SELECT current_user AS name, session_user AS login,
         rolcanlogin AS can_login, rolinherit AS inherits, rolbypassrls AS bypass,
@@ -60,13 +61,21 @@ export function createContentWorkspaceReader(transaction: Transaction) {
       if (workspace.length !== 1 || !UUID.test(String(workspace[0].tenant_id))) deny();
       if (workspace[0].id !== workspaceId) deny();
       const tenant = String(workspace[0].tenant_id);
+      const scope = [tenant,workspaceId,principal.userId];
+      if (draftId !== undefined) {
+        const drafts = (await query(`SELECT id,product_service,description,audience,problem,objective,
+          duration_days,platforms,status FROM content_dev.campaigns
+          WHERE tenant_id=$1::uuid AND workspace_id=$2::uuid AND owner_principal_id=$3::uuid
+          AND id=$4::uuid AND status='draft' LIMIT 1`, [...scope,draftId])).rows;
+        if (drafts.length !== 1 || drafts[0].id !== draftId || drafts[0].status !== 'draft') deny();
+        return {workspace:workspace[0],campaigns:drafts,contentItems:[],scenes:[],nextCursor:null};
+      }
       // Compare both ordering fields in PostgreSQL so timestamp precision is preserved.
       // An out-of-scope cursor matches no row and cannot expose another tenant's data.
       const cursorFilter = before ? `AND (created_at,id) < (
         SELECT cursor_row.created_at,cursor_row.id FROM content_dev.campaigns cursor_row
         WHERE cursor_row.tenant_id=$1::uuid AND cursor_row.workspace_id=$2::uuid
         AND cursor_row.owner_principal_id=$3::uuid AND cursor_row.id=$4::uuid)` : '';
-      const scope = [tenant,workspaceId,principal.userId];
       const page = (await query(`SELECT id,product_service,description,audience,problem,objective,
         duration_days,platforms,status,strategy,angles,captions,publish_plan,created_at,updated_at
         FROM content_dev.campaigns WHERE tenant_id=$1::uuid AND workspace_id=$2::uuid

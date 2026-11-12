@@ -3,7 +3,8 @@
     "deploymentEnabled": {
       "work/content-dev-authenticated-parity-20261112": false,
       "work/content-dev-recovery-integration-20261113": false,
-      "work/content-draft-retry-after-reload-20261113": false
+      "work/content-draft-retry-after-reload-20261113": false,
+      "work/content-draft-readback-by-receipt-20261113": false
     }
   },
   "crons": [

@@ -55,3 +55,19 @@ test('cursor is bounded and is sent only with a verified principal and workspace
  assert.equal((await handler(new Request(req().url+`?before=${cursor}`),W)).status,200);
  assert.equal(reads,1);
 });
+
+test('a draft receipt selector requires a single UUID and excludes pagination',async()=>{
+ const draft='55555555-5555-4555-8555-555555555555';
+ const calls=[];
+ const handler=createContentWorkspaceGet(async()=>({userId:A,authenticated:true}),async(...args)=>{
+  calls.push(args);return {campaigns:[]};
+ });
+ for(const query of ['?draft=', '?draft=other', `?draft=${draft}&draft=${draft}`, `?draft=${draft}&before=${draft}`]){
+  const response=await handler(new Request(req().url+query),W);
+  assert.equal(response.status,400);
+  assert.deepEqual(await response.json(),{error:'invalid_draft'});
+ }
+ assert.deepEqual(calls,[]);
+ assert.equal((await handler(new Request(req().url+`?draft=${draft}`),W)).status,200);
+ assert.deepEqual(calls,[[{userId:A,authenticated:true},W,undefined,draft]]);
+});
