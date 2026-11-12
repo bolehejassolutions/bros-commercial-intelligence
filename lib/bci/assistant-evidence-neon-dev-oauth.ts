@@ -104,24 +104,28 @@ export function createBusinessOsDevOAuthVerifier(
       // MUST be a server-owned cryptographic verifier. No decode-only claims.
       const v = await verifySignedAccessToken(bearer);
       const clock = now();
-      if (!verifiedClaims(v) || !Number.isFinite(clock) ||
-          v.iss !== expectedIssuer || !audIncludes(v.aud, expectedResource) ||
-          typeof v.sub !== "string" || !UUID.test(v.sub) ||
-          !clientId(v.client_id) || !allowedClients.has(v.client_id) ||
-          !unixTime(v.exp) || v.exp * 1000 <= clock ||
-          v.exp * 1000 - clock > MAX_TTL_S * 1000 ||
-          (v.nbf !== undefined && (!unixTime(v.nbf) || v.nbf * 1000 > clock)) ||
-          (v.iat !== undefined && (!unixTime(v.iat) || v.iat * 1000 > clock ||
-            v.iat > v.exp || v.exp - v.iat > MAX_TTL_S)) ||
-          (v.scope !== undefined && typeof v.scope !== "string")) return null;
+      if (!verifiedClaims(v) || !Number.isFinite(clock)) return null;
+      // Snapshot all security-relevant claims exactly once. A provider adapter
+      // must not be able to change the authorized principal between validation
+      // and the subsequent asynchronous live-status check.
+      const { iss, aud, sub, client_id, exp, nbf, iat, scope } = v;
+      if (iss !== expectedIssuer || !audIncludes(aud, expectedResource) ||
+          typeof sub !== "string" || !UUID.test(sub) ||
+          !clientId(client_id) || !allowedClients.has(client_id) ||
+          !unixTime(exp) || exp * 1000 <= clock ||
+          exp * 1000 - clock > MAX_TTL_S * 1000 ||
+          (nbf !== undefined && (!unixTime(nbf) || nbf * 1000 > clock)) ||
+          (iat !== undefined && (!unixTime(iat) || iat * 1000 > clock ||
+            iat > exp || exp - iat > MAX_TTL_S)) ||
+          (scope !== undefined && typeof scope !== "string")) return null;
       // A JWT can remain valid despite logout or resource disablement.
       // An independent LIVE check is required on EVERY call, including the
       // handler's post-SQL verification. Until available, this MUST remain off.
       // Snapshot verified claims before awaiting the external live-status adapter.
       // The adapter must not be able to mutate the authorized principal.
-      const subjectId = v.sub;
-      const verifiedClientId = v.client_id;
-      const expiryMillis = v.exp * 1000;
+      const subjectId = sub;
+      const verifiedClientId = client_id;
+      const expiryMillis = exp * 1000;
       const expiresAt = new Date(expiryMillis).toISOString();
       const tokenDigest = createHash("sha256").update(bearer).digest("hex");
       const active = await verifyLiveTokenStatus({
