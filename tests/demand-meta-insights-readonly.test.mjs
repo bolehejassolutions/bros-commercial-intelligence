@@ -93,7 +93,7 @@ test("collection timestamp is independently captured after provider response for
   const before=Date.now();
   const result=await read(req,token,transport(data));
   const after=Date.now();
-  assert.match(result.collectedAt,/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/);
+  assert.match(result.collectedAt,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   assert.ok(Date.parse(result.collectedAt)>=before && Date.parse(result.collectedAt)<=after);
   assert.equal(result.observedAt,req.observedAt);
   assert.notEqual(result.collectedAt,req.observedAt);
