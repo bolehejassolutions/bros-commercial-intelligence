@@ -19,7 +19,30 @@ export type ContentCampaignView=Readonly<{
 }>;
 
 export function buildContentCampaignView(raw:unknown):ContentCampaignView {
- const c=record(raw)?raw:{};
+ // Campaign JSONB must be plain data: never invoke nested accessors during display.
+ // A malformed field is omitted rather than blocking independent valid fields.
+ const safe=(value:unknown,depth=0):unknown=>{
+  if(depth>12)return undefined;
+  if(value===null||typeof value==='string'||typeof value==='boolean'||
+    (typeof value==='number'&&Number.isFinite(value)))return value;
+  if(!value||typeof value!=='object')return undefined;
+  const proto=Object.getPrototypeOf(value);
+  if(!Array.isArray(value)&&proto!==Object.prototype&&proto!==null)return undefined;
+  const descriptors=Object.getOwnPropertyDescriptors(value);
+  if(Object.values(descriptors).some(d=>!('value' in d)))return undefined;
+  if(Array.isArray(value)){
+   if(value.length>300)return undefined;
+   return Array.from({length:value.length},(_,i)=>safe(descriptors[String(i)]?.value,depth+1));
+  }
+  const out:Record<string,unknown>=Object.create(null);
+  for(const [key,descriptor] of Object.entries(descriptors).slice(0,350)){
+   const child=safe(descriptor.value,depth+1);
+   if(child!==undefined)out[key]=child;
+  }
+  return out;
+ };
+ const sanitized=safe(raw);
+ const c=record(sanitized)?sanitized:{};
  const strategy=record(c.strategy)?c.strategy:{};
  const strategyItems=[
   {label:'Kedudukan jenama',value:str(strategy.positioning)},
