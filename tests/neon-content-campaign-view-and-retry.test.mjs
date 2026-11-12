@@ -86,3 +86,33 @@ test('late draft save acknowledgement cannot update another selected workspace',
  assert.equal(isContentDraftSaveFeedbackCurrent(workspaceB,workspaceA),false);
  assert.equal(isContentDraftSaveFeedbackCurrent('invalid',workspaceA),false);
 });
+
+test('campaign display never executes accessor-backed nested JSONB or hides valid captions',()=>{
+ let reads=0;
+ const hostile={};
+ Object.defineProperty(hostile,'positioning',{enumerable:true,get(){reads++;throw Error('getter');}});
+ const view=buildContentCampaignView({
+  strategy:hostile,
+  captions:{facebook:'Valid Malaysian caption'},
+  angles:[{title:'Safe',hook:'Customer question',reason:'Clarity'}]
+ });
+ assert.equal(reads,0);
+ assert.deepEqual(view.strategy,[]);
+ assert.equal(view.captions[0].caption,'Valid Malaysian caption');
+ assert.equal(view.angles[0].title,'Safe');
+});
+test('campaign display rejects prototype-backed and nested accessor rows independently',()=>{
+ let reads=0;
+ const hostile=Object.create({platform:'facebook',caption:'Forged'});
+ const angle={title:'Unsafe'};
+ Object.defineProperty(angle,'hook',{enumerable:true,get(){reads++;throw Error('getter');}});
+ const view=buildContentCampaignView({
+  angles:[angle,{title:'Safe',hook:'Recognizable problem',reason:'Explain'}],
+  captions:[hostile,{platform:'tiktok',caption:'Genuine draft'}],
+  publish_plan:[{day:1,platform:'tiktok',content_type:'draft',objective:'Explain'}]
+ });
+ assert.equal(reads,0);
+ assert.deepEqual(view.angles.map(x=>x.title),['Safe']);
+ assert.deepEqual(view.captions.map(x=>x.platform),['tiktok']);
+ assert.equal(view.publishPlan.length,1);
+});
