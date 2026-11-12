@@ -255,6 +255,11 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await page.reload();
     await page.getByText('Sesi Neon Auth belum disahkan.').waitFor();
     assert.equal((await ownerContext.request.get(apiUrl)).status(), 401);
+    // An expired session must also fail closed for draft writes, not only reads.
+    const deniedDraftWrite = await ownerContext.request.post(apiUrl + '/campaign-drafts', {
+      data: {product_service: 'Unauthorized expired-session draft'},
+    });
+    assert.equal(deniedDraftWrite.status(), 401);
     assert.equal(await page.getByRole('heading', {name: existingCampaign, exact: true}).count(), 0);
     assert.equal(await page.getByRole('heading', {name: newDraft, exact: true}).count(), 0);
 
