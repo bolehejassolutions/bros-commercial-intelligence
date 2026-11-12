@@ -20,12 +20,21 @@ export function scopeContentCampaignItems<I extends Item,S extends Scene>(
  // Scene identifiers must not be attributed to two different content items.
  // A malformed or mixed readback must never guess which item owns the scene.
  const sceneOwner=new Map<string,string>();
+ const sceneFingerprint=new Map<string,string>();
  const ambiguousScenes=new Set<string>();
  for(const scene of scenes){
   if(!scene||typeof scene.id!=='string'||!scene.id.length||typeof scene.content_item_id!=='string')continue;
   const prior=sceneOwner.get(scene.id);
   if(prior!==undefined&&prior!==scene.content_item_id)ambiguousScenes.add(scene.id);
   else sceneOwner.set(scene.id,scene.content_item_id);
+  // Same-ID replay rows must agree on the complete scene payload. Otherwise
+  // choosing the first row could display a stale or tampered script/visual.
+  // JSONB readbacks are plain JSON; serialization is deterministic per row.
+  let fingerprint:string;
+  try{fingerprint=JSON.stringify(scene);}catch{ambiguousScenes.add(scene.id);continue;}
+  const previous=sceneFingerprint.get(scene.id);
+  if(previous!==undefined&&previous!==fingerprint)ambiguousScenes.add(scene.id);
+  else sceneFingerprint.set(scene.id,fingerprint);
  }
  const owned=items.filter(i=>i&&i.campaign_id===campaignId&&typeof i.id==='string'&&i.id.length>0&&!ambiguous.has(i.id));
  const unique=new Set<string>();
