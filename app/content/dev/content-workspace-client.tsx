@@ -237,7 +237,8 @@ export default function ContentWorkspaceClient(){
     pendingDraftAttempt.current,selected,submittedDraft,()=>crypto.randomUUID(),
    );
    pendingDraftAttempt.current=attempt;
-   const response=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected)+'/campaign-drafts',{
+   const workspaceUrl='/api/content/dev/workspaces/'+encodeURIComponent(selected);
+   const response=await fetch(workspaceUrl+'/campaign-drafts',{
     method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','idempotency-key':attempt.key},
     body:submitted
    }).catch(()=>{
@@ -247,16 +248,31 @@ export default function ContentWorkspaceClient(){
    const receipt=parseContentDraftAcknowledgement(await response.json(),response.status);
    // A 201 receipt alone is not proof that the draft is independently readable.
    // Preserve the idempotency key on readback failure for a safe retry.
-   const readback=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected),{
-    cache:'no-store',credentials:'same-origin'
-   });
+   const readOptions={cache:'no-store',credentials:'same-origin'} as const;
+   const readback=await fetch(workspaceUrl,readOptions);
    if(!readback.ok)throw new Error('Draf diterima tetapi bacaan semula gagal. Cuba semula dengan selamat.');
-   const verified=confirmContentDraftReadback(await readback.json(),selected,receipt.id,submittedDraft);
+   const pagePayload=await readback.json();
+   let verifiedPage:ReturnType<typeof parseContentWorkspaceDetail>;
+   let savedOnOlderPage=false;
+   try{
+    verifiedPage=confirmContentDraftReadback(pagePayload,selected,receipt.id,submittedDraft);
+   }catch(error){
+    verifiedPage=parseContentWorkspaceDetail(pagePayload,selected);
+    if(!verifiedPage.nextCursor||verifiedPage.campaigns.some(row=>row.id===receipt.id))throw error;
+    // A replayed draft can be older than the first page. Read just that receipt
+    // through the same restricted reader and preserve the first page for display.
+    const draftRead=await fetch(workspaceUrl+'?draft='+encodeURIComponent(receipt.id),readOptions);
+    if(!draftRead.ok)throw error;
+    confirmContentDraftReadback(await draftRead.json(),selected,receipt.id,submittedDraft);
+    savedOnOlderPage=true;
+   }
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current)){
     detailReadGuard.current.supersedeWithVerifiedDraft();
     setCampaignPages({workspaceId:selected,cursors:[]});
-    setDetailLoad(loadedWorkspace(verified));
-    setNotice('Draf kempen sudah disimpan. Anda boleh membukanya dalam senarai kempen.');
+    setDetailLoad(loadedWorkspace(verifiedPage));
+    setNotice(savedOnOlderPage
+     ?'Draf kempen sudah disimpan. Gunakan Halaman seterusnya untuk mencari draf ini.'
+     :'Draf kempen sudah disimpan. Anda boleh membukanya dalam senarai kempen.');
    }
    // A later save may have replaced this attempt while the POST was pending.
    // Never clear its retry key or mutate a different workspace's form.

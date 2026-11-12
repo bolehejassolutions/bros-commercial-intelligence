@@ -4,7 +4,7 @@
  */
 import { ContentReadDenied,ContentReadIncomplete } from './neon-content-workspace-reader.ts';
 type Principal = Readonly<{userId:string;authenticated:true}>;
-type Reader = (principal:Principal, workspaceId:string,before?:string)=>Promise<unknown>;
+type Reader = (principal:Principal, workspaceId:string,before?:string,draftId?:string)=>Promise<unknown>;
 type VerifySession = (request:Request)=>Promise<Principal|null>;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const response=(status:number,body:object)=>new Response(JSON.stringify(body),{
@@ -19,12 +19,16 @@ export function createContentWorkspaceGet(verifySession:VerifySession,readWorksp
   try {principal=await verifySession(request);}catch{return response(401,{error:'unauthorized'});}
   if(!principal||principal.authenticated!==true||!UUID.test(principal.userId))
    return response(401,{error:'unauthorized'});
-  const before=new URL(request.url).searchParams.getAll('before');
+  const params=new URL(request.url).searchParams;
+  const before=params.getAll('before');
+  const draft=params.getAll('draft');
   if(before.length>1||(before.length===1&&!UUID.test(before[0])))
    return response(400,{error:'invalid_cursor'});
+  if(draft.length>1||(draft.length===1&&(!UUID.test(draft[0])||before.length!==0)))
+   return response(400,{error:'invalid_draft'});
   try {
    const verified=Object.freeze({userId:principal.userId,authenticated:true as const});
-   const data=before.length ? await readWorkspace(verified,workspaceId,before[0]) : await readWorkspace(verified,workspaceId);
+   const data=await readWorkspace(verified,workspaceId,before[0],draft[0]);
    return response(200,{data});
   }catch(error){
    if(error instanceof ContentReadDenied)return response(404,{error:'not_found'});
