@@ -258,6 +258,8 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await page.reload();
     await page.getByRole('button', {name: workspaceName, exact: true}).click();
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
+    // Rejected anonymous and foreign-tenant writes must leave no visible campaign records.
+    assert.equal(await page.getByRole('heading', {name: deniedDraft.product_service, exact: true}).count(), 0);
     const {rows} = await admin.query(
       'SELECT status, platforms FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
       [workspaceId, newDraft],
