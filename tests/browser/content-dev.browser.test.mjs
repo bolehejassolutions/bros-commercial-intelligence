@@ -270,15 +270,49 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await campaign.getByRole('status').filter({hasText: /Perlu tangkap layar produk asal/}).waitFor();
     assert.equal(await creativeDraft.count(), 0);
 
-    await page.getByLabel('Produk / servis').fill(newDraft);
-    await page.getByLabel('Sasaran pelanggan').fill('Pelanggan yang bekerja pada hari biasa');
-    await page.getByRole('checkbox', {name: 'facebook'}).uncheck();
-    await page.getByRole('checkbox', {name: 'instagram'}).check();
+    const fillDraft = async () => {
+      await page.getByLabel('Produk / servis').fill(newDraft);
+      await page.getByLabel('Sasaran pelanggan').fill('Pelanggan yang bekerja pada hari biasa');
+      await page.getByRole('checkbox', {name: 'facebook'}).uncheck();
+      await page.getByRole('checkbox', {name: 'instagram'}).check();
+    };
+    const draftEndpoint = apiUrl + '/campaign-drafts';
+    const submit = page.getByRole('button', {name: 'Simpan draf kempen', exact: true});
+    const pendingRetryEntries = () => page.evaluate(() => Object.entries(sessionStorage)
+      .filter(([key]) => key.startsWith('bros.content.pending-draft.v1.')));
+    let firstPost;
+    let firstKey;
+    await page.route(draftEndpoint, async route => {
+      firstKey = route.request().headers()['idempotency-key'];
+      firstPost = await route.fetch();
+      // The server commits the draft before its response is lost by the browser.
+      await route.abort('connectionreset');
+    }, {times: 1});
+    await fillDraft();
+    await submit.click();
+    await page.getByRole('alert').waitFor();
+    assert.equal(firstPost.status(), 201);
+    const initialReceipt = (await firstPost.json()).data;
+    assert.equal(initialReceipt.status, 'draft');
+    assert.equal(initialReceipt.replayed, false);
+    const pending = await pendingRetryEntries();
+    assert.equal(pending.length, 1);
+    assert.match(pending[0][0], /^bros\.content\.pending-draft\.v1\.[0-9a-f]{64}$/);
+    assert.equal(pending[0][1], firstKey);
+
+    await page.reload();
+    await page.getByRole('button', {name: workspaceName, exact: true}).click();
+    await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
+    await fillDraft();
     const draftResponse = page.waitForResponse(response =>
-      response.url() === apiUrl + '/campaign-drafts' && response.request().method() === 'POST');
-    await page.getByRole('button', {name: 'Simpan draf kempen', exact: true}).click();
-    assert.equal((await draftResponse).status(), 201);
+      response.url() === draftEndpoint && response.request().method() === 'POST');
+    await submit.click();
+    const replay = await draftResponse;
+    assert.equal(replay.status(), 201);
+    assert.equal(replay.request().headers()['idempotency-key'], firstKey);
+    assert.deepEqual((await replay.json()).data, {...initialReceipt, replayed: true});
     await page.getByRole('status').filter({hasText: /Draf kempen sudah disimpan/}).waitFor();
+    assert.deepEqual(await pendingRetryEntries(), []);
     await page.reload();
     await page.getByRole('button', {name: workspaceName, exact: true}).click();
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();

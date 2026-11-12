@@ -5,7 +5,13 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import ContentCreativeDraft from './content-creative-draft';
 import {createContentDetailReadGuard} from '@/lib/content/content-detail-read-guard';
-import {prepareContentDraftRetry,isContentDraftSaveFeedbackCurrent,shouldClearContentDraftAttempt,type ContentDraftAttempt} from '@/lib/content/neon-content-draft-retry';
+import {
+ clearContentBrowserDraftRetry,
+ isContentDraftSaveFeedbackCurrent,
+ prepareContentBrowserDraftRetry,
+ shouldClearContentDraftAttempt,
+ type ContentDraftAttempt,
+} from '@/lib/content/neon-content-draft-retry';
 import {parseContentDraftAcknowledgement} from '@/lib/content/neon-content-draft-ack-response';
 import {confirmContentDraftReadback} from '@/lib/content/neon-content-draft-readback';
 import {buildContentCampaignView} from '@/lib/content/neon-content-campaign-view';
@@ -227,7 +233,9 @@ export default function ContentWorkspaceClient(){
    // The form can change while POST/readback is pending. Verify the immutable
    // submitted payload, never the latest editable form state.
    const submittedDraft:Draft=JSON.parse(submitted);
-   const attempt=prepareContentDraftRetry(pendingDraftAttempt.current,selected,draft,()=>crypto.randomUUID());
+   const attempt=await prepareContentBrowserDraftRetry(
+    pendingDraftAttempt.current,selected,submittedDraft,()=>crypto.randomUUID(),
+   );
    pendingDraftAttempt.current=attempt;
    const response=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected)+'/campaign-drafts',{
     method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','idempotency-key':attempt.key},
@@ -250,7 +258,10 @@ export default function ContentWorkspaceClient(){
    }
    // A later save may have replaced this attempt while the POST was pending.
    // Never clear its retry key or mutate a different workspace's form.
-   if(shouldClearContentDraftAttempt(pendingDraftAttempt.current,attempt))pendingDraftAttempt.current=null;
+   if(shouldClearContentDraftAttempt(pendingDraftAttempt.current,attempt)){
+    clearContentBrowserDraftRetry(attempt);
+    pendingDraftAttempt.current=null;
+   }
    if(isContentDraftSaveFeedbackCurrent(selected,selectedWorkspaceRef.current))
     setDraft(current=>JSON.stringify(current)===submitted?initialDraft:current);
    // The authenticated GET above already verified the newest page. A save
