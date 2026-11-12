@@ -3,6 +3,22 @@
  */
 type Item={id:string;campaign_id:string};
 type Scene={id:string;content_item_id:string;scene_number?:number};
+// PostgreSQL JSONB does not guarantee object-key insertion order on readback.
+// Compare semantic JSON payloads, not JavaScript property insertion order.
+function canonicalJson(value:unknown):string{
+ const seen=new Set<object>();
+ const normalize=(v:unknown):unknown=>{
+  if(v===null||typeof v==='string'||typeof v==='boolean')return v;
+  if(typeof v==='number'&&Number.isFinite(v))return v;
+  if(!v||typeof v!=='object'||seen.has(v))throw new Error('invalid JSON payload');
+  seen.add(v);
+  const result=Array.isArray(v)?v.map(normalize):Object.fromEntries(
+   Object.keys(v).sort().map(key=>[key,normalize((v as Record<string,unknown>)[key])]));
+  seen.delete(v);
+  return result;
+ };
+ return JSON.stringify(normalize(value));
+}
 export function scopeContentCampaignItems<I extends Item,S extends Scene>(
  campaignId:string,items:readonly I[],scenes:readonly S[]
 ):ReadonlyArray<Readonly<{item:I;scenes:readonly S[]}>>{
@@ -20,7 +36,7 @@ export function scopeContentCampaignItems<I extends Item,S extends Scene>(
   // Replayed item IDs with conflicting payloads cannot be safely displayed.
   // Suppress every copy rather than picking whichever arrived first.
   let fingerprint:string;
-  try{fingerprint=JSON.stringify(item);}catch{ambiguous.add(item.id);continue;}
+  try{fingerprint=canonicalJson(item);}catch{ambiguous.add(item.id);continue;}
   const previous=itemFingerprint.get(item.id);
   if(previous!==undefined&&previous!==fingerprint)ambiguous.add(item.id);
   else itemFingerprint.set(item.id,fingerprint);
@@ -39,7 +55,7 @@ export function scopeContentCampaignItems<I extends Item,S extends Scene>(
   // choosing the first row could display a stale or tampered script/visual.
   // JSONB readbacks are plain JSON; serialization is deterministic per row.
   let fingerprint:string;
-  try{fingerprint=JSON.stringify(scene);}catch{ambiguousScenes.add(scene.id);continue;}
+  try{fingerprint=canonicalJson(scene);}catch{ambiguousScenes.add(scene.id);continue;}
   const previous=sceneFingerprint.get(scene.id);
   if(previous!==undefined&&previous!==fingerprint)ambiguousScenes.add(scene.id);
   else sceneFingerprint.set(scene.id,fingerprint);
