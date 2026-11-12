@@ -23,6 +23,7 @@ CREATE TABLE content_dev.workspaces (
  owner_principal_id uuid NOT NULL,
  name text NOT NULL,
  business_dna jsonb NOT NULL DEFAULT '{}'::jsonb,
+ updated_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(tenant_id,id)
 );
 CREATE TABLE content_dev.campaigns (
