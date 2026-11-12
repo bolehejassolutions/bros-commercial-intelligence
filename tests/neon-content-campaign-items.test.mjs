@@ -137,3 +137,27 @@ test('prototype-backed rows are rejected without hiding unrelated persisted cont
  const rows=scopeContentCampaignItems(a,[forged,{id:'safe',campaign_id:a}],[]);
  assert.deepEqual(rows.map(r=>r.item.id),['safe']);
 });
+
+test('nested JSONB accessors fail closed without executing getters or hiding unrelated items',()=>{
+ let reads=0;
+ const nested={};
+ Object.defineProperty(nested,'script',{enumerable:true,get(){reads++;throw Error('getter executed');}});
+ const rows=scopeContentCampaignItems(a,[
+  {id:'untrusted',campaign_id:a,metadata:{nested}},
+  {id:'safe',campaign_id:a,script:'legitimate'}
+ ],[{id:'scene',content_item_id:'safe'}]);
+ assert.equal(reads,0);
+ assert.deepEqual(rows.map(r=>r.item.id),['safe']);
+ assert.deepEqual(rows[0].scenes.map(s=>s.id),['scene']);
+});
+test('nested scene accessors fail closed while independent scenes remain visible',()=>{
+ let reads=0;
+ const metadata={};
+ Object.defineProperty(metadata,'prompt',{enumerable:true,get(){reads++;throw Error('getter executed');}});
+ const rows=scopeContentCampaignItems(a,[{id:'safe',campaign_id:a}],[
+  {id:'bad',content_item_id:'safe',metadata},
+  {id:'good',content_item_id:'safe',scene_number:1}
+ ]);
+ assert.equal(reads,0);
+ assert.deepEqual(rows[0].scenes.map(s=>s.id),['good']);
+});

@@ -11,9 +11,22 @@ function canonicalJson(value:unknown):string{
   if(v===null||typeof v==='string'||typeof v==='boolean')return v;
   if(typeof v==='number'&&Number.isFinite(v))return v;
   if(!v||typeof v!=='object'||seen.has(v))throw new Error('invalid JSON payload');
+  const proto=Object.getPrototypeOf(v);
+  if(!Array.isArray(v)&&proto!==Object.prototype&&proto!==null)throw new Error('invalid JSON object');
+  // Never invoke getters while fingerprinting nested untrusted readback data.
+  const descriptors=Object.getOwnPropertyDescriptors(v);
+  if(Object.values(descriptors).some(d=>!('value' in d)))throw new Error('accessor in JSON payload');
   seen.add(v);
-  const result=Array.isArray(v)?v.map(normalize):Object.fromEntries(
-   Object.keys(v).sort().map(key=>[key,normalize((v as Record<string,unknown>)[key])]));
+  const result=Array.isArray(v)
+   ? Array.from({length:v.length},(_,i)=>{
+      const d=descriptors[String(i)];
+      if(!d||!('value' in d))throw new Error('sparse JSON array');
+      return normalize(d.value);
+     })
+   : Object.fromEntries(Object.keys(descriptors).sort().map(key=>{
+      const d=descriptors[key];
+      return [key,normalize(d.value)];
+     }));
   seen.delete(v);
   return result;
  };
