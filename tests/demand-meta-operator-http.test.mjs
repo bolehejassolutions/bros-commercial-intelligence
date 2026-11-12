@@ -2,6 +2,7 @@ import test from "node:test";
 import {readFileSync} from "node:fs";
 import assert from "node:assert/strict";
 import {createDemandOperatorStatusHandler} from "../lib/demand/meta-operator-http.ts";
+import {parseDemandMonitorResponse} from "../lib/demand/meta-monitor-response.ts";
 const clock="2026-11-11T01:00:00.000Z";
 const jwt="Bearer abc.def.ghi";
 const url="https://internal.example/api/internal/demand-meta-status?since=2026-11-01&until=2026-11-07";
@@ -37,6 +38,7 @@ const build=(override={})=>{
 const req=(target=url,method="GET",headers={authorization:jwt})=>new Request(target,{method,headers});
 test("authenticated GET returns pinned campaign status and NO_ROWS_NOT_ZERO without write authority",async()=>{
  const h=build();const response=await h.handler(req());const data=await response.json();
+ assert.deepEqual(parseDemandMonitorResponse(data,{since:"2026-11-01",until:"2026-11-07"}),data);
  assert.equal(response.status,200);assert.equal(data.insights.state,"NO_ROWS_NOT_ZERO");
  assert.equal(data.insights.spend,null);assert.equal(data.status.rows[0].effectiveStatus,"PAUSED");
  assert.equal(data.campaignInsights.campaignId,id);
@@ -410,7 +412,24 @@ test("campaign performance uses the pinned campaign URL and an independent repor
  assert.deepEqual([data.insights.spend,data.insights.impressions,data.insights.clicks],[25.67,900,30]);
  assert.deepEqual([data.campaignInsights.campaignId,data.campaignInsights.spend,
   data.campaignInsights.impressions,data.campaignInsights.clicks],[id,12.34,315,9]);
+ const window={since:common.date_start,until:common.date_stop};
+ assert.deepEqual(parseDemandMonitorResponse(data,window),data);
  assert.equal(data.verifiedPaidOrders,null);
+ for(const bad of [
+  {...data,insights:{...data.insights,spend:null}},
+  {...data,campaignInsights:{...data.campaignInsights,clicks:undefined}},
+  {...data,campaignInsights:{...data.campaignInsights,impressions:-1}},
+  {...data,campaignInsights:{...data.campaignInsights,state:"NO_ROWS_NOT_ZERO"}},
+  {...data,campaignInsights:{...data.campaignInsights,accountId:"act_9999999"}},
+  {...data,campaignInsights:{...data.campaignInsights,campaignId:"120251158023300697"}},
+  {...data,insights:{...data.insights,since:"2026-11-02"}},
+  {...data,status:{...data.status,rows:[{...data.status.rows[0],effectiveStatus:"UNKNOWN_STATUS"}]}},
+  {...data,verifiedPaidOrders:0},
+ ]) assert.equal(parseDemandMonitorResponse(bad,window),null);
+ const campaignZero={...data.campaignInsights,spend:0,impressions:0,clicks:0};
+ assert.equal(parseDemandMonitorResponse({...data,campaignInsights:campaignZero},window)?.campaignInsights.spend,0);
+ const campaignEmpty={...campaignZero,state:"NO_ROWS_NOT_ZERO",spend:null,impressions:null,clicks:null};
+ assert.equal(parseDemandMonitorResponse({...data,campaignInsights:campaignEmpty},window)?.campaignInsights.spend,null);
 });
 
 test("a mismatched campaign Insights row withholds the whole monitor response",async()=>{

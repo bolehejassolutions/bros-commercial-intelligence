@@ -1,13 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import type { readDemandOperatorSnapshot } from "@/lib/demand/meta-operator-snapshot";
+import { parseDemandMonitorResponse, type DemandMonitorSnapshot } from "@/lib/demand/meta-monitor-response";
 import { demandMetaReportingDate } from "@/lib/demand/meta-reporting-date";
-
-type Snapshot = Omit<Awaited<ReturnType<typeof readDemandOperatorSnapshot>>, "tenantId" | "accountId"> & {
-  source: "META_GRAPH_API_UNATTESTED";
-  verifiedPaidOrders: null;
-};
 
 const providerMessages: Record<string, string> = {
   DEMAND_STATUS_DISABLED: "Meta monitoring is disabled for this Preview.",
@@ -33,7 +28,7 @@ const dateOffset = (days: number) => demandMetaReportingDate(new Date(Date.now()
 const money = new Intl.NumberFormat("en-MY", { style: "currency", currency: "MYR" });
 const count = new Intl.NumberFormat("en-MY");
 
-function InsightMetrics({ insights }: { insights: Snapshot["insights"] }) {
+function InsightMetrics({ insights }: { insights: DemandMonitorSnapshot["insights"] }) {
   if (insights.state === "NO_ROWS_NOT_ZERO") {
     return <p>Meta returned no rows. Spend, impressions and clicks are unknown.</p>;
   }
@@ -47,7 +42,7 @@ function InsightMetrics({ insights }: { insights: Snapshot["insights"] }) {
 export default function MetaMonitor({ getToken }: { getToken: () => Promise<string> }) {
   const [since, setSince] = useState(() => dateOffset(7));
   const [until, setUntil] = useState(() => dateOffset(1));
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<DemandMonitorSnapshot | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -77,13 +72,11 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
           ? providerMessages[code] : "Meta monitoring is unavailable.");
         return;
       }
-      const result = await response.json() as Snapshot;
-      const campaign = result.status.rows.find(row => row.kind === "campaign");
-      if (!campaign || result.campaignInsights.campaignId !== campaign.objectId ||
-          result.campaignInsights.since !== since || result.campaignInsights.until !== until ||
-          result.source !== "META_GRAPH_API_UNATTESTED" || result.executionAllowed !== false ||
-          result.verifiedPaidOrders !== null || result.insights.since !== since ||
-          result.insights.until !== until) throw Error();
+      const result = parseDemandMonitorResponse(await response.json(), { since, until });
+      if (!result) {
+        setMessage("The Meta report was incomplete or did not match the requested scope.");
+        return;
+      }
       setSnapshot(result);
       setMessage("Meta read completed.");
     } catch {
