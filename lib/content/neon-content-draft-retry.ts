@@ -3,7 +3,7 @@
  * generate a second campaign when the user retries the same submitted draft.
  * Never persist draft payloads/keys in localStorage, cookies or query strings.
  */
-export type ContentDraftAttempt=Readonly<{requestSignature:string;key:string}>;
+export type ContentDraftAttempt=Readonly<{requestSignature:string;key:string;storageSlot?:string}>;
 const KEY=/^[A-Za-z0-9_-]{12,180}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -65,6 +65,39 @@ export function prepareContentDraftRetry(
  const key=createKey();
  if(!KEY.test(key))throw new Error('Invalid draft retry key');
  return Object.freeze({requestSignature,key});
+}
+
+/** Keep an unresolved key through a reload in the same tab. Store only a
+ * fingerprint and the random key. The server still scopes keys by principal.
+ */
+export async function prepareContentBrowserDraftRetry(
+ previous:ContentDraftAttempt|null,workspaceId:string,draft:unknown,
+ createKey:()=>string
+):Promise<ContentDraftAttempt> {
+ const attempt=prepareContentDraftRetry(previous,workspaceId,draft,createKey);
+ try {
+  const input=new TextEncoder().encode(attempt.requestSignature);
+  const digest=await crypto.subtle.digest('SHA-256',input);
+  const fingerprint=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+  const storageSlot='bros.content.pending-draft.v1.'+fingerprint;
+  const storedKey=sessionStorage.getItem(storageSlot);
+  const key=storedKey&&KEY.test(storedKey)?storedKey:attempt.key;
+  if(storedKey!==key)sessionStorage.setItem(storageSlot,key);
+  return Object.freeze({...attempt,key,storageSlot});
+ } catch {
+  return attempt;
+ }
+}
+
+/** Clear the stored key only after the independent draft readback succeeds. */
+export function clearContentBrowserDraftRetry(attempt:ContentDraftAttempt):void {
+ if(!attempt.storageSlot)return;
+ try {
+  if(sessionStorage.getItem(attempt.storageSlot)===attempt.key)
+   sessionStorage.removeItem(attempt.storageSlot);
+ } catch {
+  // The tab can restrict session storage. The in-memory attempt still clears.
+ }
 }
 
 /** Only the workspace that initiated a save may display its result. */

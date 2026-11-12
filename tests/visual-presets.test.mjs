@@ -94,3 +94,22 @@ test("workspace selection honors explicit tenant configuration and BROS SELL opt
  assert.equal(buildWorkspaceCreativeDraft(sell,'REAL_PRODUCT_SHOWCASE','16:9').status,'REFERENCE_REQUIRED');
  assert.equal(buildWorkspaceCreativeDraft(sell,'FOUNDER_EDITORIAL_PORTRAIT','4:5').status,'REFERENCE_REQUIRED');
 });
+
+test("tenant creative preset config fails closed on accessor, sparse and proxy-backed arrays",async()=>{
+ const {readWorkspaceCreativeConfig,buildWorkspaceCreativeDraft}=await import('../lib/visual-presets/workspace-creative.mjs');
+ let accessed=0;
+ const accessor=['SELL_MANGA_STORY'];
+ Object.defineProperty(accessor,0,{get(){accessed++;throw Error('unexpected getter execution');}});
+ const dna=ids=>({content_creative:{brand_id:'bros-sell',preset_ids:ids,communication_standard:'bros-sell-plain-language-v1'}});
+ assert.equal(readWorkspaceCreativeConfig(dna(accessor)),null);
+ assert.equal(buildWorkspaceCreativeDraft(dna(accessor),'SELL_MANGA_STORY','9:16'),null);
+ assert.equal(accessed,0);
+ const sparse=new Array(1);
+ assert.equal(readWorkspaceCreativeConfig(dna(sparse)),null);
+ const extra=['SELL_MANGA_STORY'];
+ extra.unauthorized='NATURAL_MY_UGC';
+ assert.equal(readWorkspaceCreativeConfig(dna(extra)),null);
+ const proxy=new Proxy(['SELL_MANGA_STORY'],{ownKeys(){throw Error('blocked proxy inspection');}});
+ assert.equal(readWorkspaceCreativeConfig(dna(proxy)),null);
+ assert.deepEqual(readWorkspaceCreativeConfig(dna(['SELL_MANGA_STORY'])).presets.map(x=>x.id),['SELL_MANGA_STORY']);
+});
