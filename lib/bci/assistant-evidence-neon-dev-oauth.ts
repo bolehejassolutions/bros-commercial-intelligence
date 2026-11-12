@@ -92,6 +92,10 @@ export function createBusinessOsDevOAuthVerifier(
       typeof now !== "function") {
     throw Error("Business OS DEV OAuth dependencies unavailable");
   }
+  // Pin caller-owned configuration before any asynchronous token verification.
+  // Mutating config later must never retarget the trusted issuer or resource.
+  const expectedIssuer = config.issuer;
+  const expectedResource = config.resource;
   const allowedClients = new Set(config.allowedClientIds);
   return async (bearer: string) => {
     if (typeof bearer !== "string" || bearer.length > 4096 ||
@@ -101,7 +105,7 @@ export function createBusinessOsDevOAuthVerifier(
       const v = await verifySignedAccessToken(bearer);
       const clock = now();
       if (!verifiedClaims(v) || !Number.isFinite(clock) ||
-          v.iss !== config.issuer || !audIncludes(v.aud, config.resource) ||
+          v.iss !== expectedIssuer || !audIncludes(v.aud, expectedResource) ||
           typeof v.sub !== "string" || !UUID.test(v.sub) ||
           !clientId(v.client_id) || !allowedClients.has(v.client_id) ||
           !unixTime(v.exp) || v.exp * 1000 <= clock ||
