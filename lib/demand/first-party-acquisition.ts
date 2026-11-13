@@ -26,6 +26,8 @@ export type DemandAcquisitionSource = Readonly<{
   medium?: "paid_social" | "organic_social";
   campaign?: string;
   metaAdId?: string;
+  /** Server-resolved candidate from the tenant's stored CONTENT → DEMAND proposal. */
+  contentLineageKey?: string;
 }>;
 export type DemandAcquisitionLandingRecord = Readonly<{
   version: "demand-acquisition-v1";
@@ -93,10 +95,10 @@ function scopeValue(x: unknown): DemandAcquisitionScope {
 }
 function sourceValue(x: unknown): DemandAcquisitionSource | null {
   if (x === null) return null;
-  const allowed = ["source", "medium", "campaign", "metaAdId"];
-  if (!object(x) || Reflect.ownKeys(x).length === 0 || Reflect.ownKeys(x).length > 4 ||
+  const allowed = ["source", "medium", "campaign", "metaAdId", "contentLineageKey"];
+  if (!object(x) || Reflect.ownKeys(x).length === 0 || Reflect.ownKeys(x).length > allowed.length ||
       Reflect.ownKeys(x).some(k => typeof k !== "string" || !allowed.includes(k))) return invalid();
-  const result: { source?: DemandAcquisitionSource["source"]; medium?: DemandAcquisitionSource["medium"]; campaign?: string; metaAdId?: string } = {};
+  const result: { -readonly [K in keyof DemandAcquisitionSource]: DemandAcquisitionSource[K] } = {};
   if (Object.hasOwn(x, "source")) {
     if (!["facebook", "instagram", "tiktok", "whatsapp"].includes(x.source as string)) return invalid();
     result.source = x.source as DemandAcquisitionSource["source"];
@@ -112,6 +114,12 @@ function sourceValue(x: unknown): DemandAcquisitionSource | null {
   if (Object.hasOwn(x, "metaAdId")) {
     if (typeof x.metaAdId !== "string" || !/^[1-9][0-9]{4,24}$/.test(x.metaAdId)) return invalid();
     result.metaAdId = x.metaAdId;
+  }
+  if (Object.hasOwn(x, "contentLineageKey")) {
+    if (typeof x.contentLineageKey !== "string" || !/^content-demand:[a-f0-9]{64}$/.test(x.contentLineageKey) ||
+        !result.source || result.source === "whatsapp" || result.medium !== "organic_social" ||
+        !result.campaign || result.metaAdId !== undefined) return invalid();
+    result.contentLineageKey = x.contentLineageKey;
   }
   return Object.freeze(result);
 }
@@ -205,6 +213,7 @@ export function bindDemandHitPayAcquisitionRequest(
       .update(JSON.stringify(["v1", record.scope, record.acquisitionId, paymentRequest.id])).digest("hex");
     return Object.freeze({ status: "REFERENCE_ECHO_MATCHED_UNATTESTED" as const, candidateKey,
       acquisitionId: record.acquisitionId, paymentRequestId: paymentRequest.id,
+      ...(record.source?.contentLineageKey ? { contentLineageKey: record.source.contentLineageKey } : {}),
       providerAuthenticationVerified: false as const, tenantAuthorizationVerified: false as const,
       consentVerified: false as const, replayPrevented: false as const,
       bciPersistenceVerified: false as const, hitpayPaymentVerified: false as const,
