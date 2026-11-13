@@ -1,0 +1,13 @@
+import {createContentReservationHttpHandler} from "@/lib/bci/neon-content-reservation-http";
+import {reserveNeonDevContentPrivately} from "@/lib/bci/neon-content-reservation-private-runtime";
+export const runtime="nodejs";
+export const dynamic="force-dynamic";
+export const revalidate=0;
+const handle=createContentReservationHttpHandler({env:()=>process.env,execute:reserveNeonDevContentPrivately});
+export const POST=handle;
+export const GET=handle;
+export const PUT=handle;
+export const PATCH=handle;
+export const DELETE=handle;
+export const OPTIONS=handle;
+export const HEAD=handle;

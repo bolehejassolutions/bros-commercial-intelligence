@@ -6,6 +6,17 @@ on:
       - "app/operator/**"
       - "tests/**"
       - "lib/bci/**"
+      - "lib/portfolio/**"
+      - "lib/content/**"
+      - "lib/demand/**"
+      - "app/api/internal/demand-meta*/**"
+      - "app/internal/demand-meta-test/**"
+      - "neon/migrations/**"
+      - "scripts/verify-demand-meta-pilot-ledger.mjs"
+      - "app/api/internal/neon-content-approval/**"
+      - "app/api/internal/neon-content-review/**"
+      - "content-review-sources/**"
+      - "next.config.ts"
       - "app/api/operator/**"
       - "app/api/internal/neon-evidence/**"
       - "app/internal/neon-preview/**"
@@ -29,6 +40,9 @@ jobs:
           node-version: "22"
       - name: Test fail-closed dry-run engine
         run: node --experimental-strip-types --test tests/*.test.mjs
+      - name: Test typed paused campaign proposal
+        if: ${{ hashFiles('tests/meta-paused-proposal.test.ts') != '' }}
+        run: node --experimental-strip-types --test tests/meta-paused-proposal.test.ts
       - name: Type-check and production-build
         run: |
           npm install --no-audit --no-fund

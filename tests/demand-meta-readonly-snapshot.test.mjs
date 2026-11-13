@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {projectDemandMetaSnapshot} from '../lib/demand/meta-readonly-snapshot.mjs';
+const accountId='1997776120879476',campaignId='120251158023300697',retrievedAt='2026-11-10T01:00:00.000Z';
+const row={accountId,campaignId,adsetId:'120251158023300698',adId:'120251158023300699',effectiveStatus:'CAMPAIGN_PAUSED',impressions:12,spendMinor:500,sourceUpdatedAt:'2026-11-10T00:59:00.000Z'};
+const input={accountId,campaignId,retrievedAt,complete:true,rows:[row],source:'META_SERVER_ADAPTER_UNVERIFIED'};
+test('bounded projection retains timestamps and does not attest provider',()=>{const r=projectDemandMetaSnapshot(input);assert.equal(r.spendMinor,500);assert.equal(r.providerAuthenticationVerified,false);assert.equal(r.metaWriteAllowed,false);assert.equal(r.rows[0].effectiveStatus,'CAMPAIGN_PAUSED')});
+test('empty rows are not observed zero',()=>{const r=projectDemandMetaSnapshot({...input,rows:[]});assert.equal(r.state,'NO_ROWS_NOT_ZERO');assert.equal(r.spendMinor,null);assert.equal(r.impressions,null)});
+test('null metric cannot be converted to zero',()=>{const r=projectDemandMetaSnapshot({...input,rows:[{...row,spendMinor:null}]});assert.equal(r.spendMinor,null)});
+test('reject cross-account and campaign records',()=>{for(const bad of [{accountId:'123456789'},{campaignId:'123456789'}])assert.throws(()=>projectDemandMetaSnapshot({...input,rows:[{...row,...bad}]}),/UNVERIFIED/)});
+test('reject duplicate ad, incomplete page and excessive rows',()=>{for(const change of [{rows:[row,row]},{complete:false},{rows:Array(501).fill(row)}])assert.throws(()=>projectDemandMetaSnapshot({...input,...change}),/UNVERIFIED/)});
+test('reject future, malformed, noncanonical timestamps',()=>{for(const sourceUpdatedAt of ['2026-11-10T01:00:01.000Z','2026-11-10T00:59:00Z','2026-02-30T00:00:00.000Z'])assert.throws(()=>projectDemandMetaSnapshot({...input,rows:[{...row,sourceUpdatedAt}]}),/UNVERIFIED/)});
+test('reject extra fields and accessor traps without invoking getters',()=>{let calls=0;const hostile={...row};Object.defineProperty(hostile,'adId',{enumerable:true,get(){calls++;return row.adId}});assert.throws(()=>projectDemandMetaSnapshot({...input,rows:[hostile]}),/UNVERIFIED/);assert.equal(calls,0);assert.throws(()=>projectDemandMetaSnapshot({...input,extra:'token'}),/UNVERIFIED/)});
+test('reject thrown proxy traps without exposing messages',()=>{const bad=new Proxy(row,{ownKeys(){throw Error('provider-secret')}});assert.throws(()=>projectDemandMetaSnapshot({...input,rows:[bad]}),e=>e.message==='DEMAND_META_READ_UNVERIFIED')});

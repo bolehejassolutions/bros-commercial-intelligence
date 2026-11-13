@@ -284,9 +284,10 @@ test('campaign action_values fail closed on conflicting aliases or malformed val
   const revised=normalizeMetaCampaignFunnel(scope,{...row,action_values:[
     {action_type:'purchase',value:'999999999999.00000002'}]});
   assert.notEqual(base.snapshotKey,revised.snapshotKey);
-  const dup=normalizeMetaCampaignFunnel(scope,{...row,action_values:[
-    {action_type:'purchase',value:50},{action_type:'purchase',value:'50.00'}]});
+  // Duplicate action values are ambiguous provider evidence, even if equal.
+  assert.throws(()=>normalizeMetaCampaignFunnel(scope,{...row,action_values:[
+    {action_type:'purchase',value:50},{action_type:'purchase',value:'50.00'}]}),invalid);
   const single=normalizeMetaCampaignFunnel(scope,{...row,action_values:[
     {action_type:'purchase',value:50}]});
-  assert.equal(dup.snapshotKey,single.snapshotKey);
+  assert.match(single.snapshotKey,/^meta_ads:sha256:[a-f0-9]{64}$/);
 });

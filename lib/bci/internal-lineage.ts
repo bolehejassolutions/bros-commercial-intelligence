@@ -34,6 +34,25 @@ const stages: readonly BciLineageStage[] = [
 ];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const scopeFields = new Set(["tenantId", "product"]);
+const recordFields = new Set([
+  "id", "tenantId", "product", "stage", "sourceSystem",
+  "sourceRecordKey", "recordedAt", "parentIds", "verification",
+]);
+const exactFields = (value: object, fields: ReadonlySet<string>): boolean => {
+  // Object.keys ignores symbol and non-enumerable own keys; object spread
+  // can otherwise reflect unreviewed symbol metadata into the result.
+  const keys = Reflect.ownKeys(value);
+  return keys.length === fields.size &&
+    keys.every(key => {
+      if (typeof key !== "string" || !fields.has(key)) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      // Reject accessor and hidden properties before any caller-controlled getter
+      // can run or be copied into a shared audit result.
+      return !!descriptor && descriptor.enumerable === true &&
+        Object.prototype.hasOwnProperty.call(descriptor, "value");
+    });
+};
 const deny = (): never => { throw new Error("Invalid BCI evidence lineage"); };
 const validTime = (x: unknown): x is string =>
   typeof x === "string" && UTC.test(x) && Number.isFinite(Date.parse(x)) &&
@@ -49,20 +68,25 @@ export function validateBciLineage(
   scope: BciLineageScope,
   records: readonly BciLineageRecord[],
 ): BciLineageResult {
-  if (!scope || !UUID.test(scope.tenantId) ||
+  if (!scope || typeof scope !== "object" || Array.isArray(scope) ||
+      !exactFields(scope, scopeFields) ||
+      typeof scope.tenantId !== "string" || !UUID.test(scope.tenantId) ||
       (scope.product !== "content" && scope.product !== "demand") ||
       !Array.isArray(records) || records.length > 1000) deny();
   const byId = new Map<string, BciLineageRecord>();
   const bySource = new Map<string, string>();
   for (const record of records) {
-    if (!record || !UUID.test(record.id) || record.tenantId !== scope.tenantId ||
+    if (!record || typeof record !== "object" || Array.isArray(record) ||
+        !exactFields(record, recordFields) ||
+        typeof record.id !== "string" || !UUID.test(record.id) ||
+        typeof record.tenantId !== "string" || record.tenantId !== scope.tenantId ||
         record.product !== scope.product || !stages.includes(record.stage) ||
         !validLabel(record.sourceSystem) || !validLabel(record.sourceRecordKey) ||
         !validTime(record.recordedAt) || !Array.isArray(record.parentIds) ||
         record.parentIds.length > 100 ||
         !["unverified", "provider_reported", "verified"].includes(record.verification) ||
         (record.stage === "evidence" ? record.parentIds.length !== 0 : record.parentIds.length === 0) ||
-        record.parentIds.some(p => !UUID.test(p)) ||
+        record.parentIds.some(p => typeof p !== "string" || !UUID.test(p)) ||
         new Set(record.parentIds).size !== record.parentIds.length) deny();
     const fingerprint = JSON.stringify([
       record.tenantId, record.product, record.stage, record.sourceSystem,

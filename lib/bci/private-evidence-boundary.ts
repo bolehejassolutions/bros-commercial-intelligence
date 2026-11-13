@@ -52,9 +52,28 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const denied = (): never => { throw new PrivateEvidenceAccessDenied(); };
 const validUuid = (value: unknown) => typeof value === "string" && UUID.test(value);
 const validProduct = (value: unknown): value is BciProduct => value === "content" || value === "demand";
-const validMetrics = (data: unknown): data is Record<string, number | null> =>
-  data !== null && typeof data === "object" && !Array.isArray(data) &&
-  Object.values(data).every(v => v === null || (typeof v === "number" && Number.isFinite(v)));
+const evidenceFields = new Set(["id", "tenantId", "product", "provider", "providerRecordKey", "metrics"]);
+/** Fail closed on symbol, hidden and accessor metadata at the HTTP evidence boundary. */
+const ownDataKeys = (value: object): readonly string[] | null => {
+  const result: string[] = [];
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") return null;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable || !("value" in descriptor)) return null;
+    result.push(key);
+  }
+  return result;
+};
+const metricKey = /^[a-z][a-z0-9_]{0,63}$/;
+const validMetrics = (data: unknown): data is Record<string, number | null> => {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return false;
+  const keys = ownDataKeys(data);
+  return keys !== null && keys.length <= 100 && keys.every(key => {
+    const value = (data as Record<string, unknown>)[key];
+    return metricKey.test(key) &&
+      (value === null || (typeof value === "number" && Number.isFinite(value)));
+  });
+};
 
 /**
  * Create a policy gate using ONLY server-injected dependencies.
@@ -70,7 +89,8 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
     if (!request || typeof request !== "object" || Array.isArray(request)) denied();
     // Prevent an API adapter from accidentally accepting a client-declared
     // tenant/user or future unreviewed parameters.
-    if (Object.keys(request).some(k => k !== "product" && k !== "limit")) denied();
+    const requestKeys = ownDataKeys(request);
+    if (!requestKeys || requestKeys.some(k => k !== "product" && k !== "limit")) denied();
     if (!validProduct(request.product)) denied();
     const limit = request.limit === undefined ? 25 : request.limit;
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) denied();
@@ -85,8 +105,10 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
     if (!grant || grant.active !== true || !validUuid(grant.tenantId) ||
         grant.principalId !== principal.userId || grant.product !== request.product) denied();
 
-    // Scope must be derived exclusively from verified membership, never request.
-    const rows = await deps.readRows({ tenantId: grant.tenantId, product: request.product, limit });
+    // Capture the verified tenant before any asynchronous evidence read. Never
+    // derive it from a caller-supplied scope or a subsequently mutated grant.
+    const authorizedTenantId = grant.tenantId;
+    const rows = await deps.readRows({ tenantId: authorizedTenantId, product: request.product, limit });
     if (!Array.isArray(rows) || rows.length > limit) denied();
     // The database schema enforces both keys. Recheck at the API boundary so a
     // buggy/mock adapter cannot replay one record as multiple independent facts.
@@ -94,7 +116,13 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
     const seenProviderKeys = new Set<string>();
     for (const row of rows) {
       // Fail the entire response rather than silently filtering DB cross-tenant leakage.
-      if (!row || !validUuid(row.id) || row.tenantId !== grant.tenantId ||
+      // An adapter may accidentally return sensitive or unreviewed fields.
+      // Reject the entire response instead of serializing extra DB columns.
+      const rowKeys = row && typeof row === "object" && !Array.isArray(row)
+        ? ownDataKeys(row) : null;
+      if (!rowKeys || rowKeys.length !== evidenceFields.size ||
+          rowKeys.some(key => !evidenceFields.has(key)) ||
+          !validUuid(row.id) || row.tenantId !== authorizedTenantId ||
           row.product !== request.product || typeof row.provider !== "string" ||
           !row.provider || typeof row.providerRecordKey !== "string" ||
           !row.providerRecordKey || !validMetrics(row.metrics)) denied();
@@ -103,6 +131,24 @@ export function createPrivateEvidenceReader(deps: PrivateEvidenceDependencies) {
       seenIds.add(row.id);
       seenProviderKeys.add(providerKey);
     }
-    return rows.map(row => Object.freeze({ ...row, metrics: Object.freeze({ ...row.metrics }) }));
+    // These are two different restricted database connections. A membership
+    // can be revoked/reassigned while the evidence SELECT is in progress.
+    // Recheck the authoritative membership immediately before serializing any
+    // evidence: fail the entire response if the scope changed or lookup fails.
+    // This NARROWS the time-of-check/time-of-use gap; it does not make separate
+    // membership/evidence transactions atomic or guarantee instant revocation.
+    const latestGrants = await deps.membershipsFor(principal.userId, request.product);
+    if (!Array.isArray(latestGrants) || latestGrants.length !== 1) denied();
+    const latestGrant = latestGrants[0];
+    if (!latestGrant || latestGrant.active !== true ||
+        latestGrant.principalId !== principal.userId ||
+        latestGrant.product !== request.product ||
+        latestGrant.tenantId !== authorizedTenantId) denied();
+
+    return rows.map(row => Object.freeze({
+      id: row.id, tenantId: authorizedTenantId, product: row.product,
+      provider: row.provider, providerRecordKey: row.providerRecordKey,
+      metrics: Object.freeze({ ...row.metrics }),
+    }));
   };
 }

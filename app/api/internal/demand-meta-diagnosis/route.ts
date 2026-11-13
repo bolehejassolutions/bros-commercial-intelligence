@@ -1,0 +1,10 @@
+import { handleDemandMetaPersistedDiagnosis } from "@/lib/demand/meta-direct-runtime";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const GET = handleDemandMetaPersistedDiagnosis;
+export const POST = handleDemandMetaPersistedDiagnosis;
+export const PUT = handleDemandMetaPersistedDiagnosis;
+export const PATCH = handleDemandMetaPersistedDiagnosis;
+export const DELETE = handleDemandMetaPersistedDiagnosis;
+export const OPTIONS = handleDemandMetaPersistedDiagnosis;
+export const HEAD = handleDemandMetaPersistedDiagnosis;

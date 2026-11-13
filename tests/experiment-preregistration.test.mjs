@@ -162,3 +162,71 @@ test("reject coercible tenant, Meta account and campaign identities before propo
   assert.equal(a.executionAllowed, false);
   assert.equal(a.verifiedPaidOrders, null);
 });
+
+const creativeEvidence = "bros_sell:capability:buyer_diagnosis";
+const creativeBrief = {
+  locale: "ms-MY",
+  baselineV5AdId: "120250864977640697",
+  baselineEvidenceId: valid.evidenceCandidateIds[0],
+  narrative: {
+    KENA: "Dia baru tanya harga.",
+    PELIK: "Kita dah gelabah nak bagi diskaun.",
+    TERFIKIR: "Dia betul-betul kisah harga ke?",
+    FAHAM: "Tanya dulu apa yang dia cari.",
+    "NAMPAK NILAI": "BROS SELL bantu susun soalan untuk faham apa dia perlukan.",
+  },
+  editorial: {
+    threeSecondRecognition: "Pembeli tanya harga dalam chat.",
+    kedaiKopiReadAloud: "Dialog pendek macam penjual balas mesej.",
+    buyerValue: "Penjual tahu apa nak tanya sebelum bagi harga.",
+    productTruth: { capability: "BUYER_DIAGNOSIS", evidenceId: creativeEvidence },
+    ethicsAndCompliance: "Dialog rekaan, tiada testimoni atau janji hasil.",
+  },
+};
+const futureCreative = {
+  ...valid,
+  action: "CREATIVE_TEST",
+  preRegisteredAt: "2026-11-10T15:59:59Z",
+  experimentStart: "2026-11-11",
+  experimentEnd: "2026-11-17",
+  evidenceCandidateIds: [...valid.evidenceCandidateIds, creativeEvidence],
+  creativeBrief,
+};
+
+test("new BROS SELL creative experiments record Malaysian narrative, product truth and V5 baseline for review", () => {
+  const result = preregister(futureCreative);
+  assert.deepEqual(result.creativeBrief, creativeBrief);
+  assert.deepEqual(Object.keys(result.creativeBrief.narrative), ["KENA", "PELIK", "TERFIKIR", "FAHAM", "NAMPAK NILAI"]);
+  assert.equal(Object.isFrozen(result.creativeBrief.editorial.productTruth), true);
+  assert.equal(preregister(result).candidateId, result.candidateId);
+  assert.notEqual(preregister({ ...futureCreative, creativeBrief: {
+    ...creativeBrief, baselineV5AdId: "120250864977640698",
+  } }).candidateId, result.candidateId);
+  assert.equal(result.actionApproved, false);
+  assert.equal(result.providerEvidenceAttested, false);
+  assert.equal(result.executionAllowed, false);
+});
+
+test("prospective BROS SELL creative preregistration rejects missing checks and unsupported claims evidence", () => {
+  const invalidBriefs = [
+    undefined,
+    { ...creativeBrief, locale: "id-ID" },
+    { ...creativeBrief, baselineV5AdId: ["120250864977640697"] },
+    { ...creativeBrief, baselineEvidenceId: "meta:v5:unknown" },
+    { ...creativeBrief, narrative: { ...creativeBrief.narrative, PELIK: "" } },
+    { ...creativeBrief, editorial: { ...creativeBrief.editorial, threeSecondRecognition: true } },
+    { ...creativeBrief, editorial: { ...creativeBrief.editorial, kedaiKopiReadAloud: "" } },
+    { ...creativeBrief, editorial: { ...creativeBrief.editorial, buyerValue: "" } },
+    { ...creativeBrief, editorial: { ...creativeBrief.editorial,
+      productTruth: { capability: "PROFIT_MARGIN_ACCOUNTING", evidenceId: creativeEvidence } } },
+    { ...creativeBrief, editorial: { ...creativeBrief.editorial,
+      productTruth: { capability: "BUYER_DIAGNOSIS", evidenceId: "product:unverified" } } },
+    { ...creativeBrief, claimsVerified: true },
+  ];
+  for (const brief of invalidBriefs)
+    assert.throws(() => preregister({ ...futureCreative, creativeBrief: brief }), invalid);
+  assert.throws(() => preregister({ ...futureCreative, action: "LANDING_PAGE_TEST" }), invalid);
+  assert.throws(() => preregister({ ...futureCreative, pilotProduct: "another_brand" }), invalid);
+  assert.throws(() => preregister({ ...futureCreative, preRegisteredAt: "2026-11-09T15:59:59Z",
+    experimentStart: "2026-11-10", creativeBrief: undefined }), invalid);
+});
