@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "work/bci-content-creative-reuse-155": false
+    }
+  },
   "crons": [
     { "path": "/api/cron/operator", "schedule": "0 0 * * *" }
   ]
