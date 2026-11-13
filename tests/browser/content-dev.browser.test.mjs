@@ -344,11 +344,25 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
     // Rejected anonymous and foreign-tenant writes must leave no visible campaign records.
     assert.equal(await page.getByRole('heading', {name: deniedDraft.product_service, exact: true}).count(), 0);
+    // Independent database connection verifies the HTTP receipt is durable and
+    // the lost-response replay did not insert a second campaign.
     const {rows} = await admin.query(
-      'SELECT status, platforms FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
+      `SELECT id, tenant_id, owner_principal_id, status, product_service,
+              audience, platforms, duration_days
+         FROM content_dev.campaigns
+        WHERE workspace_id=$1 AND product_service=$2`,
       [workspaceId, newDraft],
     );
-    assert.deepEqual(rows, [{status: 'draft', platforms: ['instagram']}]);
+    assert.deepEqual(rows, [{
+      id: initialReceipt.id,
+      tenant_id: tenant,
+      owner_principal_id: owner,
+      status: 'draft',
+      product_service: newDraft,
+      audience: 'Pelanggan yang bekerja pada hari biasa',
+      platforms: ['instagram'],
+      duration_days: 7,
+    }], 'HTTP draft receipt must match one independently persisted PostgreSQL row');
     const deniedRows = await admin.query(
       'SELECT id FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
       [workspaceId, deniedDraft.product_service],
