@@ -1,0 +1,13 @@
+import {createContentIssuanceHttpHandler} from '@/lib/bci/neon-content-issuance-http';
+import {issueReviewedContent} from '@/lib/portfolio/content-review-runtime';
+export const runtime='nodejs';
+export const dynamic='force-dynamic';
+export const revalidate=0;
+const handle=createContentIssuanceHttpHandler({env:()=>process.env,execute:issueReviewedContent});
+export const POST=handle;
+export const GET=handle;
+export const PUT=handle;
+export const PATCH=handle;
+export const DELETE=handle;
+export const OPTIONS=handle;
+export const HEAD=handle;

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "proofEnvelopeId": "content-instance-script-proof-2ff664b5c156e4f5d23ecf38ad2fcd61fe105449771fec6af7d3ad6fdb9c5581",
+      "tenantId": "c0d63101-218d-4b67-9efc-e27b45330963",
+      "title": "Pelanggan kata mahal — semak perbandingannya",
+      "directory": "sell-diagnosis-20261106",
+      "sourceSha256": "a7a3dad95bbe1ba5a0e12832db5fb651eaa0e08f7459c25b407b4fc2cf789750"
+    }
+  ]
+}

@@ -219,3 +219,22 @@ test("clock rollback during asynchronous reviewer authentication fails closed",a
   });
   await assert.rejects(h.admit(request),denied);
 });
+
+test("media recomputation cannot substitute mutated bytes for the original request",async()=>{
+  const substituted=Buffer.alloc(bytes.length,1);
+  const substitutedSha=createHash("sha256").update(substituted).digest("hex");
+  let signatureCalled=false;
+  const h=setup({
+    recomputeOriginalMedia:async input=>{
+      input.fill(1); // Attempt to rewrite the verifier's working bytes.
+      return {...media,originalMediaSha256:substitutedSha};
+    },
+    verifySignedReceipt:async()=>{
+      signatureCalled=true;
+      return {...signedVerified,originalMediaSha256:substitutedSha};
+    }
+  });
+  await assert.rejects(h.admit(request),denied);
+  assert.equal(signatureCalled,false);
+  assert.equal(createHash("sha256").update(request.mediaBytes).digest("hex"),sha);
+});
