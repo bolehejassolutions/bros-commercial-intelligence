@@ -110,5 +110,5 @@ test('receipt readback refuses to silently truncate more than 500 content items'
   campaign_id:receipt
  }));
  const reader=receiptFixtureReader({items});
- await assert.rejects(reader({userId:user,authenticated:true},workspace,undefined,receipt),/CONTENT access denied/);
+ await assert.rejects(reader({userId:user,authenticated:true},workspace,undefined,receipt),/CONTENT result exceeds supported read limit/);
 });
