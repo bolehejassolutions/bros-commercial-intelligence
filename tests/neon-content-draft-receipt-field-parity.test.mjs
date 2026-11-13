@@ -112,3 +112,20 @@ test('receipt readback refuses to silently truncate more than 500 content items'
  const reader=receiptFixtureReader({items});
  await assert.rejects(reader({userId:user,authenticated:true},workspace,undefined,receipt),/CONTENT result exceeds supported read limit/);
 });
+
+
+test('receipt readback denies duplicate content item identities',async()=>{
+ const id='66666666-6666-4666-8666-666666666666';
+ const reader=receiptFixtureReader({items:[{id,campaign_id:receipt},{id,campaign_id:receipt}]});
+ await assert.rejects(reader({userId:user,authenticated:true},workspace,undefined,receipt),/CONTENT access denied/);
+});
+
+test('receipt readback denies duplicate scene identities',async()=>{
+ const id='66666666-6666-4666-8666-666666666666';
+ const scene='77777777-7777-4777-8777-777777777777';
+ const reader=receiptFixtureReader({items:[{id,campaign_id:receipt}],scenes:[
+  {id:scene,content_item_id:id,scene_number:1},
+  {id:scene,content_item_id:id,scene_number:2}
+ ]});
+ await assert.rejects(reader({userId:user,authenticated:true},workspace,undefined,receipt),/CONTENT access denied/);
+});
