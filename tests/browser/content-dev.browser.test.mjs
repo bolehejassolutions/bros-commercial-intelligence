@@ -10,6 +10,7 @@ import test from 'node:test';
 import pg from 'pg';
 import {createContentCampaignPlanner} from '../../lib/content/neon-content-generation-orchestrator.ts';
 import {createContentGeneratedOutputWriter} from '../../lib/content/neon-content-generated-output-writer.ts';
+import {compileContentPersistenceBundle} from '../../lib/content/neon-content-persistence-bundle.ts';
 import {createContentTransaction} from '../../lib/content/neon-content-transaction.ts';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -158,10 +159,13 @@ test('browser verifies authenticated campaign content, draft persistence and ten
   assert.equal(persisted.tenant_id, tenant);
   assert.equal(persisted.owner_principal_id, owner);
   assert.equal(persisted.status, 'draft');
-  assert.deepEqual(persisted.strategy, plan.strategy);
-  assert.deepEqual(persisted.angles, plan.angles);
-  assert.deepEqual(persisted.captions, plan.captions);
-  assert.deepEqual(persisted.publish_plan, plan.publish_plan);
+  const expectedCampaign = compileContentPersistenceBundle(brief, prepared.plan, prepared.review).campaign;
+  assert.deepEqual(persisted.strategy, expectedCampaign.strategy);
+  assert.deepEqual(persisted.angles, expectedCampaign.angles);
+  // The compiler intentionally normalizes caption arrays into a platform-keyed
+  // JSONB map. Compare against that durable contract, not raw model output.
+  assert.deepEqual(persisted.captions, expectedCampaign.captions);
+  assert.deepEqual(persisted.publish_plan, expectedCampaign.publish_plan);
   assert.ok(persisted.item_count > 0, 'scripts and visuals must persist as content items');
   assert.equal(persisted.scene_count, plan.scenes.length,
     'every generated scene must persist before authenticated HTTP readback');
