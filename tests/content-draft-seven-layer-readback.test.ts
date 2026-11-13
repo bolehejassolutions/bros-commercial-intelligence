@@ -12,7 +12,7 @@ const sceneA='77777777-7777-4777-8777-000000000001';
 const sceneB='77777777-7777-4777-8777-000000000002';
 
 function fixture(duplicate=false) {
- const calls=[];
+ const calls:string[]=[];
  const read=createContentWorkspaceReader(async fn=>fn(async(sql,params)=>{
   calls.push(sql);
   if(sql.includes('FROM pg_roles'))return {rows:[{name:'content_dev_reader_v2',login:'content_dev_reader_v2',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0}]};
@@ -30,13 +30,13 @@ function fixture(duplicate=false) {
 test('draft receipt restores strategy, angles, scripts, prompts, scenes, captions and publish preview',async()=>{
  const {read}=fixture();
  const result=await read({userId:principal,authenticated:true},workspace,undefined,campaign);
- assert.equal(result.campaigns[0].strategy.goal,'clarity');
- assert.equal(result.campaigns[0].angles[0].hook,'recognition');
+ assert.equal((result.campaigns[0].strategy as {goal:string}).goal,'clarity');
+ assert.equal((result.campaigns[0].angles as {hook:string}[])[0].hook,'recognition');
  assert.equal(result.contentItems[0].body,'Draft script');
  assert.equal(result.contentItems[1].body,'Draft prompt');
  assert.equal(result.scenes.length,2);
- assert.equal(result.campaigns[0].captions[0],'caption');
- assert.equal(result.campaigns[0].publish_plan.state,'preview');
+ assert.equal((result.campaigns[0].captions as string[])[0],'caption');
+ assert.equal((result.campaigns[0].publish_plan as {state:string}).state,'preview');
  assert.equal(result.nextCursor,null);
 });
 
