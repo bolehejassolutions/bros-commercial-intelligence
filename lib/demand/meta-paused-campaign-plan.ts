@@ -7,6 +7,11 @@ export type PausedCampaignPlan=PausedCampaignDraft&Readonly<{schemaVersion:1;pla
   accountId:string;pageId:string;pixelId:string;endTime:string;status:'PAUSED'}>;
 const fields=['name','budgetMinor','durationDays','startTime','landingUrl','primaryText','headline','description','imageHash'];
 const fail=():never=>{throw Error('PAUSED_CAMPAIGN_PLAN_INVALID');};
+export function demandCampaignBudgetCap(environment: NodeJS.ProcessEnv): number {
+  const cap = Number(environment.BROS_DEMAND_META_CREATOR_BUDGET_CAP_MINOR ?? 14000);
+  if (!Number.isSafeInteger(cap) || cap < 1 || cap > 14000) throw Error('CREATOR_CAP_INVALID');
+  return cap;
+}
 const clean=(v:unknown,min:number,max:number)=>typeof v==='string'&&v===v.trim()&&v.length>=min&&v.length<=max&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(v);
 /** Internal V1 retains the existing account, Page, pixel and MY 21–45 feeds.
  * A new immutable plan gets its own ledger namespace, never the live V5 one.
@@ -18,7 +23,7 @@ function checkedPausedCampaignPlan(scope:PilotScope,draft:unknown,maximumBudgetM
   if(!clean(p.name,3,100)||!clean(p.primaryText,3,4000)||!clean(p.headline,3,120)||!clean(p.description,0,200)||
      !Number.isSafeInteger(p.budgetMinor)||p.budgetMinor<1||p.budgetMinor>maximumBudgetMinor||
      !Number.isInteger(p.durationDays)||p.durationDays<1||p.durationDays>7||
-     !/^[a-f0-9]{32}$/.test(p.imageHash)||typeof p.startTime!=='string'||
+     typeof p.imageHash!=='string'||!/^[a-f0-9]{32}$/.test(p.imageHash)||typeof p.startTime!=='string'||
      !Number.isFinite(Date.parse(p.startTime))||new Date(p.startTime).toISOString()!==p.startTime||
      (!resuming&&Date.parse(p.startTime)<at+15*60000)||Date.parse(p.startTime)>at+30*86400000)fail();
   let url:URL;try{url=new URL(p.landingUrl);}catch{return fail();}

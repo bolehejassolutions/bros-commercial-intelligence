@@ -1,7 +1,7 @@
 import {inspectMetaConnection} from '../marketing-operator/meta-connection.ts';
 import {pilotMetaConfiguration} from './meta-pilot-environment.ts';
 import {createPausedCampaignProvider} from './meta-paused-campaign-provider.ts';
-import {preparePausedCampaignPlan,restorePausedCampaignPlan,type PausedCampaignPlan} from './meta-paused-campaign-plan.ts';
+import {demandCampaignBudgetCap,preparePausedCampaignPlan,restorePausedCampaignPlan,type PausedCampaignPlan} from './meta-paused-campaign-plan.ts';
 import type {PilotScope} from './meta-pilot-ledger.ts';
 import {createPilotLedger} from './meta-pilot-ledger.ts';
 import {creativeRetryNamespace,sealCreativeRecovery,verifyCreativeRecovery} from './meta-paused-recovery-receipt.ts';
@@ -20,8 +20,7 @@ type Deps={environment:NodeJS.ProcessEnv;ledger:(scope:PilotScope,sha:string)=>R
   verifyCreativeForPlan?:(scope:PilotScope,plan:PausedCampaignPlan)=>Promise<VerifiedCreativePlan|null>};
 export function createPausedCampaignService(deps:Deps){
   const config=pilotMetaConfiguration(deps.environment),env=config.environment;
-  const cap=()=>{const x=Number(env.BROS_DEMAND_META_CREATOR_BUDGET_CAP_MINOR??14000);
-    if(!Number.isSafeInteger(x)||x<1||x>14000)throw Error('CREATOR_CAP_INVALID');return x;};
+  const cap=()=>demandCampaignBudgetCap(env);
   const flags=()=>({enabled:env.BROS_DEMAND_META_PAUSED_CREATE==='operator-approved-v1',
     ledger:env.BROS_DEMAND_META_CREATOR_LEDGER==='reviewed-v1'});
   // The operator's submitted digest confirms the reviewed inputs. New provider
