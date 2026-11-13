@@ -450,6 +450,17 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await nextPage.click();
     await page.getByRole('heading', {name: existingCampaign, exact: true}).waitFor();
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
+    // Prove the seven persisted layers remain accessible after session expiry,
+    // re-authentication and pagination, rather than trusting the initial render.
+    const recoveredCampaign = page.getByRole('article').filter({
+      has: page.getByRole('heading', {name: existingCampaign, exact: true}),
+    });
+    await recoveredCampaign.getByText('Lihat kandungan kempen', {exact: true}).click();
+    for (const [heading, content] of sections) {
+      await recoveredCampaign.getByRole('heading', {name: heading, exact: true}).waitFor();
+      await recoveredCampaign.getByText(content, {exact: false}).first().waitFor();
+    }
+    await recoveredCampaign.getByText('Visual: Sambungan babak ujian 101', {exact: true}).waitFor();
     assert.equal(await page.getByRole('heading', {name: /^Kempen halaman /}).count(), 0);
     await page.getByRole('button', {name: 'Halaman sebelumnya'}).click();
     await page.getByRole('button', {name: 'Halaman seterusnya'}).waitFor();
