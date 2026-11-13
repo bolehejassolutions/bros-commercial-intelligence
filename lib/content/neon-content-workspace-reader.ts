@@ -64,7 +64,8 @@ export function createContentWorkspaceReader(transaction: Transaction) {
       const scope = [tenant,workspaceId,principal.userId];
       if (draftId !== undefined) {
         const drafts = (await query(`SELECT id,product_service,description,audience,problem,objective,
-          duration_days,platforms,status FROM content_dev.campaigns
+          duration_days,platforms,status,strategy,angles,captions,publish_plan,created_at,updated_at
+          FROM content_dev.campaigns
           WHERE tenant_id=$1::uuid AND workspace_id=$2::uuid AND owner_principal_id=$3::uuid
           AND id=$4::uuid AND status='draft' LIMIT 1`, [...scope,draftId])).rows;
         if (drafts.length !== 1 || drafts[0].id !== draftId || drafts[0].status !== 'draft') deny();
