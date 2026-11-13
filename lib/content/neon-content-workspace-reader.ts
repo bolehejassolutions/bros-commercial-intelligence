@@ -107,6 +107,8 @@ export function createContentWorkspaceReader(transaction: Transaction) {
       if (new Set(page.map(row => row.id)).size !== page.length ||
           page.some(row => !UUID.test(String(row.id)))) deny();
       const contentItems: Row[] = [], scenes: Row[] = [];
+      const seenItemIds = new Set<string>();
+      const seenSceneIds = new Set<string>();
       for (const campaign of campaigns) {
         if (!UUID.test(String(campaign.id))) deny();
         const rows = (await query(`SELECT id,campaign_id,type,title,body,sort_order,version
@@ -114,8 +116,9 @@ export function createContentWorkspaceReader(transaction: Transaction) {
           ORDER BY sort_order,id LIMIT 501`,[tenant,String(campaign.id)])).rows;
         requireCompleteContentRows(rows,500);
         if (rows.some(row => row.campaign_id !== campaign.id || !UUID.test(String(row.id))) ||
-            rows.some(row => contentItems.some(existing => existing.id === row.id)) ||
+            rows.some(row => seenItemIds.has(String(row.id))) ||
             new Set(rows.map(row => row.id)).size !== rows.length) deny();
+        for (const row of rows) seenItemIds.add(String(row.id));
         contentItems.push(...rows);
       }
       for (const item of contentItems) {
@@ -126,8 +129,9 @@ export function createContentWorkspaceReader(transaction: Transaction) {
           ORDER BY scene_number,id LIMIT ${MAX_CONTENT_SCENES_PER_ITEM+1}`,[tenant,String(item.id)])).rows;
         requireCompleteContentRows(itemScenes,MAX_CONTENT_SCENES_PER_ITEM);
         if (itemScenes.some(row => row.content_item_id !== item.id || !UUID.test(String(row.id))) ||
-            itemScenes.some(row => scenes.some(existing => existing.id === row.id)) ||
+            itemScenes.some(row => seenSceneIds.has(String(row.id))) ||
             new Set(itemScenes.map(row => row.id)).size !== itemScenes.length) deny();
+        for (const row of itemScenes) seenSceneIds.add(String(row.id));
         scenes.push(...itemScenes);
       }
       const nextCursor = page.length>100 ? campaigns.at(-1)!.id : null;
