@@ -435,6 +435,8 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await page.reload();
     await page.getByText('Sesi Neon Auth belum disahkan.').waitFor();
     assert.equal((await ownerContext.request.get(apiUrl)).status(), 401);
+    const expiredReceiptRead = await ownerContext.request.get(draftReadUrl);
+    assert.equal(expiredReceiptRead.status(), 401, 'expired sessions must not read persisted draft receipts');
     // An expired session must also fail closed for draft writes, not only reads.
     const deniedDraftWrite = await ownerContext.request.post(apiUrl + '/campaign-drafts', {
       data: {product_service: 'Unauthorized expired-session draft'},
@@ -450,6 +452,9 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await nextPage.click();
     await page.getByRole('heading', {name: existingCampaign, exact: true}).waitFor();
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
+    const recoveredReceiptRead = await ownerContext.request.get(draftReadUrl);
+    assert.equal(recoveredReceiptRead.status(), 200, 'reauthenticated owner can recover the same draft receipt');
+    assert.deepEqual((await recoveredReceiptRead.json()).data.campaigns.map(row => row.id), [initialReceipt.id]);
     // Prove the seven persisted layers remain accessible after session expiry,
     // re-authentication and pagination, rather than trusting the initial render.
     const recoveredCampaign = page.getByRole('article').filter({
