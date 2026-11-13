@@ -7,3 +7,11 @@ export function isDemandMetaPreviewUiEnabled(
   return env.VERCEL_ENV === "preview" &&
     env.VERCEL_GIT_COMMIT_REF === DEMAND_META_PREVIEW_BRANCH;
 }
+
+export function isDemandCreativeReusePreviewEnabled(
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  return isDemandMetaPreviewUiEnabled(env) &&
+    env.BROS_DEMAND_CONTENT_CREATIVE_REVIEW === "enabled" &&
+    env.BCI_CONTENT_DEMAND_REUSE === "enabled";
+}

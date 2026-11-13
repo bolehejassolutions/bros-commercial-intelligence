@@ -2,6 +2,7 @@ import { createPublicKey } from "node:crypto";
 import { createContentCreativeReuseHandler, readCreativeReuseConfiguration } from "../portfolio/content-creative-reuse.ts";
 import { createDemandContentCreativeReader, demandContentReusePublicKey } from "./content-creative-reader.ts";
 import { createDemandCreativeReview } from "./creative-review.ts";
+import { isDemandCreativeReusePreviewEnabled } from "./meta-preview-ui-gate.ts";
 
 type Producer = Parameters<typeof createContentCreativeReuseHandler>[0];
 type Review = Parameters<typeof createDemandCreativeReview>[0];
@@ -15,9 +16,7 @@ type Dependencies = Readonly<{
 }>;
 
 export function createDemandPreviewCreativeReview(deps: Dependencies) {
-  const enabled = () => deps.demandPreviewEnabled() &&
-    deps.env.BROS_DEMAND_CONTENT_CREATIVE_REVIEW === "enabled" &&
-    deps.env.BCI_CONTENT_DEMAND_REUSE === "enabled";
+  const enabled = () => deps.demandPreviewEnabled() && isDemandCreativeReusePreviewEnabled(deps.env);
   const configuration = () => readCreativeReuseConfiguration(deps.env);
   const read = createContentCreativeReuseHandler({
     enabled, configuration, authorize: deps.authorizeBoth, readOriginal: deps.readOriginal, now: deps.now,

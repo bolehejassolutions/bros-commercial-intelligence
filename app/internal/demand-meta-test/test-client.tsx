@@ -39,7 +39,7 @@ type Stage = "loading" | "start" | "code" | "ready";
  * The Neon Auth JWT is transient and never rendered, persisted or logged.
  * The browser never receives a Meta access token or Neon connection string.
  */
-export default function DemandMetaTestClient() {
+export default function DemandMetaTestClient({ creativeReuseAvailable }: { creativeReuseAvailable: boolean }) {
   const [stage, setStage] = useState<Stage>("loading");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -358,6 +358,8 @@ export default function DemandMetaTestClient() {
             <a href="#demand-tools">Diagnostics & access</a>
             <a href="#demand-campaigns">Campaign studio</a>
             <a href="#demand-attribution">CONTENT handoff</a>
+            {stage === "ready" && creativeReuseAvailable &&
+              <a href="/internal/neon-preview/content-review">Review a CONTENT original</a>}
           </nav>
         </div>
         <p role="status" aria-live="polite">{notice}</p>

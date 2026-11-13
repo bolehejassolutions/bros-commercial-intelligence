@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import DemandMetaTestClient from "./test-client";
-import { isDemandMetaPreviewUiEnabled } from "@/lib/demand/meta-preview-ui-gate";
+import { isDemandCreativeReusePreviewEnabled, isDemandMetaPreviewUiEnabled } from "@/lib/demand/meta-preview-ui-gate";
 import "../neon-preview/preview.css";
 import "../bros-luminous.css";
 
@@ -17,5 +17,5 @@ export default function DemandMetaTestPage() {
   if (!isDemandMetaPreviewUiEnabled(process.env)) {
     notFound();
   }
-  return <DemandMetaTestClient />;
+  return <DemandMetaTestClient creativeReuseAvailable={isDemandCreativeReusePreviewEnabled(process.env)} />;
 }

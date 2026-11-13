@@ -9,6 +9,9 @@ import { usesNeonPreviewAuthentication } from "../lib/bci/neon-preview-route-pol
 import { createDemandPreviewCreativeReview } from "../lib/demand/content-creative-preview.ts";
 import { createPausedCampaignHttpHandler } from "../lib/demand/meta-paused-campaign-http.ts";
 import { preparePausedCampaignPlan } from "../lib/demand/meta-paused-campaign-plan.ts";
+import { createContentReviewReadHandler } from "../lib/portfolio/content-review-http.ts";
+import { DEMAND_META_PREVIEW_BRANCH, isDemandCreativeReusePreviewEnabled } from "../lib/demand/meta-preview-ui-gate.ts";
+import { isNeonPreviewEnabled, NEON_PREVIEW_BRANCH } from "../lib/bci/neon-preview-handler.ts";
 
 const path = "/api/internal/neon-content-creative-reuse";
 const root = new URL("../content-review-sources/", import.meta.url);
@@ -137,6 +140,8 @@ test("rechecks asset bytes, grant and operator membership before returning eithe
 test("DEMAND reviews the actual CONTENT original through its existing endpoint in one Preview", async () => {
   const env = {
     ...credentials(),
+    VERCEL_ENV: "preview",
+    VERCEL_GIT_COMMIT_REF: DEMAND_META_PREVIEW_BRANCH,
     BROS_DEMAND_CONTENT_CREATIVE_REVIEW: "enabled",
     BCI_CONTENT_DEMAND_REUSE: "enabled",
     BROS_DEMAND_CONTENT_REUSE_PUBLIC_KEY: issuer.publicKey.export({ type: "spki", format: "pem" }),
@@ -210,7 +215,63 @@ test("an aborted request releases no approval or original", async () => {
 test("browser reviewer signs exactly one checked original and the producer accepts that grant", async () => {
   const reviewer = await createContentReviewerKey();
   assert.equal(reviewer.privateKey.extractable, false);
-  const { envelope } = await contentReviewSources.load({ ...scope, product: "content" }, entry.proofEnvelopeId);
+  const reviewOrigin = "https://demand.example";
+  const env = { VERCEL_ENV: "preview", VERCEL_GIT_COMMIT_REF: DEMAND_META_PREVIEW_BRANCH,
+    BROS_DEMAND_CONTENT_CREATIVE_REVIEW: "enabled", BCI_CONTENT_DEMAND_REUSE: "enabled",
+    BCI_NEON_DEV_PRIVATE_READS: "enabled" };
+  let authorizations = 0, revoke = false;
+  const readReview = createContentReviewReadHandler({
+    mode: () => isDemandCreativeReusePreviewEnabled(env) ? "demand-reuse" : null,
+    authorize: async (jwt, mode) => {
+      assert.equal(jwt, "synthetic.jwt.token");
+      assert.equal(mode, "demand-reuse");
+      if (++authorizations === 2 && revoke) throw Error("membership revoked");
+      return { ...scope, product: "content" };
+    },
+    sources: contentReviewSources,
+    setup: () => ({ ready: false, missing: [], registeredKeyIds: [reviewer.keyId], demandReuseAvailable: true }),
+  });
+  const reviewPath = "/api/internal/neon-content-review";
+  const reviewPack = (query = "", init = {}) => readReview(new Request(reviewOrigin + reviewPath + query, {
+    ...init, headers: { Authorization: "Bearer synthetic.jwt.token", ...init.headers },
+  }));
+  assert.equal(usesNeonPreviewAuthentication("/internal/neon-preview/content-review"), true);
+  assert.equal(isNeonPreviewEnabled(env), false);
+  assert.equal((await reviewPack("", { method: "HEAD" })).status, 405);
+  assert.equal((await reviewPack("", { method: "POST" })).status, 405);
+  assert.equal((await reviewPack("", { headers: { Authorization: "" } })).status, 401);
+  assert.equal((await reviewPack("", { headers: { "X-Tenant-Id": scope.tenantId } })).status, 400);
+  assert.equal((await reviewPack("?proof=invalid")).status, 400);
+  assert.equal(authorizations, 0);
+  const listing = await reviewPack();
+  assert.equal(listing.status, 200);
+  assert.deepEqual((await listing.json()).sources.map(source => source.proofEnvelopeId), [entry.proofEnvelopeId]);
+  for (const branch of [NEON_PREVIEW_BRANCH, "work/demand-content-same-preview-20261113"]) {
+    env.VERCEL_GIT_COMMIT_REF = branch;
+    assert.equal((await reviewPack()).status, 404);
+  }
+  env.VERCEL_GIT_COMMIT_REF = DEMAND_META_PREVIEW_BRANCH;
+  env.VERCEL_ENV = "production";
+  assert.equal((await reviewPack()).status, 404);
+  env.VERCEL_ENV = "preview";
+  for (const name of ["BROS_DEMAND_CONTENT_CREATIVE_REVIEW", "BCI_CONTENT_DEMAND_REUSE"]) {
+    delete env[name];
+    assert.equal((await reviewPack()).status, 404);
+    env[name] = "enabled";
+  }
+  const query = "?proof=" + entry.proofEnvelopeId;
+  revoke = true;
+  authorizations = 0;
+  assert.equal((await reviewPack(query)).status, 403);
+  revoke = false;
+  const pack = await reviewPack(query);
+  assert.equal(pack.status, 200);
+  assert.match(pack.headers.get("cache-control"), /private.*no-store/);
+  const { envelope, images, setup } = await pack.json();
+  assert.equal(setup.ready, false);
+  assert.deepEqual(setup.registeredKeyIds, [reviewer.keyId]);
+  const reviewedBytes = Buffer.from(images[0].split(",")[1], "base64");
+  assert.deepEqual(reviewedBytes, original);
   const evidence = {
     presetId: "test-preset", presetVersion: "test-preset-v1", logoEvidence: "NO_LOGO",
     logoAssetVersionId: null, confirmedChecks: DEMAND_REUSE_CHECKS,
@@ -225,18 +286,20 @@ test("browser reviewer signs exactly one checked original and the producer accep
   ]) {
     await assert.rejects(() => signContentDemandReuse(reviewer, source, slot, bytes, input), /REVIEW_INCOMPLETE/);
   }
-  const signed = await signContentDemandReuse(reviewer, envelope, 1, original, evidence);
+  const signed = await signContentDemandReuse(reviewer, envelope, 1, reviewedBytes, evidence);
   const reissued = await signContentDemandReuse(reviewer, envelope, 1, original, evidence);
   assert.equal(signed.payload.creative.assetId, reissued.payload.creative.assetId);
   assert.equal(signed.payload.creative.creativeVersion, reissued.payload.creative.creativeVersion);
   assert.notEqual(signed.payload.creative.approvalEvidenceId, reissued.payload.creative.approvalEvidenceId);
   assert.equal(signed.payload.creative.sha256, creative.sha256);
   assert.equal(Date.parse(signed.payload.expiresAt) - Date.parse(signed.payload.approvedAt), 86400000);
-  const env = {
+  const config = {
+    ...env,
     ...credentials(signed),
     BCI_NEON_DEV_CONTENT_REVIEW_PUBLIC_KEYS: JSON.stringify({ [reviewer.keyId]: reviewer.publicKeyPem }),
+    BROS_DEMAND_CONTENT_REUSE_PUBLIC_KEY: issuer.publicKey.export({ type: "spki", format: "pem" }),
   };
-  const f = fixture({ now: Date.now, configuration: () => readCreativeReuseConfiguration(env) });
+  const f = fixture({ now: Date.now, configuration: () => readCreativeReuseConfiguration(config) });
   const url = new URL("https://example.test" + path);
   url.search = new URLSearchParams({
     view: "original", assetId: signed.payload.creative.assetId, creativeVersion: signed.payload.creative.creativeVersion,
@@ -245,9 +308,40 @@ test("browser reviewer signs exactly one checked original and the producer accep
   const response = await read();
   assert.equal(response.status, 200);
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), original);
-  env.BCI_CONTENT_DEMAND_REUSE_GRANT = JSON.stringify({
+  const now = Date.now();
+  const creativeReview = createDemandPreviewCreativeReview({
+    demandPreviewEnabled: () => true, env: config,
+    authorizeBoth: async token => {
+      assert.equal(token, "synthetic.jwt.token");
+      return scope;
+    },
+    readOriginal: readContentCreativeOriginal, maximumBudgetMinor: () => 14000, now: () => now,
+  });
+  const campaign = createPausedCampaignHttpHandler({
+    enabled: () => true, authorize: async () => scope, creativeReview,
+    service: () => assert.fail("A review cannot initialize campaign execution"),
+  });
+  const draft = { name: "Single Preview review", budgetMinor: 10000, durationDays: 7,
+    startTime: stamp(now + 7200000), landingUrl: "https://bros.bolehejas.com/",
+    primaryText: "Review only", headline: "Exact original", description: "", imageHash: "a".repeat(32) };
+  const review = () => campaign(new Request(reviewOrigin + "/api/internal/demand-meta-campaigns", {
+    method: "POST", headers: { Authorization: "Bearer synthetic.jwt.token", Origin: reviewOrigin,
+      "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "review_creative", draft, assetId: signed.payload.creative.assetId,
+      creativeVersion: signed.payload.creative.creativeVersion }),
+  }));
+  const reviewed = await review();
+  assert.equal(reviewed.status, 200);
+  const receipt = await reviewed.json();
+  assert.equal(receipt.approvalEvidenceId, signed.payload.creative.approvalEvidenceId);
+  assert.equal(receipt.mediaSha256, signed.payload.creative.sha256);
+  assert.equal(receipt.planSha256, preparePausedCampaignPlan(scope, draft, 14000, now).planSha256);
+  assert.equal(receipt.metaUploadAllowed, false);
+  assert.equal(receipt.campaignExecutionAllowed, false);
+  config.BCI_CONTENT_DEMAND_REUSE_GRANT = JSON.stringify({
     ...signed, payload: { ...signed.payload, creative: { ...signed.payload.creative, presetId: "other-preset" } },
   });
   assert.equal((await read()).status, 403);
+  assert.equal((await review()).status, 403);
   assert.equal(f.counts().reads, 1);
 });

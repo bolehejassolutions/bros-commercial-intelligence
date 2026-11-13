@@ -6,6 +6,7 @@ import {requestNeonPreviewToken,requestNeonPreviewSession} from '@/lib/bci/neon-
 import {createContentReviewerKey,signContentReviewDecision,SCRIPT_REVIEW_CHECKS,type ContentReviewerKey} from '@/lib/portfolio/content-review-signing';
 import {prepareContentDemandBridgeUrl} from '@/lib/portfolio/content-demand-bridge-link';
 import DemandReuse from './demand-reuse';
+import {DEMAND_META_PREVIEW_BRANCH} from '@/lib/demand/meta-preview-ui-gate';
 type Json=Record<string,unknown>;
 type Setup={ready:boolean;missing:string[];registeredKeyIds:string[];demandReuseAvailable?:boolean};
 type Pack={title:string;envelope:Json;handoff:Json;images:string[];reviewerSubject:string;setup:Setup};
@@ -42,7 +43,9 @@ async function keyStore(mode:'read'|'write',value?:ContentReviewerKey):Promise<C
     };
   });
 }
-export default function ContentReview(){
+export default function ContentReview({demandReuseOnly=false}:{demandReuseOnly?:boolean}){
+  const workspace=demandReuseOnly?'/internal/demand-meta-test':'/internal/neon-preview';
+  const branch=demandReuseOnly?DEMAND_META_PREVIEW_BRANCH:'feat/neon-bci-dev-ledger-20261025';
   const [sources,setSources]=useState<{proofEnvelopeId:string;title:string}[]>([]);
   const [pack,setPack]=useState<Pack|null>(null),[key,setKey]=useState<ContentReviewerKey|null>(null);
   const [setup,setSetup]=useState<Setup|null>(null),[checked,setChecked]=useState<string[]>([]);
@@ -64,6 +67,10 @@ export default function ContentReview(){
   },[]);
   async function select(id:string){setBusy(true);setPack(null);setActiveFrame(0);setChecked([]);setAttempted(false);setAudit({});
     try{const data=await get('/api/internal/neon-content-review?proof='+encodeURIComponent(id));setPack(data);setSetup(data.setup);
+      if(demandReuseOnly){
+        setMessage('Pilih satu imej asal untuk semakan BROS DEMAND.');
+        return;
+      }
       const previous=localStorage.getItem('bros-content-operation:'+id);
       if(previous){setAudit(JSON.parse(previous));setAttempted(true);
         setMessage('Pek ini mempunyai rujukan keputusan terdahulu. Semak rekod tersebut sebelum menghantar keputusan baharu.');}
@@ -85,7 +92,7 @@ export default function ContentReview(){
   function downloadPublicKey(){if(!key)return;const blob=new Blob([JSON.stringify({keyId:key.keyId,publicKeyPem:key.publicKeyPem},null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='BROS_CONTENT_REVIEW_PUBLIC_KEY.json';a.click();URL.revokeObjectURL(url);}
   const required=pack?[...(pack.handoff.requiredHumanChecks as string[]),...SCRIPT_REVIEW_CHECKS]:[];
-  const canApprove=!!pack&&!!key&&setup?.ready===true&&setup.registeredKeyIds.includes(key.keyId)&&
+  const canApprove=!demandReuseOnly&&!!pack&&!!key&&setup?.ready===true&&setup.registeredKeyIds.includes(key.keyId)&&
     required.length===9&&required.every(x=>checked.includes(x))&&!busy&&!attempted;
   async function approve(){if(!canApprove||!pack||!key)return;setBusy(true);setAttempted(true);setMessage('Merekod keputusan anda…');
     try{
@@ -125,7 +132,7 @@ export default function ContentReview(){
   const selectedFrame=pack?Math.min(activeFrame,Math.max(0,pack.images.length-1)):0;
   const completedChecks=required.filter(x=>checked.includes(x)).length;
   const handoffUrl=(()=>{
-    if(!pack||!audit.reservationId)return null;
+    if(demandReuseOnly||!pack||!audit.reservationId)return null;
     try{return prepareContentDemandBridgeUrl({
       planId:String(pack.envelope.planId),
       proofEnvelopeId:String(pack.envelope.proofEnvelopeId),
@@ -135,14 +142,14 @@ export default function ContentReview(){
   return <main className="content-studio bros-luminous">
     <div className="studio-layout">
       <aside className="studio-rail" aria-label="Navigasi BROS CONTENT">
-        <a className="brand" href="/internal/neon-preview" aria-label="Ruang kerja BROS">
+        <a className="brand" href={workspace} aria-label="Ruang kerja BROS">
           <span className="brand-mark" aria-hidden="true">▤</span>
           <span><span className="brand-name">BROS CONTENT</span><span className="brand-sub">INTERNAL WORKSPACE</span></span>
         </a>
         <div><p className="rail-label">RUANG KERJA</p>
           <nav className="rail-nav" aria-label="Bahagian semakan">
             <a className="current" href="#queue">Pek kandungan</a>
-            {pack&&<><a href="#preview">Pratonton visual</a><a href="#review">Semakan &amp; kelulusan</a></>}
+            {pack&&<><a href="#preview">Pratonton visual</a><a href={demandReuseOnly?"#demand-reuse-heading":"#review"}>Semakan &amp; kelulusan</a></>}
             <a href="#technical">Rujukan teknikal</a>
           </nav>
         </div>
@@ -156,7 +163,7 @@ export default function ContentReview(){
         <header className="heading-block">
           <p className="eyebrow">CREATIVE REVIEW / 01</p>
           <h1>Kandungan yang jelas.<br/>Semakan yang teratur.</h1>
-          <p className="lede">Semak visual, skrip, kapsyen dan destinasi dalam satu ruang. Ini aliran semakan editorial dalaman, bukan sistem penjanaan visual AI komersial yang telah disahkan.</p>
+          <p className="lede">{demandReuseOnly?'Pilih satu imej asal dan tandatangani kelulusan semakan dalaman untuk BROS DEMAND.':'Semak visual, skrip, kapsyen dan destinasi dalam satu ruang. Ini aliran semakan editorial dalaman, bukan sistem penjanaan visual AI komersial yang telah disahkan.'}</p>
         </header>
         <p role="status" aria-live="polite" className="notice">{message}</p>
         <section id="queue" aria-labelledby="queue-heading">
@@ -170,7 +177,7 @@ export default function ContentReview(){
               onClick={()=>void select(item.proofEnvelopeId)} disabled={busy}>
               <span className="queue-icon" aria-hidden="true">▤</span><span>{item.title}</span>
             </button>)}
-          </nav>:<div className="queue-empty">{busy?'Memuatkan pek…':'Tiada pek dapat dipaparkan untuk sesi ini.'} <a href="/internal/neon-preview">Kembali ke ruang kerja BROS</a>.</div>}
+          </nav>:<div className="queue-empty">{busy?'Memuatkan pek…':'Tiada pek dapat dipaparkan untuk sesi ini.'} <a href={workspace}>Kembali ke ruang kerja BROS</a>.</div>}
         </section>
         {pack&&<section id="preview" aria-labelledby="project-heading">
           <div className="project-head">
@@ -218,7 +225,7 @@ export default function ContentReview(){
               </article>
             </div>
           </div>
-          <section id="review" className="approval-card" aria-labelledby="approval-heading">
+          {!demandReuseOnly&&<section id="review" className="approval-card" aria-labelledby="approval-heading">
             <div className="approval-header">
               <div><p className="eyebrow">EDITORIAL GATE / 03</p><h2 id="approval-heading">Semakan &amp; kelulusan</h2></div>
               <span className="badge neutral">{attempted?'RUJUKAN KEPUTUSAN TERDAHULU':completedChecks+' / '+required.length+' syarat'}</span>
@@ -240,7 +247,7 @@ export default function ContentReview(){
                 <p>Kelulusan bukan penerbitan. Tiada hantaran dihantar oleh butang ini.</p>
               </div>
             </>}
-          </section>
+          </section>}
           {setup?.demandReuseAvailable===true&&<DemandReuse key={String(pack.envelope.proofEnvelopeId)+':'+selectedFrame+':'+(key?.keyId??'')}
             envelope={pack.envelope} image={pack.images[selectedFrame]} slot={selectedFrame+1}
             reviewerKey={key&&setup.registeredKeyIds.includes(key.keyId)?key:null}/>}
@@ -261,7 +268,7 @@ export default function ContentReview(){
                 {!setup?.registeredKeyIds.includes(key.keyId)&&<>
                   <p className="danger-note">Kunci belum didaftarkan pada Preview ini.</p>
                   <button className="outline-button" type="button" onClick={()=>void copyPublicKeyConfig()} disabled={busy}>Salin JSON kunci awam</button>
-                  <p>Tetapan Vercel Preview: <code>BCI_NEON_DEV_CONTENT_REVIEW_PUBLIC_KEYS</code> · <code>feat/neon-bci-dev-ledger-20261025</code></p>
+                  <p>Tetapan Vercel Preview: <code>BCI_NEON_DEV_CONTENT_REVIEW_PUBLIC_KEYS</code> · <code>{branch}</code></p>
                   <a href="https://vercel.com/bolehejassolutions-8492/bros-commercial-intelligence/settings/environment-variables" target="_blank" rel="noopener noreferrer">Buka tetapan Vercel</a>
                   {publicKeyCopyMessage&&<p role="status">{publicKeyCopyMessage}</p>}
                 </>}
