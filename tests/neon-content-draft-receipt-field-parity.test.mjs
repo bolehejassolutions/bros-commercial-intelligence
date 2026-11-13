@@ -74,3 +74,41 @@ test('receipt readback fails closed when child campaign scope mismatches',async(
  }));
  await assert.rejects(reader({userId:user,authenticated:true},workspace,undefined,receipt),/CONTENT access denied/);
 });
+
+function receiptFixtureReader({items,scenes=[]}) {
+ return createContentWorkspaceReader(async fn=>fn(async(sql,params)=>{
+  if(sql.includes('FROM pg_roles'))return {rows:[{name:'content_dev_reader_v2',login:'content_dev_reader_v2',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0}]};
+  if(sql.includes('current_database()'))return {rows:[{db:'bros_intelligence_dev',forced:4,staging:false,credits:false,writes:false,membership:true}]};
+  if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:user}]};
+  if(sql.includes('FROM content_dev.workspaces'))return {rows:[{id:workspace,tenant_id:tenant}]};
+  if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:receipt,status:'draft'}]};
+  if(sql.includes('FROM content_dev.content_items')){
+   assert.deepEqual(params,[tenant,receipt]);
+   return {rows:items};
+  }
+  if(sql.includes('FROM content_dev.scenes')){
+   assert.deepEqual(params,[tenant,items[0].id]);
+   return {rows:scenes};
+  }
+  throw new Error('Unexpected query');
+ }));
+}
+
+test('receipt readback rejects a scene attached to a different content item',async()=>{
+ const item='66666666-6666-4666-8666-666666666666';
+ const scene='77777777-7777-4777-8777-777777777777';
+ const reader=receiptFixtureReader({
+  items:[{id:item,campaign_id:receipt}],
+  scenes:[{id:scene,content_item_id:workspace,visual_prompt:'Wrong parent'}]
+ });
+ await assert.rejects(reader({userId:user,authenticated:true},workspace,undefined,receipt),/CONTENT access denied/);
+});
+
+test('receipt readback refuses to silently truncate more than 500 content items',async()=>{
+ const items=Array.from({length:501},(_,i)=>({
+  id:'66666666-6666-4666-8666-'+String(i).padStart(12,'0'),
+  campaign_id:receipt
+ }));
+ const reader=receiptFixtureReader({items});
+ await assert.rejects(reader({userId:user,authenticated:true},workspace,undefined,receipt),/CONTENT result exceeds supported read limit/);
+});
