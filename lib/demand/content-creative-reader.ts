@@ -3,7 +3,7 @@ import { snapshotDemandCreativeRecord } from "./creative-intake.ts";
 
 type Creative = Parameters<typeof snapshotDemandCreativeRecord>[1];
 type Scope = Readonly<{ tenantId: string; principalId: string }>;
-const endpoint = "https://bros-commercial-intelligence-git-4a0d3f-bolehejassolutions-8492.vercel.app/api/internal/neon-content-creative-reuse";
+const endpoint = "https://content-creative-reuse.internal/api/internal/neon-content-creative-reuse";
 const id = /^[a-zA-Z0-9][a-zA-Z0-9:_-]{7,127}$/;
 const time = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
 const deny = (): never => { throw Error("DEMAND_CONTENT_REUSE_UNVERIFIED"); };
@@ -53,10 +53,10 @@ async function boundedBody(response: Response, maxBytes: number): Promise<Uint8A
   }
 }
 
-/** Per-request consumer of a pinned BCI Preview. Approval replies sign the UTF-8 JSON tuple below,
+/** Per-request consumer of the in-process CONTENT reader. Approval replies sign the UTF-8 JSON tuple below,
  * with creative fields in snapshotDemandCreativeRecord order. Each read has a fresh challenge. */
 export function createDemandContentCreativeReader(scope: Scope, jwt: string, key: KeyObject,
-  transport: typeof fetch = fetch, now = Date.now) {
+  read: (request: Request) => Promise<Response>, now = Date.now) {
   let current: { creative: Creative; logoAssetVersionId: string | null } | undefined;
   const deadline = AbortSignal.timeout(25000);
   async function get(view: "approval" | "original", assetId: string, creativeVersion: string, challenge?: string) {
@@ -65,9 +65,11 @@ export function createDemandContentCreativeReader(scope: Scope, jwt: string, key
     url.search = new URLSearchParams({ view, assetId, creativeVersion, ...(challenge ? { challenge } : {}) }).toString();
     const signal = AbortSignal.any([deadline, AbortSignal.timeout(8000)]);
     signal.throwIfAborted();
-    return transport(url, {
+    const response = await read(new Request(url, {
       method: "GET", headers: { Authorization: "Bearer " + jwt }, cache: "no-store", redirect: "error", signal,
-    });
+    }));
+    signal.throwIfAborted();
+    return response;
   }
   return {
     async approvedRecordFor(tenantId: string, assetId: string, creativeVersion: string) {

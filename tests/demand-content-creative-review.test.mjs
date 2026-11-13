@@ -30,15 +30,16 @@ const key = demandContentReusePublicKey(publicKey.export({ type: "spki", format:
 function fixture({ patchPayload, mutateBytes, signer = privateKey, revoke = false, enabled = true, configured = true } = {}) {
   const calls = [], challenges = [];
   let both = 0;
-  const transport = async (url, init) => {
+  const transport = async (request) => {
+    const url = new URL(request.url);
     const view = url.searchParams.get("view");
     calls.push(view);
-    assert.equal(url.origin, "https://bros-commercial-intelligence-git-4a0d3f-bolehejassolutions-8492.vercel.app");
+    assert.equal(url.origin, "https://content-creative-reuse.internal");
     assert.equal(url.pathname, "/api/internal/neon-content-creative-reuse");
     assert.equal(url.searchParams.get("assetId"), assetId);
     assert.equal(url.searchParams.get("creativeVersion"), creativeVersion);
-    assert.equal(init.method, "GET"); assert.equal(init.redirect, "error");
-    assert.equal(init.cache, "no-store"); assert.equal(init.headers.Authorization, "Bearer " + jwt);
+    assert.equal(request.method, "GET"); assert.equal(request.redirect, "error");
+    assert.equal(request.cache, "no-store"); assert.equal(request.headers.get("authorization"), "Bearer " + jwt);
     if (view === "original") return new Response(mutateBytes?.(bytes) ?? bytes, { headers: { "Content-Type": "image/png" } });
     const challenge = url.searchParams.get("challenge");
     assert.match(challenge, /^[0-9a-f]{48}$/);

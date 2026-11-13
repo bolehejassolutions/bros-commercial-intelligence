@@ -1,6 +1,6 @@
 import 'server-only';
 import {Pool} from 'pg';
-import {createContentReviewSourceStore} from './content-review-source.mjs';
+import {contentReviewSources as sources,readContentCreativeOriginal} from './content-review-source.mjs';
 import {createNeonAuthPrincipalVerifier} from '../bci/neon-auth-principal.ts';
 import {createNeonDevMembershipLookup} from '../bci/neon-dev-membership-rows.ts';
 import {createPgReadOnlyTransaction,parseNeonDevConnection} from '../bci/neon-readonly-transaction.ts';
@@ -11,7 +11,6 @@ const authBase='https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.
 const verify=createNeonAuthPrincipalVerifier({issuer:new URL(authBase).origin,
   audience:new URL(authBase).origin,jwksUrl:authBase+'/.well-known/jwks.json',
   approvedOperator:{email:'rasymokh@gmail.com'}});
-const sources=createContentReviewSourceStore();
 const privateHeaders={'Cache-Control':'private, no-store, max-age=0',Pragma:'no-cache',
   Vary:'Authorization','X-Content-Type-Options':'nosniff'};
 const response=(body:unknown,status:number)=>Response.json(body,{status,headers:privateHeaders});
@@ -41,12 +40,7 @@ export const handleContentCreativeReuse=createContentCreativeReuseHandler({
     if(content.tenantId!==demand.tenantId)throw Error();
     return content;
   },
-  readOriginal:async(scope,proofId,slot)=>{
-    const source=await sources.load({...scope,product:'content'},proofId);
-    const bytes=source.mediaBytes[slot-1];
-    if(!bytes)throw Error();
-    return {bytes,brandInstanceId:source.envelope.instanceId};
-  },
+  readOriginal:readContentCreativeOriginal,
   now:Date.now,
 });
 

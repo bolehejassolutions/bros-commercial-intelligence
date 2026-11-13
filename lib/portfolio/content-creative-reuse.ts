@@ -114,18 +114,22 @@ export function createContentCreativeReuseHandler(deps: Dependencies) {
     const auth = request.headers.get("authorization");
     if (!auth || auth.length > 16007 || !/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(auth)) return denied(401);
     try {
+      request.signal.throwIfAborted();
       const jwt = auth.slice(7);
       const { principalId, tenantId } = await deps.authorize(jwt);
       const scope = { principalId, tenantId };
       const config = deps.configuration();
       if (!config) return denied(404);
       const grant = activeGrant(config.grant, config.ownerKeys, scope, assetId, creativeVersion, deps.now());
+      request.signal.throwIfAborted();
       const original = await deps.readOriginal(scope, grant.proofEnvelopeId, grant.slot);
       if (!(original.bytes instanceof Uint8Array) || original.bytes.length !== grant.creative.bytes) return denied(403);
       const bytes = new Uint8Array(original.bytes);
       if (original.brandInstanceId !== grant.creative.brandInstanceId ||
           createHash("sha256").update(bytes).digest("hex") !== grant.creative.sha256) return denied(403);
+      request.signal.throwIfAborted();
       const current = await deps.authorize(jwt);
+      request.signal.throwIfAborted();
       const now = deps.now();
       const fresh = deps.configuration();
       if (!fresh || current.principalId !== principalId || current.tenantId !== tenantId ||

@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createContentCreativeReuseHandler, readCreativeReuseConfiguration } from "../lib/portfolio/content-creative-reuse.ts";
-import { createContentReviewSourceStore } from "../lib/portfolio/content-review-source.mjs";
+import { readContentCreativeOriginal } from "../lib/portfolio/content-review-source.mjs";
 import { usesNeonPreviewAuthentication } from "../lib/bci/neon-preview-route-policy.ts";
+import { createDemandPreviewCreativeReview } from "../lib/demand/content-creative-preview.ts";
+import { createPausedCampaignHttpHandler } from "../lib/demand/meta-paused-campaign-http.ts";
+import { preparePausedCampaignPlan } from "../lib/demand/meta-paused-campaign-plan.ts";
 
 const path = "/api/internal/neon-content-creative-reuse";
 const root = new URL("../content-review-sources/", import.meta.url);
@@ -34,14 +37,17 @@ function grant(change = {}, signingKey = owner.privateKey) {
     payload.logoAssetVersionId, payload.creative]));
   return { keyId, payload, signature: sign(null, bytes, signingKey).toString("base64url") };
 }
-function configuration(receipt = grant(), privateKey = issuer.privateKey) {
-  return readCreativeReuseConfiguration({
+function credentials(receipt = grant(), privateKey = issuer.privateKey) {
+  return {
     BCI_CONTENT_DEMAND_REUSE_GRANT: JSON.stringify(receipt),
     BCI_NEON_DEV_CONTENT_REVIEW_PUBLIC_KEYS: JSON.stringify({
       [keyId]: owner.publicKey.export({ type: "spki", format: "pem" }),
     }),
     BCI_CONTENT_DEMAND_REUSE_ISSUER_PRIVATE_KEY: privateKey.export({ type: "pkcs8", format: "pem" }),
-  });
+  };
+}
+function configuration(receipt, privateKey) {
+  return readCreativeReuseConfiguration(credentials(receipt, privateKey));
 }
 function request(view = "approval", extra = "", options = {}) {
   const headers = { Authorization: "Bearer synthetic.jwt.token", ...options.headers };
@@ -55,10 +61,9 @@ function fixture(overrides = {}) {
     enabled: () => true, now: () => now,
     authorize: async token => { assert.equal(token, "synthetic.jwt.token"); authorizations++; return scope; },
     configuration,
-    readOriginal: async (current, proof, slot) => {
+    readOriginal: (current, proof, slot) => {
       reads++;
-      const source = await createContentReviewSourceStore().load({ ...current, product: "content" }, proof);
-      return { bytes: source.mediaBytes[slot - 1], brandInstanceId: source.envelope.instanceId };
+      return readContentCreativeOriginal(current, proof, slot);
     },
     ...overrides,
   });
@@ -126,4 +131,77 @@ test("rechecks asset bytes, grant and operator membership before returning eithe
       assert.deepEqual(await response.json(), { error: "CONTENT creative reuse unavailable." });
     }
   }
+});
+
+test("DEMAND reviews the actual CONTENT original through its existing endpoint in one Preview", async () => {
+  const env = {
+    ...credentials(),
+    BROS_DEMAND_CONTENT_CREATIVE_REVIEW: "enabled",
+    BCI_CONTENT_DEMAND_REUSE: "enabled",
+    BROS_DEMAND_CONTENT_REUSE_PUBLIC_KEY: issuer.publicKey.export({ type: "spki", format: "pem" }),
+  };
+  let preview = true, membership = true, reads = 0;
+  const creativeReview = createDemandPreviewCreativeReview({
+    demandPreviewEnabled: () => preview, env, now: () => now,
+    authorizeBoth: async token => {
+      assert.equal(token, "synthetic.jwt.token");
+      if (!membership) throw Error();
+      return scope;
+    },
+    readOriginal: (current, proof, slot) => {
+      reads++;
+      return readContentCreativeOriginal(current, proof, slot);
+    },
+    maximumBudgetMinor: () => 14000,
+  });
+  const handler = createPausedCampaignHttpHandler({
+    enabled: () => preview,
+    authorize: async token => { assert.equal(token, "synthetic.jwt.token"); return scope; },
+    creativeReview,
+    service: () => assert.fail("CONTENT review must never initialize campaign execution"),
+  });
+  const draft = { name: "CONTENT review fixture", budgetMinor: 10000, durationDays: 7,
+    startTime: stamp(now + 7200000), landingUrl: "https://bros.bolehejas.com/",
+    primaryText: "Review only", headline: "Exact original", description: "", imageHash: "a".repeat(32) };
+  const review = () => handler(new Request("https://demand.example/api/internal/demand-meta-campaigns", {
+    method: "POST", headers: { Authorization: "Bearer synthetic.jwt.token", Origin: "https://demand.example",
+      "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "review_creative", assetId, creativeVersion: version, draft }),
+  }));
+
+  const response = await review();
+  assert.equal(response.status, 200);
+  const receipt = await response.json();
+  assert.equal(receipt.mediaSha256, creative.sha256);
+  assert.equal(receipt.approvalEvidenceId, creative.approvalEvidenceId);
+  assert.equal(receipt.planSha256, preparePausedCampaignPlan(scope, draft, 14000, now).planSha256);
+  assert.equal(receipt.metaUploadAllowed, false);
+  assert.equal(receipt.campaignExecutionAllowed, false);
+  assert.equal(reads, 3);
+
+  membership = false;
+  assert.equal((await review()).status, 403);
+  membership = true;
+  for (const flag of ["BCI_CONTENT_DEMAND_REUSE", "BROS_DEMAND_CONTENT_CREATIVE_REVIEW",
+    "BROS_DEMAND_CONTENT_REUSE_PUBLIC_KEY", "BCI_CONTENT_DEMAND_REUSE_GRANT"]) {
+    const setting = env[flag];
+    delete env[flag];
+    assert.equal((await review()).status, 503);
+    env[flag] = setting;
+  }
+  env.BROS_DEMAND_CONTENT_REUSE_PUBLIC_KEY = owner.publicKey.export({ type: "spki", format: "pem" });
+  assert.equal((await review()).status, 503);
+  preview = false;
+  assert.equal((await review()).status, 404);
+  assert.equal(reads, 3);
+});
+
+test("an aborted request releases no approval or original", async () => {
+  const abort = new AbortController();
+  const f = fixture({ readOriginal: async () => {
+    abort.abort();
+    return { bytes: original, brandInstanceId: creative.brandInstanceId };
+  } });
+  assert.equal((await f.handler(request("original", "", { signal: abort.signal }))).status, 403);
+  assert.equal(f.counts().authorizations, 1);
 });

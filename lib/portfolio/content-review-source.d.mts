@@ -4,3 +4,7 @@ export function createContentReviewSourceStore(root?:string):Readonly<{
   load:(scope:ContentIssuanceScope,id:string)=>Promise<ContentIssuanceSource&{
     handoff:Record<string,unknown>;title:string}>;
 }>;
+export const contentReviewSources: ReturnType<typeof createContentReviewSourceStore>;
+export function readContentCreativeOriginal(
+  scope: Pick<ContentIssuanceScope, "tenantId" | "principalId">, proofId: string, slot: number,
+): Promise<{ bytes: Uint8Array; brandInstanceId: unknown }>;
