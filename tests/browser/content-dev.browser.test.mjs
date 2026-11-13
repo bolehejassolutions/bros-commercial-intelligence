@@ -135,10 +135,36 @@ test('browser verifies authenticated campaign content, draft persistence and ten
   const generateFixture = createContentCampaignPlanner(async (_prompt, _schema, name) =>
     name === 'bros_campaign' ? plan : review);
   const prepared = await generateFixture(brief, businessDna);
-  await createContentGeneratedOutputWriter(createContentTransaction(writer))(
+  const generatedReceipt = await createContentGeneratedOutputWriter(createContentTransaction(writer))(
     {userId: owner, authenticated: true}, workspaceId, 'browser-fixture-' + workspaceId,
     brief, prepared.plan, prepared.review,
   );
+  // Independent admin readback proves the seven-layer fixture was committed
+  // before Chromium renders it. This is disposable PostgreSQL, not live Neon.
+  const persistedGenerated = await admin.query(`
+    SELECT c.tenant_id, c.owner_principal_id, c.status, c.strategy,
+           c.angles, c.captions, c.publish_plan,
+           (SELECT count(*)::int FROM content_dev.content_items i
+             WHERE i.campaign_id=c.id AND i.tenant_id=c.tenant_id) AS item_count,
+           (SELECT count(*)::int FROM content_dev.scenes s
+             JOIN content_dev.content_items i ON i.id=s.content_item_id
+               AND i.tenant_id=s.tenant_id
+             WHERE i.campaign_id=c.id AND s.tenant_id=c.tenant_id) AS scene_count
+      FROM content_dev.campaigns c WHERE c.id=$1 AND c.workspace_id=$2`,
+    [generatedReceipt.id, workspaceId],
+  );
+  assert.equal(persistedGenerated.rowCount, 1, 'generated fixture must commit one campaign');
+  const persisted = persistedGenerated.rows[0];
+  assert.equal(persisted.tenant_id, tenant);
+  assert.equal(persisted.owner_principal_id, owner);
+  assert.equal(persisted.status, 'draft');
+  assert.deepEqual(persisted.strategy, plan.strategy);
+  assert.deepEqual(persisted.angles, plan.angles);
+  assert.deepEqual(persisted.captions, plan.captions);
+  assert.deepEqual(persisted.publish_plan, plan.publish_plan);
+  assert.ok(persisted.item_count > 0, 'scripts and visuals must persist as content items');
+  assert.equal(persisted.scene_count, plan.scenes.length,
+    'every generated scene must persist before authenticated HTTP readback');
 
   const scratch = join(repo, '.next');
   await mkdir(scratch, {recursive: true});
