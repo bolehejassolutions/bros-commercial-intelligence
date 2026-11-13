@@ -11,7 +11,7 @@ const itemB='66666666-6666-4666-8666-000000000002';
 const sceneA='77777777-7777-4777-8777-000000000001';
 const sceneB='77777777-7777-4777-8777-000000000002';
 
-function fixture(duplicate=false) {
+function fixture(duplicate=false,overflow=false) {
  const calls:string[]=[];
  const read=createContentWorkspaceReader(async fn=>fn(async(sql,params)=>{
   calls.push(sql);
@@ -20,7 +20,7 @@ function fixture(duplicate=false) {
   if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:principal}]};
   if(sql.includes('FROM content_dev.workspaces'))return {rows:[{id:workspace,tenant_id:tenant,name:'DEV workspace'}]};
   if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:campaign,status:'draft',strategy:{goal:'clarity'},angles:[{hook:'recognition'}],captions:['caption'],publish_plan:{state:'preview'}}]};
-  if(sql.includes('FROM content_dev.content_items'))return {rows:[{id:itemA,campaign_id:campaign,title:'Script',body:'Draft script'},{id:itemB,campaign_id:campaign,title:'Visual prompt',body:'Draft prompt'}]};
+  if(sql.includes('FROM content_dev.content_items'))return {rows:overflow?Array.from({length:501},(_,i)=>({id:`66666666-6666-4666-8666-${String(i+1).padStart(12,'0')}`,campaign_id:campaign,title:'Draft',body:'Draft body'})):[{id:itemA,campaign_id:campaign,title:'Script',body:'Draft script'},{id:itemB,campaign_id:campaign,title:'Visual prompt',body:'Draft prompt'}]};
   if(sql.includes('FROM content_dev.scenes'))return {rows:[{id:params[1]===itemA?sceneA:(duplicate?sceneA:sceneB),content_item_id:params[1],visual_prompt:'Scene prompt'}]};
   throw new Error('unexpected query');
  }));
@@ -43,4 +43,10 @@ test('draft receipt restores strategy, angles, scripts, prompts, scenes, caption
 test('draft receipt rejects reused scene identity across content items',async()=>{
  const {read}=fixture(true);
  await assert.rejects(read({userId:principal,authenticated:true},workspace,undefined,campaign),/CONTENT access denied/);
+});
+
+test('receipt readback rejects 501 saved items without issuing scene queries or returning partial content',async()=>{
+ const {read,calls}=fixture(false,true);
+ await assert.rejects(read({userId:principal,authenticated:true},workspace,undefined,campaign),/CONTENT result exceeds supported read limit/);
+ assert.equal(calls.filter(sql=>sql.includes('FROM content_dev.scenes')).length,0);
 });
