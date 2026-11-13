@@ -192,7 +192,11 @@ test('browser verifies authenticated campaign content, draft persistence and ten
      WHERE tenant_id=$1 AND content_item_id=$2
      ORDER BY scene_number`, [tenant, sceneParent[0].id]);
   assert.equal(savedScenes.rowCount, expectedBundle.scenes.length);
-  assert.deepEqual(savedScenes.rows.map(({content_item_id, ...scene}) => scene),
+  assert.deepEqual(savedScenes.rows.map(({content_item_id, ...scene}) => ({
+      ...scene,
+      // pg returns PostgreSQL NUMERIC as a string; compare its exact numeric value.
+      duration_seconds: Number(scene.duration_seconds),
+    })),
     expectedBundle.scenes.map(({content_item_ref, ...scene}) => scene),
     'every persisted scene body must match the approved deterministic fixture');
 
