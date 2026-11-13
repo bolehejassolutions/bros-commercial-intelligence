@@ -6,6 +6,7 @@ const neonPreviewPaths = new Set([
   "/api/internal/neon-demand-proposal",
   "/api/internal/neon-content-reservation",
   "/api/internal/neon-content-review",
+  "/api/internal/neon-content-creative-reuse",
   "/api/internal/neon-content-approval",
   "/internal/neon-preview",
   "/internal/neon-preview/content-review",
