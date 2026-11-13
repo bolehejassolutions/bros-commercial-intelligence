@@ -78,6 +78,7 @@ export function createContentWorkspaceReader(transaction: Transaction) {
         if (contentItems.some(row => row.campaign_id !== draftId || !UUID.test(String(row.id))) ||
             new Set(contentItems.map(row => row.id)).size !== contentItems.length) deny();
         const scenes: Row[] = [];
+        const seenDraftSceneIds = new Set<string>();
         for (const item of contentItems) {
           const itemScenes = (await query(`SELECT id,content_item_id,scene_number,duration_seconds,
             narration,dialogue,visual_prompt,motion_prompt,continuity_lock
@@ -86,7 +87,8 @@ export function createContentWorkspaceReader(transaction: Transaction) {
           requireCompleteContentRows(itemScenes,MAX_CONTENT_SCENES_PER_ITEM);
           if (itemScenes.some(row => row.content_item_id !== item.id || !UUID.test(String(row.id))) ||
               new Set(itemScenes.map(row => row.id)).size !== itemScenes.length ||
-              itemScenes.some(row => scenes.some(existing => existing.id === row.id))) deny();
+              itemScenes.some(row => seenDraftSceneIds.has(String(row.id)))) deny();
+          for (const scene of itemScenes) seenDraftSceneIds.add(String(scene.id));
           scenes.push(...itemScenes);
         }
         return {workspace:workspace[0],campaigns:drafts,contentItems,scenes,nextCursor:null};
