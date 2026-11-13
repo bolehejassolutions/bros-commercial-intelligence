@@ -170,6 +170,33 @@ test('browser verifies authenticated campaign content, draft persistence and ten
   assert.equal(persisted.scene_count, plan.scenes.length,
     'every generated scene must persist before authenticated HTTP readback');
 
+  // Verify the actual script, visual-prompt and scene bodies, not only counts.
+  // The admin connection is independent of the generated writer and HTTP reader.
+  const expectedBundle = compileContentPersistenceBundle(brief, prepared.plan, prepared.review);
+  const savedItems = await admin.query(`
+    SELECT id, type, title, body, sort_order, version
+      FROM content_dev.content_items
+     WHERE tenant_id=$1 AND campaign_id=$2
+     ORDER BY type, sort_order, id`, [tenant, generatedReceipt.id]);
+  assert.equal(savedItems.rowCount, expectedBundle.items.length);
+  const expectedItems = expectedBundle.items.map(({ref, ...item}) => item)
+    .sort((a, b) => a.type.localeCompare(b.type) || a.sort_order - b.sort_order);
+  assert.deepEqual(savedItems.rows.map(({id, ...item}) => item), expectedItems,
+    'every persisted script and visual prompt must match the compiled source body');
+  const sceneParent = savedItems.rows.filter(item => item.type === 'video_scenes');
+  assert.equal(sceneParent.length, 1, 'all generated scenes require exactly one parent item');
+  const savedScenes = await admin.query(`
+    SELECT content_item_id, scene_number, duration_seconds, narration,
+           dialogue, visual_prompt, motion_prompt, continuity_lock
+      FROM content_dev.scenes
+     WHERE tenant_id=$1 AND content_item_id=$2
+     ORDER BY scene_number`, [tenant, sceneParent[0].id]);
+  assert.equal(savedScenes.rowCount, expectedBundle.scenes.length);
+  assert.deepEqual(savedScenes.rows.map(({content_item_id, ...scene}) => scene),
+    expectedBundle.scenes.map(({content_item_ref, ...scene}) => scene),
+    'every persisted scene body must match the approved deterministic fixture');
+
+
   const scratch = join(repo, '.next');
   await mkdir(scratch, {recursive: true});
   const fixtureRoot = await mkdtemp(join(scratch, 'content-browser-'));
