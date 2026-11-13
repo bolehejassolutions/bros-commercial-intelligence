@@ -23,6 +23,7 @@ test('receipt-specific draft readback preserves all campaign strategy and publis
    assert.deepEqual(params,[tenant,workspace,user,receipt]);
    return {rows:[campaign]};
   }
+  if(sql.includes('FROM content_dev.content_items'))return {rows:[]};
   throw new Error('Unexpected query');
  }));
  const result=await reader({userId:user,authenticated:true},workspace,undefined,receipt);
@@ -32,4 +33,44 @@ test('receipt-specific draft readback preserves all campaign strategy and publis
  assert.deepEqual(result.contentItems,[]);
  assert.deepEqual(result.scenes,[]);
  assert.equal(result.nextCursor,null);
+});
+
+test('receipt readback restores scoped content items and scenes with bounded queries',async()=>{
+ const item='66666666-6666-4666-8666-666666666666';
+ const scene='77777777-7777-4777-8777-777777777777';
+ const seen=[];
+ const reader=createContentWorkspaceReader(async fn=>fn(async(sql,params)=>{
+  if(sql.includes('FROM pg_roles'))return {rows:[{name:'content_dev_reader_v2',login:'content_dev_reader_v2',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0}]};
+  if(sql.includes('current_database()'))return {rows:[{db:'bros_intelligence_dev',forced:4,staging:false,credits:false,writes:false,membership:true}]};
+  if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:user}]};
+  if(sql.includes('FROM content_dev.workspaces'))return {rows:[{id:workspace,tenant_id:tenant}]};
+  if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:receipt,status:'draft'}]};
+  if(sql.includes('FROM content_dev.content_items')){
+   assert.deepEqual(params,[tenant,receipt]);assert.match(sql,/LIMIT 501/);
+   seen.push('items');return {rows:[{id:item,campaign_id:receipt,type:'script',body:'Fixture'}]};
+  }
+  if(sql.includes('FROM content_dev.scenes')){
+   assert.deepEqual(params,[tenant,item]);assert.match(sql,/LIMIT [0-9]+/);
+   seen.push('scenes');return {rows:[{id:scene,content_item_id:item,visual_prompt:'Fixture prompt'}]};
+  }
+  throw new Error('Unexpected query');
+ }));
+ const result=await reader({userId:user,authenticated:true},workspace,undefined,receipt);
+ assert.deepEqual(seen,['items','scenes']);
+ assert.equal(result.contentItems[0].id,item);
+ assert.equal(result.scenes[0].id,scene);
+ assert.equal(result.nextCursor,null);
+});
+
+test('receipt readback fails closed when child campaign scope mismatches',async()=>{
+ const reader=createContentWorkspaceReader(async fn=>fn(async(sql)=>{
+  if(sql.includes('FROM pg_roles'))return {rows:[{name:'content_dev_reader_v2',login:'content_dev_reader_v2',can_login:true,inherits:false,bypass:false,superuser:false,can_create_role:false,parents:0}]};
+  if(sql.includes('current_database()'))return {rows:[{db:'bros_intelligence_dev',forced:4,staging:false,credits:false,writes:false,membership:true}]};
+  if(sql.includes("set_config('bci.principal_id'"))return {rows:[{principal_id:user}]};
+  if(sql.includes('FROM content_dev.workspaces'))return {rows:[{id:workspace,tenant_id:tenant}]};
+  if(sql.includes('FROM content_dev.campaigns'))return {rows:[{id:receipt,status:'draft'}]};
+  if(sql.includes('FROM content_dev.content_items'))return {rows:[{id:'66666666-6666-4666-8666-666666666666',campaign_id:workspace}]};
+  throw new Error('Unexpected query');
+ }));
+ await assert.rejects(reader({userId:user,authenticated:true},workspace,undefined,receipt),/CONTENT access denied/);
 });
