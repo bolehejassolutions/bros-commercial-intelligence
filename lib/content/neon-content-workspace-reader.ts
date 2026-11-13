@@ -69,7 +69,24 @@ export function createContentWorkspaceReader(transaction: Transaction) {
           WHERE tenant_id=$1::uuid AND workspace_id=$2::uuid AND owner_principal_id=$3::uuid
           AND id=$4::uuid AND status='draft' LIMIT 1`, [...scope,draftId])).rows;
         if (drafts.length !== 1 || drafts[0].id !== draftId || drafts[0].status !== 'draft') deny();
-        return {workspace:workspace[0],campaigns:drafts,contentItems:[],scenes:[],nextCursor:null};
+        // Receipt reads must restore the same seven-layer draft as a paginated workspace read.
+        // Bound both child collections; never silently truncate a saved draft.
+        const contentItems = (await query(`SELECT id,campaign_id,type,title,body,sort_order,version
+          FROM content_dev.content_items WHERE tenant_id=$1::uuid AND campaign_id=$2::uuid
+          ORDER BY sort_order,id LIMIT 501`,[tenant,draftId])).rows;
+        requireCompleteContentRows(contentItems,500);
+        if (contentItems.some(row => row.campaign_id !== draftId || !UUID.test(String(row.id)))) deny();
+        const scenes: Row[] = [];
+        for (const item of contentItems) {
+          const itemScenes = (await query(`SELECT id,content_item_id,scene_number,duration_seconds,
+            narration,dialogue,visual_prompt,motion_prompt,continuity_lock
+            FROM content_dev.scenes WHERE tenant_id=$1::uuid AND content_item_id=$2::uuid
+            ORDER BY scene_number,id LIMIT ${MAX_CONTENT_SCENES_PER_ITEM+1}`,[tenant,String(item.id)])).rows;
+          requireCompleteContentRows(itemScenes,MAX_CONTENT_SCENES_PER_ITEM);
+          if (itemScenes.some(row => row.content_item_id !== item.id || !UUID.test(String(row.id)))) deny();
+          scenes.push(...itemScenes);
+        }
+        return {workspace:workspace[0],campaigns:drafts,contentItems,scenes,nextCursor:null};
       }
       // Compare both ordering fields in PostgreSQL so timestamp precision is preserved.
       // An out-of-scope cursor matches no row and cannot expose another tenant's data.
