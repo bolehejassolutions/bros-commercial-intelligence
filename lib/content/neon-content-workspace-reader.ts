@@ -75,7 +75,8 @@ export function createContentWorkspaceReader(transaction: Transaction) {
           FROM content_dev.content_items WHERE tenant_id=$1::uuid AND campaign_id=$2::uuid
           ORDER BY sort_order,id LIMIT 501`,[tenant,draftId])).rows;
         requireCompleteContentRows(contentItems,500);
-        if (contentItems.some(row => row.campaign_id !== draftId || !UUID.test(String(row.id)))) deny();
+        if (contentItems.some(row => row.campaign_id !== draftId || !UUID.test(String(row.id))) ||
+            new Set(contentItems.map(row => row.id)).size !== contentItems.length) deny();
         const scenes: Row[] = [];
         for (const item of contentItems) {
           const itemScenes = (await query(`SELECT id,content_item_id,scene_number,duration_seconds,
@@ -83,7 +84,9 @@ export function createContentWorkspaceReader(transaction: Transaction) {
             FROM content_dev.scenes WHERE tenant_id=$1::uuid AND content_item_id=$2::uuid
             ORDER BY scene_number,id LIMIT ${MAX_CONTENT_SCENES_PER_ITEM+1}`,[tenant,String(item.id)])).rows;
           requireCompleteContentRows(itemScenes,MAX_CONTENT_SCENES_PER_ITEM);
-          if (itemScenes.some(row => row.content_item_id !== item.id || !UUID.test(String(row.id)))) deny();
+          if (itemScenes.some(row => row.content_item_id !== item.id || !UUID.test(String(row.id))) ||
+              new Set(itemScenes.map(row => row.id)).size !== itemScenes.length ||
+              itemScenes.some(row => scenes.some(existing => existing.id === row.id))) deny();
           scenes.push(...itemScenes);
         }
         return {workspace:workspace[0],campaigns:drafts,contentItems,scenes,nextCursor:null};
