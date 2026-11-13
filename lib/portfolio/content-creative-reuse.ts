@@ -1,4 +1,5 @@
 import { createHash, createPrivateKey, createPublicKey, sign, verify, type KeyObject } from "node:crypto";
+import { contentCreativeReuseGrantBytes, creativeReuseFields } from "./content-creative-reuse-contract.ts";
 
 type Scope = Readonly<{ principalId: string; tenantId: string }>;
 type Original = Readonly<{ bytes: Uint8Array; brandInstanceId: unknown }>;
@@ -13,10 +14,6 @@ const headers = { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-c
 const denied = (status: number) => Response.json({ error: "CONTENT creative reuse unavailable." }, { status, headers });
 const invalid = (): never => { throw Error("CONTENT_CREATIVE_REUSE_DENIED"); };
 
-// Same sorted field order as DEMAND snapshotDemandCreativeRecord.
-const fields = ["aiDisclosure", "approvalEvidenceId", "assetId", "brandInstanceId", "bytes", "claimsEvidence",
-  "creativeVersion", "editorialQa", "logoEvidence", "mediaQa", "mime", "presetId", "presetVersion", "sha256",
-  "status", "tenantId"] as const;
 function exact(value: unknown, keys: readonly string[]): Record<string, unknown> {
   if (!value || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype ||
       Reflect.ownKeys(value).length !== keys.length || !keys.every(key => {
@@ -38,8 +35,8 @@ function activeGrant(raw: unknown, ownerKeys: ReadonlyMap<string, KeyObject>, sc
   const envelope = exact(raw, ["keyId", "payload", "signature"]);
   const p = exact(envelope.payload, ["schemaVersion", "product", "purpose", "proofEnvelopeId", "slot",
     "approvedAt", "expiresAt", "logoAssetVersionId", "creative"]);
-  const data = exact(p.creative, fields);
-  const creative = Object.fromEntries(fields.map(field => [field, data[field]]));
+  const data = exact(p.creative, creativeReuseFields);
+  const creative = Object.fromEntries(creativeReuseFields.map(field => [field, data[field]]));
   const approvedAt = instant(p.approvedAt), expiresAt = instant(p.expiresAt);
   if (!Number.isFinite(now) || p.schemaVersion !== 1 || p.product !== "demand" || p.purpose !== "CREATIVE_REVIEW" ||
       !matches(p.proofEnvelopeId, proof) || typeof p.slot !== "number" || !Number.isInteger(p.slot) ||
@@ -57,10 +54,12 @@ function activeGrant(raw: unknown, ownerKeys: ReadonlyMap<string, KeyObject>, sc
         creative.logoEvidence === "OFFICIAL_APPROVED" && matches(p.logoAssetVersionId, id)) ||
       !matches(envelope.keyId, id) || !matches(envelope.signature, signature)) return invalid();
   const ownerKey = ownerKeys.get(envelope.keyId);
-  const signed = JSON.stringify(["BROS_CONTENT_OWNER_DEMAND_REUSE_V1", envelope.keyId, p.schemaVersion, p.product, p.purpose,
-    p.proofEnvelopeId, p.slot, p.approvedAt, p.expiresAt, p.logoAssetVersionId, creative]);
+  const signed = contentCreativeReuseGrantBytes(envelope.keyId, {
+    schemaVersion: p.schemaVersion, product: p.product, purpose: p.purpose, proofEnvelopeId: p.proofEnvelopeId,
+    slot: p.slot, approvedAt: p.approvedAt, expiresAt: p.expiresAt, logoAssetVersionId: p.logoAssetVersionId, creative,
+  });
   if (ownerKey?.asymmetricKeyType !== "ed25519" ||
-      !verify(null, Buffer.from(signed), ownerKey, Buffer.from(envelope.signature, "base64url"))) return invalid();
+      !verify(null, signed, ownerKey, Buffer.from(envelope.signature, "base64url"))) return invalid();
   return { creative, proofEnvelopeId: p.proofEnvelopeId, slot: p.slot, expiresAt, logoAssetVersionId: p.logoAssetVersionId };
 }
 

@@ -66,14 +66,16 @@ export async function handleContentReviewRead(request:Request){
     ];
     const registeredKeyIds=Object.keys(JSON.parse(process.env.BCI_NEON_DEV_CONTENT_REVIEW_PUBLIC_KEYS||'{}'));
     const proof=url.searchParams.get('proof');
+    const setup={ready:missing.length===0,missing,registeredKeyIds,
+      demandReuseAvailable:process.env.BCI_CONTENT_DEMAND_REUSE==='enabled'};
     if(!proof)return response({sources:await sources.list(scope),reviewerSubject:scope.principalId,
-      setup:{ready:missing.length===0,missing,registeredKeyIds},providerSent:false},200);
+      setup,providerSent:false},200);
     if(!/^content-instance-script-proof-[a-f0-9]{64}$/.test(proof))return response({error:'Invalid proof.'},400);
     const source=await sources.load(scope,proof);
     const current=await scopeFor(auth.slice(7));
     if(current.principalId!==scope.principalId||current.tenantId!==scope.tenantId)throw Error();
     return response({title:source.title,envelope:source.envelope,handoff:source.handoff,
       images:source.mediaBytes.map(x=>'data:image/png;base64,'+Buffer.from(x).toString('base64')),
-      reviewerSubject:scope.principalId,setup:{ready:missing.length===0,missing,registeredKeyIds},providerSent:false},200);
+      reviewerSubject:scope.principalId,setup,providerSent:false},200);
   }catch{return response({error:'Content review could not be confirmed. Sign in and try again.'},403);}
 }

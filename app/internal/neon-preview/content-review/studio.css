@@ -76,6 +76,11 @@
 .content-studio .approval-header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}
 .content-studio .approval-sub{color:#abbac6;max-width:710px;font-size:13px;margin:9px 0 22px;line-height:1.75}
 .content-studio .review-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.content-studio .demand-reuse-fields{min-width:0;margin:0;padding:0;border:0}
+.content-studio .demand-reuse-fields legend{margin-bottom:12px}
+.content-studio .demand-reuse-fields label:not(.review-choice){display:grid;gap:4px;align-content:start}
+.content-studio .demand-reuse-fields :is(input:not([type=checkbox]),select){box-sizing:border-box;width:100%;min-width:0;padding:8px;border:1px solid #455566;border-radius:6px;background:#192b3a;color:#fff;font:inherit}
+.content-studio .demand-reuse-fields select:focus-visible{outline:2px solid #eccb89;outline-offset:4px}
 .content-studio label.review-choice{display:grid;grid-template-columns:18px minmax(0,1fr);align-items:start;gap:13px;margin:0;padding:13px 14px;border:1px solid #374b5e;border-radius:10px;background:#1a2938;color:#d8e1e8;font-size:12px;line-height:1.6;cursor:pointer;min-width:0}
 .content-studio label.review-choice:hover{border-color:#b99b72}
 .content-studio label.review-choice input[type=checkbox]{display:block;width:18px;min-width:18px;max-width:18px;height:18px;min-height:18px;max-height:18px;margin:2px 0 0;padding:0;border:0;accent-color:#e5b877;flex:none;justify-self:start}

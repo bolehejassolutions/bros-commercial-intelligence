@@ -5,8 +5,9 @@ import {BetterAuthVanillaAdapter,type BetterAuthVanillaAdapterInstance} from '@n
 import {requestNeonPreviewToken,requestNeonPreviewSession} from '@/lib/bci/neon-preview-client-token';
 import {createContentReviewerKey,signContentReviewDecision,SCRIPT_REVIEW_CHECKS,type ContentReviewerKey} from '@/lib/portfolio/content-review-signing';
 import {prepareContentDemandBridgeUrl} from '@/lib/portfolio/content-demand-bridge-link';
+import DemandReuse from './demand-reuse';
 type Json=Record<string,unknown>;
-type Setup={ready:boolean;missing:string[];registeredKeyIds:string[]};
+type Setup={ready:boolean;missing:string[];registeredKeyIds:string[];demandReuseAvailable?:boolean};
 type Pack={title:string;envelope:Json;handoff:Json;images:string[];reviewerSubject:string;setup:Setup};
 const email='rasymokh@gmail.com';
 const authBase='https://ep-fancy-queen-b30g0cjn.neonauth.c-4.ap-southeast-1.aws.neon.tech/bros_intelligence_dev/auth';
@@ -240,6 +241,9 @@ export default function ContentReview(){
               </div>
             </>}
           </section>
+          {setup?.demandReuseAvailable===true&&<DemandReuse key={String(pack.envelope.proofEnvelopeId)+':'+selectedFrame+':'+(key?.keyId??'')}
+            envelope={pack.envelope} image={pack.images[selectedFrame]} slot={selectedFrame+1}
+            reviewerKey={key&&setup.registeredKeyIds.includes(key.keyId)?key:null}/>}
         </section>}
         {pack&&handoffUrl&&<section className="demand-next" aria-labelledby="demand-heading">
           <div><p className="eyebrow">NEXT / DEMAND</p><h2 id="demand-heading">Sambung ke BROS DEMAND</h2>

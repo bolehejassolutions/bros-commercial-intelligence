@@ -1,3 +1,5 @@
+import { contentCreativeReuseGrantBytes } from './content-creative-reuse-contract.ts';
+
 /** Browser-owned Ed25519 key; the private key never enters a request. The
  * server independently verifies registered public keys, JWT and reviewer RLS.
  */
@@ -84,4 +86,61 @@ export async function signContentReviewDecision(key:ContentReviewerKey,envelope:
     bindingSha256,signedDispatchIntentSha256,reviewedAt:scriptTime,expiresAt,nonce:nonce()},
     DISPATCH,'BROS_CONTENT_COMPLETE_DISPATCH_ADMISSION_V3');
   return {editorial:editorial.receipt,script:script.receipt,dispatch:dispatch.receipt};
+}
+
+export const DEMAND_REUSE_CHECKS = [
+  'ORIGINAL_AND_EDITORIAL', 'LOGO_AND_CLAIMS', 'AI_DISCLOSURE', 'DEMAND_REVIEW_ONLY',
+] as const;
+const reuseId = /^[A-Za-z0-9][A-Za-z0-9:_-]{7,127}$/;
+const tenantIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+const proofPattern = /^content-instance-script-proof-[a-f0-9]{64}$/;
+const denyReuse = (): never => { throw Error('DEMAND_REUSE_REVIEW_INCOMPLETE'); };
+
+export async function signContentDemandReuse(
+  key: ContentReviewerKey, envelope: Json, slot: number, original: Uint8Array,
+  review: Readonly<{
+    presetId: string; presetVersion: string; logoEvidence: 'NO_LOGO' | 'OFFICIAL_APPROVED';
+    logoAssetVersionId: string | null;
+    confirmedChecks: readonly string[];
+  }>,
+) {
+  const { tenantId, instanceId, proofEnvelopeId, orderedMediaDigests } = envelope;
+  const claimRefs = (envelope.copy as Json | undefined)?.claimEvidenceRefs;
+  if (envelope.schemaVersion !== 3 || envelope.product !== 'content' ||
+      !Array.isArray(envelope.automatedReviewFlags) || envelope.automatedReviewFlags.length !== 0 ||
+      typeof tenantId !== 'string' || !tenantIdPattern.test(tenantId) ||
+      typeof instanceId !== 'string' || !reuseId.test(instanceId) ||
+      typeof proofEnvelopeId !== 'string' || !proofPattern.test(proofEnvelopeId) ||
+      !Number.isInteger(slot) || slot < 1 || slot > 6 ||
+      !Array.isArray(orderedMediaDigests) || orderedMediaDigests[slot - 1]?.slot !== slot ||
+      !DEMAND_REUSE_CHECKS.every(check => review.confirmedChecks.includes(check)) ||
+      !reuseId.test(key.keyId) || key.privateKey.extractable ||
+      !reuseId.test(review.presetId) || !reuseId.test(review.presetVersion) ||
+      !Array.isArray(claimRefs) || claimRefs.length !== 0 ||
+      !(review.logoEvidence === 'NO_LOGO' ? review.logoAssetVersionId === null :
+        review.logoEvidence === 'OFFICIAL_APPROVED' && typeof review.logoAssetVersionId === 'string' &&
+        reuseId.test(review.logoAssetVersionId))) return denyReuse();
+  if (original.byteLength < 32 || original.byteLength > 12 * 1024 * 1024 ||
+      ![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => original[index] === byte)) return denyReuse();
+  const sha256 = await hash(original);
+  if (sha256 !== orderedMediaDigests[slot - 1].sourceSha256) return denyReuse();
+  const assetId = 'content-asset-' + await hash(JSON.stringify([tenantId, proofEnvelopeId, slot]));
+  const creativeVersion = 'content-version-' + sha256;
+  const now = Date.now();
+  const approvedAt = new Date(now).toISOString();
+  const approvalEvidenceId = 'content-demand-review-' + await hash(JSON.stringify([
+    key.keyId, assetId, creativeVersion, approvedAt, nonce(),
+  ]));
+  const payload = {
+    schemaVersion: 1, product: 'demand', purpose: 'CREATIVE_REVIEW', proofEnvelopeId, slot, approvedAt,
+    expiresAt: new Date(now + 24 * 60 * 60 * 1000).toISOString(), logoAssetVersionId: review.logoAssetVersionId,
+    creative: {
+      aiDisclosure: 'REVIEWED', approvalEvidenceId, assetId, brandInstanceId: instanceId, bytes: original.byteLength,
+      claimsEvidence: 'NO_CLAIMS', creativeVersion, editorialQa: 'APPROVED', logoEvidence: review.logoEvidence,
+      mediaQa: 'PASSED', mime: 'image/png', presetId: review.presetId, presetVersion: review.presetVersion,
+      sha256, status: 'APPROVED', tenantId,
+    },
+  };
+  const signature = await crypto.subtle.sign('Ed25519', key.privateKey, contentCreativeReuseGrantBytes(key.keyId, payload));
+  return { keyId: key.keyId, payload, signature: base64url(new Uint8Array(signature)) };
 }

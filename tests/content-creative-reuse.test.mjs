@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createContentReviewerKey, DEMAND_REUSE_CHECKS, signContentDemandReuse } from "../lib/portfolio/content-review-signing.ts";
 import { createContentCreativeReuseHandler, readCreativeReuseConfiguration } from "../lib/portfolio/content-creative-reuse.ts";
-import { readContentCreativeOriginal } from "../lib/portfolio/content-review-source.mjs";
+import { contentReviewSources, readContentCreativeOriginal } from "../lib/portfolio/content-review-source.mjs";
 import { usesNeonPreviewAuthentication } from "../lib/bci/neon-preview-route-policy.ts";
 import { createDemandPreviewCreativeReview } from "../lib/demand/content-creative-preview.ts";
 import { createPausedCampaignHttpHandler } from "../lib/demand/meta-paused-campaign-http.ts";
@@ -204,4 +205,49 @@ test("an aborted request releases no approval or original", async () => {
   } });
   assert.equal((await f.handler(request("original", "", { signal: abort.signal }))).status, 403);
   assert.equal(f.counts().authorizations, 1);
+});
+
+test("browser reviewer signs exactly one checked original and the producer accepts that grant", async () => {
+  const reviewer = await createContentReviewerKey();
+  assert.equal(reviewer.privateKey.extractable, false);
+  const { envelope } = await contentReviewSources.load({ ...scope, product: "content" }, entry.proofEnvelopeId);
+  const evidence = {
+    presetId: "test-preset", presetVersion: "test-preset-v1", logoEvidence: "NO_LOGO",
+    logoAssetVersionId: null, confirmedChecks: DEMAND_REUSE_CHECKS,
+  };
+  for (const [source, slot, bytes, input] of [
+    [envelope, 1, original, { ...evidence, confirmedChecks: DEMAND_REUSE_CHECKS.slice(1) }],
+    [envelope, 1, original, { ...evidence, logoEvidence: "OFFICIAL_APPROVED" }],
+    [{ ...envelope, copy: { claimEvidenceRefs: ["unverified-reference"] } }, 1, original, evidence],
+    [envelope, 2, original, evidence],
+    [envelope, 1, Buffer.concat([original, Buffer.of(0)]), evidence],
+    [{ ...envelope, automatedReviewFlags: ["HOLD"] }, 1, original, evidence],
+  ]) {
+    await assert.rejects(() => signContentDemandReuse(reviewer, source, slot, bytes, input), /REVIEW_INCOMPLETE/);
+  }
+  const signed = await signContentDemandReuse(reviewer, envelope, 1, original, evidence);
+  const reissued = await signContentDemandReuse(reviewer, envelope, 1, original, evidence);
+  assert.equal(signed.payload.creative.assetId, reissued.payload.creative.assetId);
+  assert.equal(signed.payload.creative.creativeVersion, reissued.payload.creative.creativeVersion);
+  assert.notEqual(signed.payload.creative.approvalEvidenceId, reissued.payload.creative.approvalEvidenceId);
+  assert.equal(signed.payload.creative.sha256, creative.sha256);
+  assert.equal(Date.parse(signed.payload.expiresAt) - Date.parse(signed.payload.approvedAt), 86400000);
+  const env = {
+    ...credentials(signed),
+    BCI_NEON_DEV_CONTENT_REVIEW_PUBLIC_KEYS: JSON.stringify({ [reviewer.keyId]: reviewer.publicKeyPem }),
+  };
+  const f = fixture({ now: Date.now, configuration: () => readCreativeReuseConfiguration(env) });
+  const url = new URL("https://example.test" + path);
+  url.search = new URLSearchParams({
+    view: "original", assetId: signed.payload.creative.assetId, creativeVersion: signed.payload.creative.creativeVersion,
+  });
+  const read = () => f.handler(new Request(url, { headers: { Authorization: "Bearer synthetic.jwt.token" } }));
+  const response = await read();
+  assert.equal(response.status, 200);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), original);
+  env.BCI_CONTENT_DEMAND_REUSE_GRANT = JSON.stringify({
+    ...signed, payload: { ...signed.payload, creative: { ...signed.payload.creative, presetId: "other-preset" } },
+  });
+  assert.equal((await read()).status, 403);
+  assert.equal(f.counts().reads, 1);
 });
