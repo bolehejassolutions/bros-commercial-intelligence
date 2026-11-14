@@ -448,6 +448,8 @@ test('browser verifies authenticated campaign content, draft persistence and ten
       [workspaceId, expiredDraftName]);
     assert.equal(expiredSaveRows.rowCount, 0,
       'expired draft POST must not persist a new campaign for an unauthenticated session');
+    assert.deepEqual(await pendingRetryEntries(), [],
+      'an HTTP 401 must not retain a replayable draft idempotency token in browser session storage');
     const originalDraftRows = await admin.query(
       'SELECT id FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
       [workspaceId, newDraft]);
