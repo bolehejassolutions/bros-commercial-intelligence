@@ -432,6 +432,13 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     // An expired browser session must not retain authenticated workspace access.
     // This is synthetic-session acceptance, not connected Neon Auth acceptance.
     await ownerContext.clearCookies();
+    // Expiry while the SPA stays mounted must invalidate its workspace index,
+    // not leave tenant-scoped controls accessible until a full reload.
+    await page.getByRole('button', {name: 'Muat semula kempen workspace ini'}).click();
+    await page.getByText('Sesi tamat. Sila log masuk semula.').first().waitFor();
+    await page.getByRole('button', {name: workspaceName, exact: true}).waitFor({state: 'detached'});
+    assert.equal(await page.getByLabel('Produk / servis').count(), 0,
+      'expired session must remove the draft form without requiring a page reload');
     await page.reload();
     await page.getByText('Sesi Neon Auth belum disahkan.').waitFor();
     assert.equal((await ownerContext.request.get(apiUrl)).status(), 401);
