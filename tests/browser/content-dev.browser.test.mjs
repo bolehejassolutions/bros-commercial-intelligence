@@ -429,6 +429,27 @@ test('browser verifies authenticated campaign content, draft persistence and ten
       [workspaceId, deniedDraft.product_service],
     );
     assert.equal(deniedRows.rowCount, 0, 'rejected writes must not persist campaigns');
+    // Exercise the actual mounted draft POST path with an expired session. The
+    // form must disappear immediately without a reload or an unauthorized row.
+    await fillDraft();
+    await ownerContext.clearCookies();
+    const expiredSaveResponse = page.waitForResponse(response =>
+      response.url() === draftEndpoint && response.request().method() === 'POST');
+    await submit.click();
+    assert.equal((await expiredSaveResponse).status(), 401);
+    await page.getByText('Sesi tamat. Sila log masuk semula.').first().waitFor();
+    await page.getByRole('button', {name: workspaceName, exact: true}).waitFor({state: 'detached'});
+    assert.equal(await page.getByLabel('Produk / servis').count(), 0,
+      'expired draft POST must unmount tenant-scoped draft controls');
+    const expiredSaveRows = await admin.query(
+      'SELECT id FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
+      [workspaceId, newDraft]);
+    assert.equal(expiredSaveRows.rowCount, 1, 'expired draft POST must not duplicate an existing draft');
+    await ownerContext.addCookies([{name: 'content-browser-fixture', value: ownerSession, url: origin, httpOnly: true}]);
+    await page.reload();
+    await page.getByRole('button', {name: workspaceName, exact: true}).click();
+    await nextPage.click();
+    await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
     // An expired browser session must not retain authenticated workspace access.
     // This is synthetic-session acceptance, not connected Neon Auth acceptance.
     await ownerContext.clearCookies();
