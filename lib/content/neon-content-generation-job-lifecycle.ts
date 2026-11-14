@@ -84,7 +84,7 @@ export async function listContentCampaignJobs(db:JobQuery,input:{tenantId:string
  WHERE j.tenant_id=$1 AND j.campaign_id=$2 AND j.requested_by=$3
  AND EXISTS (SELECT 1 FROM content_dev.campaigns c
  WHERE c.id=j.campaign_id AND c.tenant_id=j.tenant_id AND c.owner_principal_id=$3)
- ORDER BY j.created_at DESC,j.id DESC LIMIT $4`,
+ ORDER BY j.id DESC LIMIT $4`,
  [id(input.tenantId),id(input.campaignId),id(input.principalId),limit]);
  return result.rows;
 }
