@@ -9,7 +9,7 @@ export type JobRow = {id:string;tenant_id:string;campaign_id:string;requested_by
 export type JobQuery = {query:(sql:string,params?:readonly unknown[])=>Promise<{rows:JobRow[];rowCount?:number|null}>};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function id(value:string){if(!uuid.test(value))throw new Error('Invalid job identity');return value;}
-function key(value:string){if(typeof value!=='string'||value.length<8||value.length>128||!/^[A-Za-z0-9_-]+$/.test(value))throw new Error('Invalid idempotency key');return value;}
+function key(value:string){if(typeof value!=='string'||value.length<12||value.length>128||!/^[A-Za-z0-9_-]+$/.test(value))throw new Error('Invalid idempotency key');return value;}
 function single(rows:JobRow[]){if(rows.length>1)throw new Error('Ambiguous job identity');return rows[0]??null;}
 export async function enqueueContentJob(db:JobQuery,input:{tenantId:string;campaignId:string;principalId:string;idempotencyKey:string}){
  const {tenantId,campaignId,principalId}=input;
@@ -19,12 +19,12 @@ export async function enqueueContentJob(db:JobQuery,input:{tenantId:string;campa
  SELECT $1,$2,$3,$4,'queued',0
  WHERE EXISTS (SELECT 1 FROM content_dev.campaigns c
  WHERE c.id=$2 AND c.tenant_id=$1 AND c.owner_principal_id=$3)
- ON CONFLICT (tenant_id,idempotency_key) DO NOTHING
+ ON CONFLICT (tenant_id,requested_by,idempotency_key) DO NOTHING
  RETURNING id,tenant_id,campaign_id,requested_by,idempotency_key,status,attempts,error_code`,
  [id(tenantId),id(campaignId),id(principalId),key(input.idempotencyKey)]);
  if(result.rows.length)return single(result.rows);
  const replay=await db.query(`SELECT id,tenant_id,campaign_id,requested_by,idempotency_key,status,attempts,error_code
- FROM content_dev.generation_jobs WHERE tenant_id=$1 AND idempotency_key=$2`,[tenantId,input.idempotencyKey]);
+ FROM content_dev.generation_jobs WHERE tenant_id=$1 AND requested_by=$2 AND idempotency_key=$3`,[tenantId,principalId,input.idempotencyKey]);
  const row=single(replay.rows);
  if(!row||row.campaign_id!==campaignId||row.requested_by!==principalId)throw new Error('Job not authorized or idempotency conflict');
  return row;
@@ -71,4 +71,20 @@ export async function finishContentJob(db:JobQuery,input:{tenantId:string;jobId:
  RETURNING id,tenant_id,campaign_id,requested_by,idempotency_key,status,attempts,error_code`,
  [id(input.jobId),id(input.tenantId),input.attempt,input.outcome,input.outcome==='failed'?input.errorCode:null]);
  return single(result.rows);
+}
+
+/** Readback is limited to a single principal and campaign. A restricted DB
+ * connection and existing RLS remain mandatory; this does not grant access. */
+export async function listContentCampaignJobs(db:JobQuery,input:{tenantId:string;campaignId:string;principalId:string;limit?:number}){
+ const limit=input.limit??25;
+ if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid job history limit');
+ const result=await db.query(`SELECT j.id,j.tenant_id,j.campaign_id,j.requested_by,j.idempotency_key,
+ j.status,j.attempts,j.error_code
+ FROM content_dev.generation_jobs j
+ WHERE j.tenant_id=$1 AND j.campaign_id=$2 AND j.requested_by=$3
+ AND EXISTS (SELECT 1 FROM content_dev.campaigns c
+ WHERE c.id=j.campaign_id AND c.tenant_id=j.tenant_id AND c.owner_principal_id=$3)
+ ORDER BY j.created_at DESC,j.id DESC LIMIT $4`,
+ [id(input.tenantId),id(input.campaignId),id(input.principalId),limit]);
+ return result.rows;
 }
