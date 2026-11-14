@@ -92,3 +92,30 @@ New non-routed `lib/bci/assistant-evidence-neon-dev-oauth.ts` defines a **provid
 `tests/assistant-evidence-neon-dev-oauth.test.mjs` includes deterministic positive/negative claims plus a **real ephemeral Ed25519 signature/verification fixture**; its signing key is test-generated and never represents Neon-issued credentials. Synthetic membership/HTTP denials remain unit evidence, NOT real user login, actual Neon OAuth token issuance, genuine session revocation, hosted HTTP or ChatGPT MCP acceptance. This module lives solely in the isolated draft PR, without editing shared dependencies, plugin release, production, OAuth settings, privileges or other workers' branches.
 
 **Single remaining acceptance path:** With a separately reviewed DEV OAuth/server-host approval, provision a private owner-controlled resource and consent flow, integrate actual signed-token verifier and independent authoritative live-revocation source, then prove authenticated cross-tenant/product/revoked negative HTTP acceptance before any plugin connection. If no reliable live revocation source is supported, do NOT claim this as completed; review an alternative server-owned cookie-session or separately authorized short-lived token architecture.
+
+## Pinned Ed25519 → scoped DEV HTTP composition (15 Nov 2026)
+
+The new server-only, **non-routed** `createBusinessOsDevPinnedOAuthReadHandler`
+in `lib/bci/assistant-evidence-neon-dev-oauth.ts` now composes:
+1. `createBusinessOsDevEd25519AccessTokenVerifier`: cryptographic EdDSA signature verification using an explicitly pinned, server-owned **public** JWK set (no token-supplied JWK/URL or network key acquisition), strict `kid`, algorithm and configured access-token `typ`.
+2. Existing OAuth issuer/resource audience/client/expiry constraints and a **mandatory injected independent live session-status/revocation callback**, checked again after SQL.
+3. Existing isolated product/tenant membership reader, distinct limited evidence reader and allowlisted source-stamped projection.
+
+`tests/assistant-evidence-neon-dev-oauth-pinned.test.mjs` uses only ephemeral
+signing keys and fabricated tenant/product/posture/SQL results. It exercises a
+signed request through the full non-routed handler, forged/other-key/other-issuer/
+other-resource tokens, pre-read product-grant denial, post-read revocation,
+scope-leaking SQL and unavailable live status. These checks show the synthetic
+composition's behavior, **not** live Neon Auth acceptance or independently
+authenticated restricted SQL. A real host MUST pin issuer metadata and verified
+issuer JWKS provenance, confirm the issuer's actual JWT `typ`, manage signing
+key rotation/revocation, provide a provider-supported active-session validation
+protocol, and authenticate the two direct least-privilege readers.
+
+Neon DEV OAuth Provider is disabled and has no registered protected resources
+at the 15 Nov provider readback. Per current Neon OAuth Provider documentation,
+activation additionally requires separately hosted trusted-domain **login and
+consent pages** and a protected resource identifier. Neither signing-key
+verification alone nor disabling an OAuth resource immediately invalidates
+previously issued tokens. **Do not enable OAuth, route the handler, advertise MCP,
+create a database grant, or deploy production from this code alone.**
