@@ -207,6 +207,14 @@ export default function ContentWorkspaceClient(){
    try{
     const suffix=before?'?before='+encodeURIComponent(before):'';
     const res=await fetch('/api/content/dev/workspaces/'+encodeURIComponent(selected)+suffix,{cache:'no-store',credentials:'same-origin'});
+    if(res.status===401){
+     // A session can expire while this client remains mounted. Recheck membership
+     // and clear tenant-scoped workspace state instead of retaining stale controls.
+     if(active&&detailReadGuard.current.isCurrent(readEpoch)){
+      setLoading(true);setIndexRefresh(value=>value+1);
+     }
+     throw new Error(expiredSession);
+    }
     if(!res.ok)throw new Error(contentWorkspaceReadError(res.status));
     const detail=parseContentWorkspaceDetail(await res.json(),selected);
     if(active&&detailReadGuard.current.isCurrent(readEpoch))setDetailLoad(loadedWorkspace(detail));
