@@ -25,7 +25,8 @@ test('durable queued → running → failed → retry → completed with strict 
  ADD COLUMN attempts integer NOT NULL DEFAULT 0,
  ADD COLUMN error_code text,
  ADD COLUMN claimed_at timestamptz,
- ADD COLUMN completed_at timestamptz`);
+ ADD COLUMN completed_at timestamptz,
+ ADD COLUMN created_at timestamptz NOT NULL DEFAULT now()`);
  await pool.query('CREATE UNIQUE INDEX ci_generation_idempotency ON content_dev.generation_jobs(tenant_id,requested_by,idempotency_key)');
  await pool.query(`INSERT INTO content_dev.campaigns(id,tenant_id,workspace_id,owner_principal_id,product_service,audience,duration_days,status)
  VALUES ($1,$2,'22222222-2222-4222-8222-222222222222',$3,'Job fixture','Owner',7,'draft')`,
@@ -78,4 +79,15 @@ test('abandoned running lease is fenced and recovered without duplicate jobs',as
  const rows=await pool.query('SELECT count(*)::integer AS n FROM content_dev.generation_jobs WHERE id=$1',[queued.id]);
  assert.equal(rows.rows[0].n,1);
  await assert.rejects(reclaimExpiredContentJob(pool,{tenantId:tenant,jobId:queued.id,leaseSeconds:0}),/lease/);
+});
+
+// Same disposable database, after the schema fixture in the first test.
+test('persisted job history is chronological and tenant-scoped',async()=>{
+ const a=await enqueueContentJob(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:owner,idempotencyKey:'history-older-20261115'});
+ const b=await enqueueContentJob(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:owner,idempotencyKey:'history-newer-20261115'});
+ await pool.query("UPDATE content_dev.generation_jobs SET created_at='2026-11-01T10:00:00Z' WHERE id=$1",[a.id]);
+ await pool.query("UPDATE content_dev.generation_jobs SET created_at='2026-11-02T10:00:00Z' WHERE id=$1",[b.id]);
+ const jobs=await listContentCampaignJobs(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:owner});
+ assert.ok(jobs.findIndex(j=>j.id===b.id)<jobs.findIndex(j=>j.id===a.id));
+ assert.deepEqual(await listContentCampaignJobs(pool,{tenantId:other,campaignId:ownCampaign,principalId:owner}),[]);
 });
