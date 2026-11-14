@@ -21,6 +21,7 @@ import {filterContentCampaigns} from '@/lib/content/neon-content-campaign-search
 import {buildContentCampaignBrief} from '@/lib/content/neon-content-campaign-brief';
 import {buildContentBusinessProfile} from '@/lib/content/neon-content-business-profile';
 import {buildContentPublishPreview} from '@/lib/content/neon-content-publish-preview';
+import {buildContentCampaignHandoff} from '@/lib/content/neon-content-campaign-handoff';
 import {parseContentWorkspaceIndex} from '@/lib/content/neon-content-workspace-index-response';
 import {parseContentWorkspaceDetail} from '@/lib/content/neon-content-workspace-detail-response';
 import {contentWorkspaceReadError} from '@/lib/content/neon-content-workspace-http-error';
@@ -234,6 +235,19 @@ export default function ContentWorkspaceClient(){
   setLoading(true);
   setIndexRefresh(value=>value+1);
  }
+ function downloadCampaignHandoff(campaign:Campaign){
+  if(detailLoad.status!=='ready'||!isContentWorkspaceDetailCurrent(selected,detailLoad))return;
+  try{
+   const json=buildContentCampaignHandoff(selected,campaign,detailLoad.data.contentItems,detailLoad.data.scenes);
+   const blob=new Blob([json],{type:'application/json;charset=utf-8'});
+   const url=URL.createObjectURL(blob);
+   const link=document.createElement('a');
+   link.href=url;link.download='bros-content-campaign-'+campaign.id+'.json';
+   document.body.appendChild(link);link.click();link.remove();
+   URL.revokeObjectURL(url);
+   setNotice('Eksport teks kempen disediakan. Fail media dan penerbitan belum disahkan.');
+  }catch{setError('Eksport kempen gagal. Muat semula workspace dan cuba lagi.');}
+ }
  function changeCampaignPage(cursors:string[]){
   setDetailLoad(loadingWorkspace());
   setCampaignPages({workspaceId:selected,cursors});
@@ -367,6 +381,11 @@ export default function ContentWorkspaceClient(){
       return <article key={c.id} style={{borderTop:'1px solid #34445c',paddingTop:12}}>
        <p style={{fontSize:11,color:gold,margin:'0 0 6px'}}>{c.status==='draft'?'Draf':c.status==='completed'?'Status rekod: selesai':safeText(c.status)}</p>
        <h3 style={{fontSize:17,margin:'4px 0 8px'}}>{safeText(c.product_service)}</h3>
+       <button type="button" onClick={()=>downloadCampaignHandoff(c)}
+        aria-label={'Eksport teks dan metadata kempen '+safeText(c.product_service)}
+        style={{background:'#1a2b43',color:gold,border:'1px solid #526580',padding:'7px 10px',borderRadius:7,cursor:'pointer',marginBottom:8}}>
+        Eksport kandungan (JSON, tanpa media)
+       </button>
        {scopedItems.length>0&&<p style={{fontSize:12,color:'#b6c1cf',margin:'0 0 8px'}}>
         {inventory.scripts} skrip · {inventory.visualPrompts} arahan visual · {inventory.scenes} babak · {inventory.other} item lain
        </p>}
