@@ -16,6 +16,10 @@ on:
       - 'lib/content/neon-content-transaction.ts'
       - 'lib/content/neon-content-generation-contract.ts'
       - 'lib/content/neon-content-generation-orchestrator.ts'
+      - 'lib/content/neon-content-generation-job-lifecycle.ts'
+      - 'lib/content/neon-content-generation-job-history-reader.ts'
+      - 'lib/content/neon-content-generation-job-history-http.ts'
+      - 'lib/content/neon-content-restricted-adapters.ts'
       - 'lib/content/neon-content-workspace-reader.ts'
   workflow_dispatch:
 
