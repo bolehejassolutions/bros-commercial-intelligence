@@ -86,8 +86,8 @@ function fixture({ revocationOnSecond = false, noGrant = false, foreignReceipt =
           evidenceId: "44444444-4444-4444-8444-444444444444",
           tenantId: foreignReceipt ? foreignTenant : tenant, product: "demand",
           provider: "manual", collectedAt: "2026-11-15T00:00:00.000Z",
-          observedAt: null, windowStart: null, windowEnd: null,
-          completeness: "unverified", metrics: { leads: null },
+          observedAt: "2026-11-15T00:00:00.000Z", windowStart: null, windowEnd: null,
+          completeness: "unverified", metrics: { spend_myr: null },
         }] };
       }
       throw Error("Unexpected evidence query");
@@ -117,7 +117,7 @@ test("signed JWT plus live status and two separate restricted SQL readers permit
   const body = await response.json();
   assert.equal(body.access, "read_only");
   assert.equal(body.receipts.length, 1);
-  assert.equal(body.receipts[0].metrics.leads, null);
+  assert.equal(body.receipts[0].metrics.spend_myr, null);
   assert.ok(!JSON.stringify(body).includes(token));
   assert.deepEqual(h.calls(), { live: 2, membershipTransactions: 2, membershipGrants: 2, evidenceTransactions: 1 });
 });
