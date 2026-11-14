@@ -10,6 +10,7 @@ import {createContentTransaction} from './neon-content-transaction.ts';
 import {createContentWorkspaceReader} from './neon-content-workspace-reader.ts';
 import {createContentWorkspaceIndexReader} from './neon-content-workspace-index.ts';
 import {createContentCampaignDraftWriter} from './neon-content-campaign-draft-writer.ts';
+import {createContentJobHistoryReader} from './neon-content-generation-job-history-reader.ts';
 
 const prohibited=/^(postgres|neondb_owner|bros|bci_dev_.*)$/i;
 export function createRestrictedContentAdapters(role:'content_dev_reader_v2'|'content_dev_draft_writer_v2'){
@@ -35,6 +36,7 @@ export function createRestrictedContentAdapters(role:'content_dev_reader_v2'|'co
   role:login,
   readWorkspace:login==='content_dev_reader_v2'?createContentWorkspaceReader(transaction):null,
   listWorkspaces:login==='content_dev_reader_v2'?createContentWorkspaceIndexReader(transaction):null,
+  listJobs:login==='content_dev_reader_v2'?createContentJobHistoryReader(transaction):null,
   createDraft:login==='content_dev_draft_writer_v2'?createContentCampaignDraftWriter(transaction):null,
   close:()=>pool.end()
  };

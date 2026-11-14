@@ -1,6 +1,9 @@
 import test,{after} from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
+import {createContentTransaction} from '../../lib/content/neon-content-transaction.ts';
+import {createContentJobHistoryReader} from '../../lib/content/neon-content-generation-job-history-reader.ts';
+import {ContentReadDenied} from '../../lib/content/neon-content-workspace-reader.ts';
 import {enqueueContentJob,claimContentJob,reclaimExpiredContentJob,finishContentJob,listContentCampaignJobs} from '../../lib/content/neon-content-generation-job-lifecycle.ts';
 
 const url=process.env.CONTENT_ADMIN_DB_URL;
@@ -25,7 +28,8 @@ test('durable queued → running → failed → retry → completed with strict 
  ADD COLUMN attempts integer NOT NULL DEFAULT 0,
  ADD COLUMN error_code text,
  ADD COLUMN claimed_at timestamptz,
- ADD COLUMN completed_at timestamptz`);
+ ADD COLUMN completed_at timestamptz,
+ ADD COLUMN created_at timestamptz NOT NULL DEFAULT now()`);
  await pool.query('CREATE UNIQUE INDEX ci_generation_idempotency ON content_dev.generation_jobs(tenant_id,requested_by,idempotency_key)');
  await pool.query(`INSERT INTO content_dev.campaigns(id,tenant_id,workspace_id,owner_principal_id,product_service,audience,duration_days,status)
  VALUES ($1,$2,'22222222-2222-4222-8222-222222222222',$3,'Job fixture','Owner',7,'draft')`,
@@ -78,4 +82,44 @@ test('abandoned running lease is fenced and recovered without duplicate jobs',as
  const rows=await pool.query('SELECT count(*)::integer AS n FROM content_dev.generation_jobs WHERE id=$1',[queued.id]);
  assert.equal(rows.rows[0].n,1);
  await assert.rejects(reclaimExpiredContentJob(pool,{tenantId:tenant,jobId:queued.id,leaseSeconds:0}),/lease/);
+});
+
+// Same disposable database, after the schema fixture in the first test.
+test('persisted job history is chronological and tenant-scoped',async()=>{
+ const a=await enqueueContentJob(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:owner,idempotencyKey:'history-older-20261115'});
+ const b=await enqueueContentJob(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:owner,idempotencyKey:'history-newer-20261115'});
+ await pool.query("UPDATE content_dev.generation_jobs SET created_at='2026-11-01T10:00:00Z' WHERE id=$1",[a.id]);
+ await pool.query("UPDATE content_dev.generation_jobs SET created_at='2026-11-02T10:00:00Z' WHERE id=$1",[b.id]);
+ const jobs=await listContentCampaignJobs(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:owner});
+ assert.ok(jobs.findIndex(j=>j.id===b.id)<jobs.findIndex(j=>j.id===a.id));
+ assert.deepEqual(await listContentCampaignJobs(pool,{tenantId:other,campaignId:ownCampaign,principalId:owner}),[]);
+});
+
+test('authenticated restricted job history fails closed until explicitly granted in isolated PostgreSQL',async()=>{
+ const readerUrl=process.env.CONTENT_READER_DB_URL;
+ assert.ok(readerUrl?.includes('@127.0.0.1:5432/bros_intelligence_dev'));
+ const readerPool=new pg.Pool({connectionString:readerUrl,max:1});
+ try{
+  const read=createContentJobHistoryReader(createContentTransaction(readerPool));
+  const principal={userId:owner,authenticated:true};
+  const workspace='22222222-2222-4222-8222-222222222222';
+  await assert.rejects(read(principal,workspace,ownCampaign,10),ContentReadDenied);
+  // CI-only grant and forced-RLS policy on the disposable Docker database.
+  // NEVER copy to connected Neon without a separate owner permission decision.
+  await pool.query('GRANT SELECT ON content_dev.generation_jobs TO content_dev_reader_v2');
+  await pool.query(`CREATE POLICY ci_only_content_job_history ON content_dev.generation_jobs
+    FOR SELECT TO content_dev_reader_v2 USING (
+      requested_by=NULLIF(current_setting('bci.principal_id',true),'')::uuid
+      AND EXISTS (SELECT 1 FROM content_dev.campaigns c WHERE
+       c.id=generation_jobs.campaign_id AND c.tenant_id=generation_jobs.tenant_id
+       AND c.owner_principal_id=NULLIF(current_setting('bci.principal_id',true),'')::uuid)
+    )`);
+  const rows=await read(principal,workspace,ownCampaign,10);
+  assert.ok(rows.length>=2);
+  assert.ok(rows.every(r=>r.status&&r.createdAt&&!Object.hasOwn(r,'idempotency_key')));
+  assert.ok(rows.every(r=>!Object.hasOwn(r,'requested_by')&&!Object.hasOwn(r,'tenant_id')));
+  assert.deepEqual([...rows].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id)),rows);
+  await assert.rejects(read({userId:other,authenticated:true},workspace,ownCampaign,10),ContentReadDenied);
+  await assert.rejects(read(principal,'77777777-7777-4777-8777-777777777777',ownCampaign,10),ContentReadDenied);
+ }finally{await readerPool.end();}
 });
