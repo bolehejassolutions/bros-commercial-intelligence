@@ -432,6 +432,8 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     // Exercise the actual mounted draft POST path with an expired session. The
     // form must disappear immediately without a reload or an unauthorized row.
     await fillDraft();
+    const expiredDraftName = 'Draf baharu ditolak selepas sesi tamat';
+    await page.getByLabel('Produk / servis').fill(expiredDraftName);
     await ownerContext.clearCookies();
     const expiredSaveResponse = page.waitForResponse(response =>
       response.url() === draftEndpoint && response.request().method() === 'POST');
@@ -443,8 +445,14 @@ test('browser verifies authenticated campaign content, draft persistence and ten
       'expired draft POST must unmount tenant-scoped draft controls');
     const expiredSaveRows = await admin.query(
       'SELECT id FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
+      [workspaceId, expiredDraftName]);
+    assert.equal(expiredSaveRows.rowCount, 0,
+      'expired draft POST must not persist a new campaign for an unauthenticated session');
+    const originalDraftRows = await admin.query(
+      'SELECT id FROM content_dev.campaigns WHERE workspace_id=$1 AND product_service=$2',
       [workspaceId, newDraft]);
-    assert.equal(expiredSaveRows.rowCount, 1, 'expired draft POST must not duplicate an existing draft');
+    assert.deepEqual(originalDraftRows.rows.map(row => row.id), [initialReceipt.id],
+      'expired draft POST must preserve the existing durable receipt without duplication');
     await ownerContext.addCookies([{name: 'content-browser-fixture', value: ownerSession, url: origin, httpOnly: true}]);
     await page.reload();
     await page.getByRole('button', {name: workspaceName, exact: true}).click();
