@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {buildContentCampaignHandoff} from '../lib/content/neon-content-campaign-handoff.ts';
 
 const workspace='22222222-2222-4222-8222-222222222222';
-const campaign={id:'33333333-3333-4333-8333-333333333333',product_service:'Kempen contoh'};
+const campaign={id:'33333333-3333-4333-8333-333333333333',workspace_id:workspace,product_service:'Kempen contoh'};
 const otherCampaign='44444444-4444-4444-8444-444444444444';
 const ownItem={id:'55555555-5555-4555-8555-555555555555',campaign_id:campaign.id,type:'script',body:{hook:'Contoh'}};
 const foreignItem={id:'66666666-6666-4666-8666-666666666666',campaign_id:otherCampaign,type:'script',body:'PRIVATE'};
@@ -21,4 +21,13 @@ test('handoff exports seven-layer campaign metadata and only selected campaign c
 test('invalid scope and duplicate item identities fail closed',()=>{
  assert.throws(()=>buildContentCampaignHandoff('bad',campaign,[],[]));
  assert.throws(()=>buildContentCampaignHandoff(workspace,campaign,[ownItem,ownItem],[]));
+});
+
+test('handoff refuses a campaign belonging to another workspace even with matching child IDs',()=>{
+ assert.throws(()=>buildContentCampaignHandoff(workspace,{...campaign,workspace_id:otherCampaign},[ownItem],[]),/scope/);
+ assert.throws(()=>buildContentCampaignHandoff(workspace,{...campaign,workspace_id:undefined},[],[]),/scope/);
+});
+test('handoff rejects malformed child identifiers rather than exporting unverifiable identities',()=>{
+ assert.throws(()=>buildContentCampaignHandoff(workspace,campaign,[{...ownItem,id:'invalid'}],[]),/identity/);
+ assert.throws(()=>buildContentCampaignHandoff(workspace,campaign,[ownItem],[{id:'invalid',content_item_id:ownItem.id}]),/identity/);
 });
