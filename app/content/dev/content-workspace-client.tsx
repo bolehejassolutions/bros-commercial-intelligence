@@ -223,6 +223,12 @@ export default function ContentWorkspaceClient(){
   })();
   return()=>{active=false;};
  },[selected,refresh,before]);
+ function invalidateExpiredDraftSession(){
+  // A draft POST/readback may encounter an expired session while the SPA is mounted.
+  // Hide tenant-scoped controls immediately and recheck authoritative membership.
+  setLoading(true);
+  setIndexRefresh(value=>value+1);
+ }
  function changeCampaignPage(cursors:string[]){
   setDetailLoad(loadingWorkspace());
   setCampaignPages({workspaceId:selected,cursors});
@@ -252,12 +258,14 @@ export default function ContentWorkspaceClient(){
    }).catch(()=>{
     throw new Error('Simpanan draf belum dapat disahkan. Cuba semula dengan butiran yang sama.');
    });
+   if(response.status===401){invalidateExpiredDraftSession();throw new Error(expiredSession);}
    if(!response.ok)throw new Error(contentDraftSaveHttpError(response.status));
    const receipt=parseContentDraftAcknowledgement(await response.json(),response.status);
    // A 201 receipt alone is not proof that the draft is independently readable.
    // Preserve the idempotency key on readback failure for a safe retry.
    const readOptions={cache:'no-store',credentials:'same-origin'} as const;
    const readback=await fetch(workspaceUrl,readOptions);
+   if(readback.status===401){invalidateExpiredDraftSession();throw new Error(expiredSession);}
    if(!readback.ok)throw new Error('Draf diterima tetapi bacaan semula gagal. Cuba semula dengan selamat.');
    const pagePayload=await readback.json();
    let verifiedPage:ReturnType<typeof parseContentWorkspaceDetail>;
@@ -270,6 +278,7 @@ export default function ContentWorkspaceClient(){
     // A replayed draft can be older than the first page. Read just that receipt
     // through the same restricted reader and preserve the first page for display.
     const draftRead=await fetch(workspaceUrl+'?draft='+encodeURIComponent(receipt.id),readOptions);
+    if(draftRead.status===401){invalidateExpiredDraftSession();throw new Error(expiredSession);}
     if(!draftRead.ok)throw error;
     confirmContentDraftReadback(await draftRead.json(),selected,receipt.id,submittedDraft);
     savedOnOlderPage=true;
