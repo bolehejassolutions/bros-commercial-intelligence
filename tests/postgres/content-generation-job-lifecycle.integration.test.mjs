@@ -1,7 +1,7 @@
 import test,{after} from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
-import {enqueueContentJob,claimContentJob,reclaimExpiredContentJob,finishContentJob} from '../../lib/content/neon-content-generation-job-lifecycle.ts';
+import {enqueueContentJob,claimContentJob,reclaimExpiredContentJob,finishContentJob,listContentCampaignJobs} from '../../lib/content/neon-content-generation-job-lifecycle.ts';
 
 const url=process.env.CONTENT_ADMIN_DB_URL;
 if(process.env.CONTENT_PG_INTEGRATION_CI!=='disposable_only'||
@@ -26,7 +26,7 @@ test('durable queued → running → failed → retry → completed with strict 
  ADD COLUMN error_code text,
  ADD COLUMN claimed_at timestamptz,
  ADD COLUMN completed_at timestamptz`);
- await pool.query('CREATE UNIQUE INDEX ci_generation_idempotency ON content_dev.generation_jobs(tenant_id,idempotency_key)');
+ await pool.query('CREATE UNIQUE INDEX ci_generation_idempotency ON content_dev.generation_jobs(tenant_id,requested_by,idempotency_key)');
  await pool.query(`INSERT INTO content_dev.campaigns(id,tenant_id,workspace_id,owner_principal_id,product_service,audience,duration_days,status)
  VALUES ($1,$2,'22222222-2222-4222-8222-222222222222',$3,'Job fixture','Owner',7,'draft')`,
  [ownCampaign,tenant,owner]);
@@ -35,7 +35,7 @@ test('durable queued → running → failed → retry → completed with strict 
  assert.equal(queued?.status,'queued');
  assert.equal((await enqueueContentJob(pool,input))?.id,queued.id);
  await assert.rejects(enqueueContentJob(pool,{...input,campaignId:campaign}),/conflict/);
- await assert.rejects(enqueueContentJob(pool,{...input,principalId:'11111111-1111-4111-8111-111111111111'}),/conflict/);
+ await assert.rejects(enqueueContentJob(pool,{...input,principalId:'11111111-1111-4111-8111-111111111111'}),/not authorized|conflict/);
  assert.equal(await claimContentJob(pool,{tenantId:other,jobId:queued.id}),null);
  const running=await claimContentJob(pool,{tenantId:tenant,jobId:queued.id,maxAttempts:2});
  assert.equal(running?.attempts,1);
@@ -52,6 +52,10 @@ test('durable queued → running → failed → retry → completed with strict 
  assert.equal(rows.rows[0].status,'completed');
  assert.equal(rows.rows[0].attempts,2);
  assert.equal(Number(rows.rows[0].count),1);
+ const history=await listContentCampaignJobs(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:owner});
+ assert.equal(history.some(job=>job.id===queued.id),true);
+ assert.deepEqual(await listContentCampaignJobs(pool,{tenantId:other,campaignId:ownCampaign,principalId:owner}),[]);
+ assert.deepEqual(await listContentCampaignJobs(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:other}),[]);
 });
 
 test('abandoned running lease is fenced and recovered without duplicate jobs',async()=>{
