@@ -1,7 +1,7 @@
 import test,{after} from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
-import {enqueueContentJob,claimContentJob,finishContentJob} from '../../lib/content/neon-content-generation-job-lifecycle.ts';
+import {enqueueContentJob,claimContentJob,reclaimExpiredContentJob,finishContentJob} from '../../lib/content/neon-content-generation-job-lifecycle.ts';
 
 const url=process.env.CONTENT_ADMIN_DB_URL;
 if(process.env.CONTENT_PG_INTEGRATION_CI!=='disposable_only'||
@@ -52,4 +52,26 @@ test('durable queued → running → failed → retry → completed with strict 
  assert.equal(rows.rows[0].status,'completed');
  assert.equal(rows.rows[0].attempts,2);
  assert.equal(Number(rows.rows[0].count),1);
+});
+
+test('abandoned running lease is fenced and recovered without duplicate jobs',async()=>{
+ const input={tenantId:tenant,campaignId:ownCampaign,principalId:owner,idempotencyKey:'lease-recovery-20261115'};
+ const queued=await enqueueContentJob(pool,input);
+ const first=await claimContentJob(pool,{tenantId:tenant,jobId:queued.id,maxAttempts:2});
+ assert.equal(first?.attempts,1);
+ assert.equal(await reclaimExpiredContentJob(pool,{tenantId:tenant,jobId:queued.id,leaseSeconds:30,maxAttempts:2}),null);
+ await pool.query("UPDATE content_dev.generation_jobs SET claimed_at=now()-interval '1 hour' WHERE id=$1",[queued.id]);
+ assert.equal(await reclaimExpiredContentJob(pool,{tenantId:other,jobId:queued.id,leaseSeconds:30,maxAttempts:2}),null);
+ const recovered=await reclaimExpiredContentJob(pool,{tenantId:tenant,jobId:queued.id,leaseSeconds:30,maxAttempts:2});
+ assert.equal(recovered?.status,'running');
+ assert.equal(recovered?.attempts,2);
+ assert.equal(await finishContentJob(pool,{tenantId:tenant,jobId:queued.id,attempt:1,outcome:'completed'}),null);
+ await pool.query("UPDATE content_dev.generation_jobs SET claimed_at=now()-interval '1 hour' WHERE id=$1",[queued.id]);
+ const exhausted=await reclaimExpiredContentJob(pool,{tenantId:tenant,jobId:queued.id,leaseSeconds:30,maxAttempts:2});
+ assert.equal(exhausted?.status,'failed');
+ assert.equal(exhausted?.error_code,'RETRY_EXHAUSTED');
+ assert.equal(await claimContentJob(pool,{tenantId:tenant,jobId:queued.id,maxAttempts:2}),null);
+ const rows=await pool.query('SELECT count(*)::integer AS n FROM content_dev.generation_jobs WHERE id=$1',[queued.id]);
+ assert.equal(rows.rows[0].n,1);
+ await assert.rejects(reclaimExpiredContentJob(pool,{tenantId:tenant,jobId:queued.id,leaseSeconds:0}),/lease/);
 });
