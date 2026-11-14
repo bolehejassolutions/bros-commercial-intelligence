@@ -39,6 +39,29 @@ export async function claimContentJob(db:JobQuery,input:{tenantId:string;jobId:s
  [id(input.jobId),id(input.tenantId),max]);
  return single(result.rows);
 }
+/**
+ * Recover a worker that disappeared after claiming a job. The database clock
+ * determines expiry; no provider is invoked here. Attempt fencing ensures a
+ * late result from the abandoned worker cannot overwrite the recovered job.
+ * Only the explicitly authorized worker's tenant-scoped DB client may call it.
+ */
+export async function reclaimExpiredContentJob(db:JobQuery,input:{tenantId:string;jobId:string;maxAttempts?:number;leaseSeconds?:number}){
+ const max=input.maxAttempts??3;
+ const lease=input.leaseSeconds??300;
+ if(!Number.isInteger(max)||max<1||max>10)throw new Error('Invalid retry limit');
+ if(!Number.isInteger(lease)||lease<30||lease>86400)throw new Error('Invalid lease duration');
+ const result=await db.query(`UPDATE content_dev.generation_jobs
+ SET status=CASE WHEN attempts >= $3 THEN 'failed' ELSE 'running' END,
+ attempts=CASE WHEN attempts >= $3 THEN attempts ELSE attempts+1 END,
+ claimed_at=CASE WHEN attempts >= $3 THEN NULL ELSE now() END,
+ error_code=CASE WHEN attempts >= $3 THEN 'RETRY_EXHAUSTED' ELSE NULL END
+ WHERE id=$1 AND tenant_id=$2 AND status='running'
+ AND claimed_at IS NOT NULL
+ AND claimed_at < now() - ($4::integer * interval '1 second')
+ RETURNING id,tenant_id,campaign_id,requested_by,idempotency_key,status,attempts,error_code`,
+ [id(input.jobId),id(input.tenantId),max,lease]);
+ return single(result.rows);
+}
 export async function finishContentJob(db:JobQuery,input:{tenantId:string;jobId:string;attempt:number;outcome:'completed'|'failed';errorCode?:string}){
  if(!Number.isInteger(input.attempt)||input.attempt<1)throw new Error('Invalid attempt');
  if(input.outcome==='failed'&&(!input.errorCode||!/^[A-Z][A-Z0-9_]{1,63}$/.test(input.errorCode)))throw new Error('Safe error code required');
