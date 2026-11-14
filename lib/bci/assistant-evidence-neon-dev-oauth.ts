@@ -17,6 +17,8 @@
  * JWT implementation, plugin change or provider permissions are provisioned.
  */
 import { createHash } from "node:crypto";
+import { createBusinessOsDevEd25519AccessTokenVerifier } from "./assistant-evidence-neon-dev-ed25519.ts";
+import type { BusinessOsPinnedEd25519Key } from "./assistant-evidence-neon-dev-ed25519.ts";
 import { createDevEvidenceReadHandler } from "./assistant-evidence-authenticated-read.ts";
 import { createBusinessOsDevMembershipChecker } from "./assistant-evidence-neon-dev-membership.ts";
 import { createBusinessOsDevScopedEvidenceReader } from "./assistant-evidence-neon-dev-read.ts";
@@ -158,6 +160,43 @@ export function createBusinessOsDevOAuthReadHandler(deps: BusinessOsDevOAuthDepe
     verifyBearerToken,
     hasEvidenceReadGrant: createBusinessOsDevMembershipChecker(deps.membershipTransaction),
     listScopedReceipts: createBusinessOsDevScopedEvidenceReader(deps.evidenceTransaction),
+    now: deps.now,
+  });
+}
+
+/**
+ * A non-routed DEV composition that closes the previous arbitrary-verifier
+ * injection gap. Cryptographic verification is always performed by the
+ * server-owned pinned public JWKS verifier before claim authorization.
+ *
+ * This does not supply a live IdP, a session-revocation service, a database
+ * connection or an HTTP/MCP route. The host MUST independently verify JWKS
+ * provenance, key rotation, the real issuer token type and live revocation.
+ */
+export type BusinessOsDevPinnedOAuthDependencies =
+  Omit<BusinessOsDevOAuthDependencies, "verifySignedAccessToken"> &
+  Readonly<{
+    pinnedPublicJwks: readonly BusinessOsPinnedEd25519Key[];
+    expectedTokenType: "at+jwt" | "JWT";
+  }>;
+
+export function createBusinessOsDevPinnedOAuthReadHandler(
+  deps: BusinessOsDevPinnedOAuthDependencies
+) {
+  if (!deps || typeof deps.verifyLiveTokenStatus !== "function") {
+    throw Error("Business OS DEV OAuth dependencies unavailable");
+  }
+  // Refuse to initialize without vetted public signing keys. The signature
+  // adapter cannot be replaced by decoded claims in this composition.
+  const verifySignedAccessToken = createBusinessOsDevEd25519AccessTokenVerifier(
+    deps.pinnedPublicJwks, deps.expectedTokenType,
+  );
+  return createBusinessOsDevOAuthReadHandler({
+    config: deps.config,
+    verifySignedAccessToken,
+    verifyLiveTokenStatus: deps.verifyLiveTokenStatus,
+    membershipTransaction: deps.membershipTransaction,
+    evidenceTransaction: deps.evidenceTransaction,
     now: deps.now,
   });
 }
