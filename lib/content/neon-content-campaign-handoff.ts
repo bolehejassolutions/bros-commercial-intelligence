@@ -1,0 +1,31 @@
+/** Explicit user-initiated export of a single authenticated CONTENT campaign.
+ * This is a text/metadata handoff, NOT a generated-media or publishing artifact.
+ * Caller must supply only rows returned by the tenant-scoped restricted reader.
+ */
+export type ContentHandoffCampaign={id:string;[key:string]:unknown};
+export type ContentHandoffItem={id:string;campaign_id:string;[key:string]:unknown};
+export type ContentHandoffScene={id:string;content_item_id:string;[key:string]:unknown};
+
+export function buildContentCampaignHandoff(
+ workspaceId:string,campaign:ContentHandoffCampaign,
+ items:readonly ContentHandoffItem[],scenes:readonly ContentHandoffScene[]
+):string {
+ if(!/^[0-9a-f-]{36}$/i.test(workspaceId)||!/^[0-9a-f-]{36}$/i.test(campaign.id))
+  throw new Error('Invalid campaign handoff scope');
+ const selected=items.filter(item=>item.campaign_id===campaign.id);
+ const ids=new Set(selected.map(item=>item.id));
+ if(ids.size!==selected.length)throw new Error('Duplicate campaign item');
+ const includedScenes=scenes.filter(scene=>ids.has(scene.content_item_id));
+ const sceneIds=new Set(includedScenes.map(scene=>scene.id));
+ if(sceneIds.size!==includedScenes.length)throw new Error('Duplicate campaign scene');
+ return JSON.stringify({
+  format:'bros-content-campaign-handoff-v1',
+  workspace_id:workspaceId,
+  campaign,
+  content_items:selected,
+  scenes:includedScenes,
+  media_verified:false,
+  publication_verified:false,
+  note:'Export teks dan metadata sahaja. Tiada fail imej/video atau kelulusan penerbitan disertakan.'
+ },null,2);
+}
