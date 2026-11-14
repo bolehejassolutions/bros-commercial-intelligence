@@ -248,6 +248,31 @@ export default function ContentWorkspaceClient(){
    setNotice('Eksport teks kempen disediakan. Fail media dan penerbitan belum disahkan.');
   }catch{setError('Eksport kempen gagal. Muat semula workspace dan cuba lagi.');}
  }
+ function reuseCampaignAsDraft(campaign:Campaign){
+  // Reuse only user-visible brief fields, never IDs, generated outputs or status.
+  // A cloned brief must create a NEW campaign through the existing restricted POST.
+  if(!indexReady||saving||detailLoad.status!=='ready'||!isContentWorkspaceDetailCurrent(selected,detailLoad))return;
+  if(pendingDraftAttempt.current){
+   clearContentBrowserDraftRetry(pendingDraftAttempt.current);
+   pendingDraftAttempt.current=null;
+  }
+  const allowed=['facebook','instagram','tiktok','youtube','linkedin','whatsapp'];
+  const platforms=Array.isArray(campaign.platforms)
+   ?campaign.platforms.filter((p):p is string=>typeof p==='string'&&allowed.includes(p)): [];
+  setDraft({
+   product_service:typeof campaign.product_service==='string'?campaign.product_service.slice(0,200):'',
+   audience:typeof campaign.audience==='string'?campaign.audience.slice(0,2000):'',
+   description:typeof campaign.description==='string'?campaign.description.slice(0,4000):'',
+   problem:typeof campaign.problem==='string'?campaign.problem.slice(0,2000):'',
+   objective:typeof campaign.objective==='string'?campaign.objective.slice(0,2000):'',
+   duration_days:Number.isInteger(campaign.duration_days)&&campaign.duration_days!>=1&&campaign.duration_days!<=90
+    ?campaign.duration_days!:7,
+   platforms:platforms.length?[...new Set(platforms)]:['facebook'],
+  });
+  setError('');
+  setNotice('Butiran kempen disalin ke borang draf baharu. Semak dan simpan untuk cipta kempen berasingan.');
+  document.getElementById('content-new-campaign-draft')?.scrollIntoView({behavior:'smooth',block:'start'});
+ }
  function changeCampaignPage(cursors:string[]){
   setDetailLoad(loadingWorkspace());
   setCampaignPages({workspaceId:selected,cursors});
@@ -389,6 +414,12 @@ export default function ContentWorkspaceClient(){
        {scopedItems.length>0&&<p style={{fontSize:12,color:'#b6c1cf',margin:'0 0 8px'}}>
         {inventory.scripts} skrip · {inventory.visualPrompts} arahan visual · {inventory.scenes} babak · {inventory.other} item lain
        </p>}
+       <button type="button" onClick={()=>reuseCampaignAsDraft(c)}
+        disabled={saving||!indexReady}
+        aria-label={'Guna semula butiran kempen '+safeText(c.product_service)+' sebagai draf baharu'}
+        style={{background:'#1a2b43',color:gold,border:'1px solid #526580',padding:'7px 10px',borderRadius:7,cursor:'pointer',marginBottom:8,marginLeft:8}}>
+        Guna sebagai draf baharu
+       </button>
        <details style={{margin:'8px 0'}}><summary style={{cursor:'pointer',color:gold,fontSize:13}}>Lihat butiran asal kempen</summary>
         <dl style={{margin:'10px 0',display:'grid',gap:8}}>
          {buildContentCampaignBrief(c).map(row=><div key={row.label}>
@@ -408,7 +439,7 @@ export default function ContentWorkspaceClient(){
         onClick={()=>changeCampaignPage([...pageCursors,detailLoad.data.nextCursor!])}>Halaman seterusnya</button>}
       </nav>}
     </section>
-    {isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)?<section style={card}>
+    {isContentDraftWorkspaceSettled(selected,previousWorkspaceRef.current)?<section id="content-new-campaign-draft" style={card}>
      <h2 style={{fontSize:20,marginTop:0}}>Draf kempen baharu</h2>
      <form onSubmit={saveDraft} style={{display:'grid',gap:14}}>
       <label>Produk / servis *<input required maxLength={200} style={field} value={draft.product_service}
