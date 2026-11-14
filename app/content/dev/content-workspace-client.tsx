@@ -224,7 +224,12 @@ export default function ContentWorkspaceClient(){
   return()=>{active=false;};
  },[selected,refresh,before]);
  function invalidateExpiredDraftSession(){
-  // A draft POST/readback may encounter an expired session while the SPA is mounted.
+  // An authoritative 401 is not an uncertain network response: the rejected
+  // attempt must not be replayed after another user authenticates in this tab.
+  if(pendingDraftAttempt.current){
+   clearContentBrowserDraftRetry(pendingDraftAttempt.current);
+   pendingDraftAttempt.current=null;
+  }
   // Hide tenant-scoped controls immediately and recheck authoritative membership.
   setLoading(true);
   setIndexRefresh(value=>value+1);
