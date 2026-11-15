@@ -24,7 +24,9 @@ export async function enqueueContentJob(db:JobQuery,input:{tenantId:string;campa
  [id(tenantId),id(campaignId),id(principalId),key(input.idempotencyKey)]);
  if(result.rows.length)return single(result.rows);
  const replay=await db.query(`SELECT id,tenant_id,campaign_id,requested_by,idempotency_key,status,attempts,error_code
- FROM content_dev.generation_jobs WHERE tenant_id=$1 AND requested_by=$2 AND idempotency_key=$3`,[tenantId,principalId,input.idempotencyKey]);
+ FROM content_dev.generation_jobs j WHERE j.tenant_id=$1 AND j.requested_by=$2 AND j.idempotency_key=$3
+ AND EXISTS (SELECT 1 FROM content_dev.campaigns c WHERE c.id=j.campaign_id
+ AND c.tenant_id=j.tenant_id AND c.owner_principal_id=$2)`,[tenantId,principalId,input.idempotencyKey]);
  const row=single(replay.rows);
  if(!row||row.campaign_id!==campaignId||row.requested_by!==principalId)throw new Error('Job not authorized or idempotency conflict');
  return row;
