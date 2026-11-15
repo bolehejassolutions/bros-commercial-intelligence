@@ -57,3 +57,29 @@ export function createContentDevJobFlow(deps:Dependencies){
   }
  };
 }
+
+/** Single fail-closed HTTP dispatcher for a future DEV-only application adapter.
+ * The caller must explicitly install this handler after independent authorization.
+ * Worker processing is deliberately not exposed over HTTP.
+ */
+export function createContentDevJobHttpHandler(deps:Dependencies){
+ const flow=createContentDevJobFlow(deps);
+ const submission=/^\/api\/content\/dev\/workspaces\/([0-9a-f-]{36})\/generation-jobs$/i;
+ const history=/^\/api\/content\/dev\/workspaces\/([0-9a-f-]{36})\/campaigns\/([0-9a-f-]{36})\/generation-jobs$/i;
+ return async(request:Request):Promise<Response>=>{
+  let url:URL;
+  try{url=new URL(request.url);}catch{return json(404,{error:'not_found'});}
+  if(url.search||url.hash)return json(404,{error:'not_found'});
+  const submitMatch=submission.exec(url.pathname);
+  if(submitMatch){
+   if(!UUID.test(submitMatch[1]))return json(404,{error:'not_found'});
+   return flow.submit(request,submitMatch[1]);
+  }
+  const historyMatch=history.exec(url.pathname);
+  if(historyMatch){
+   if(!UUID.test(historyMatch[1])||!UUID.test(historyMatch[2]))return json(404,{error:'not_found'});
+   return flow.history(request,historyMatch[1],historyMatch[2]);
+  }
+  return json(404,{error:'not_found'});
+ };
+}
