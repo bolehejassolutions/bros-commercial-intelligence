@@ -26,6 +26,13 @@ export function createContentJobSubmissionPost(verify:Verify,authorize:Authorize
   try{url=new URL(request.url);}catch{return reply(404,{error:'not_found'});}
   if(url.pathname!==`/api/content/dev/workspaces/${workspaceId}/generation-jobs`||url.search)
    return reply(404,{error:'not_found'});
+  // Reject cross-site browser submissions before session verification or database access.
+  // The route must not rely on JSON content type as its sole CSRF boundary.
+  const origin=request.headers.get('origin');
+  const fetchSite=request.headers.get('sec-fetch-site');
+  if(fetchSite&&fetchSite!=='same-origin'&&fetchSite!=='none')
+   return reply(403,{error:'forbidden_origin'});
+  if(origin&&origin!==url.origin)return reply(403,{error:'forbidden_origin'});
   if(!/^application\/json(?:\s*;|\s*$)/i.test(request.headers.get('content-type')??''))
    return reply(415,{error:'unsupported_media_type'});
   const size=Number(request.headers.get('content-length')??0);
