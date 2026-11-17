@@ -39,8 +39,7 @@ export async function executeRestrictedContentDevJob(input:{
   const db:JobQuery={query:async(sql,params=[])=>{
    // The lifecycle contract uses only tenant-scoped parameterized statements.
    // No arbitrary SQL is exposed to an HTTP request or a generation provider.
-   if(!/^\\s*(UPDATE|SELECT)\\s+content_dev\\.generation_jobs\\b/i.test(sql)&&
-      !/^\\s*SELECT\\s+j\\.id\\b/i.test(sql))fail();
+   if(!sql.trimStart().toUpperCase().startsWith('UPDATE CONTENT_DEV.GENERATION_JOBS'))fail();
    const client=await pool.connect();
    try{
     await client.query('BEGIN');
