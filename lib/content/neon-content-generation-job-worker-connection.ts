@@ -24,7 +24,7 @@ export async function executeRestrictedContentDevJob(input:{
  const raw=process.env.CONTENT_NEON_JOB_WORKER_DATABASE_URL;
  if(!raw)fail();
  let url:URL;
- try{url=new URL(raw);}catch{return fail();}
+ try{url=new URL(raw ?? '');}catch{return fail();}
  if(!['postgres:','postgresql:'].includes(url.protocol)||
     decodeURIComponent(url.username)!==ROLE||!url.password||
     !url.hostname.endsWith('.neon.tech')||
