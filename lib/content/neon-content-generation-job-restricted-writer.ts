@@ -20,7 +20,7 @@ export async function withRestrictedContentJobWriter<T>(
  const raw=process.env.CONTENT_NEON_JOB_WRITER_DATABASE_URL;
  if(!raw)deny();
  let url:URL;
- try{url=new URL(raw);}catch{return deny();}
+ try{url=new URL(raw ?? '');}catch{return deny();}
  if(!['postgres:','postgresql:'].includes(url.protocol)||
     decodeURIComponent(url.username)!==ROLE||!url.password||
     !url.hostname.endsWith('.neon.tech')||url.hostname.length<='.neon.tech'.length||
