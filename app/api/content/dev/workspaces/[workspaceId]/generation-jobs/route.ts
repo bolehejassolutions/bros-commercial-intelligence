@@ -22,3 +22,15 @@ export async function GET(request:Request,context:{params:Promise<{workspaceId:s
  }catch{return new Response(JSON.stringify({error:'unavailable'}),{status:503,headers:{'cache-control':'no-store'}});}
  finally{if(adapter)await adapter.close();}
 }
+
+/** POST remains disabled unless separately approved DEV role and explicit flag exist. */
+export async function POST(request:Request,context:{params:Promise<{workspaceId:string}>}){
+ if(!isContentDevPreviewEnabled(process.env.VERCEL_ENV,process.env.CONTENT_DEV_API_ENABLED)||
+   process.env.CONTENT_DEV_JOB_SUBMISSION_ENABLED!=='true')
+  return new Response(JSON.stringify({error:'not_found'}),{status:404,headers:{'cache-control':'no-store'}});
+ try{
+  const {createContentJobSubmissionPost}=await import('@/lib/content/neon-content-generation-job-submission-route');
+  const verify=createContentSdkSessionVerifier(getContentNeonAuth());
+  return await createContentJobSubmissionPost(verify)(request,(await context.params).workspaceId);
+ }catch{return new Response(JSON.stringify({error:'unavailable'}),{status:503,headers:{'cache-control':'no-store'}});}
+}
