@@ -13,6 +13,16 @@ export function createContentJobSubmissionPost(verify:Verify){
   let url:URL;
   try{url=new URL(request.url);}catch{return reply(404,'not_found');}
   if(url.pathname!==`/api/content/dev/workspaces/${workspaceId}/generation-jobs`||url.search)return reply(404,'not_found');
+  // Cookie-authenticated writes must be same-origin; never trust forwarded host headers.
+  const origin=request.headers.get('origin');
+  if(!origin)return reply(403,'origin_required');
+  let parsedOrigin:URL;
+  try{parsedOrigin=new URL(origin);}catch{return reply(403,'invalid_origin');}
+  if(parsedOrigin.origin!==url.origin||parsedOrigin.username||parsedOrigin.password||parsedOrigin.pathname!=='/'||parsedOrigin.search||parsedOrigin.hash)return reply(403,'cross_origin_denied');
+  const fetchSite=request.headers.get('sec-fetch-site');
+  if(fetchSite&&fetchSite!=='same-origin')return reply(403,'cross_origin_denied');
+  const contentType=request.headers.get('content-type')?.split(';',1)[0]?.trim().toLowerCase();
+  if(contentType!=='application/json')return reply(415,'unsupported_media_type');
   let principal:Principal|null;
   try{principal=await verify(request);}catch{return reply(401,'unauthorized');}
   if(!principal||principal.authenticated!==true||!UUID.test(principal.userId))return reply(401,'unauthorized');
