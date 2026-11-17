@@ -63,7 +63,7 @@ export async function withRestrictedContentDevOutputTransaction<T>(
       [job.tenant_id,job.requested_by]);
     if(member.rows.length!==1)deny();
     const db:ContentOutputDb={query:async(sql,params=[])=>{
-      if(typeof sql!=='string'||!/^\\s*(SELECT|INSERT)\\b/i.test(sql))deny();
+      if(typeof sql!=='string'||!/^\s*(SELECT|INSERT)\b/i.test(sql))deny();
       const result=await client.query(sql,[...params]);
       return {rows:result.rows,rowCount:result.rowCount};
     }};
