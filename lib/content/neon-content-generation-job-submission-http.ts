@@ -26,6 +26,16 @@ export function createContentJobSubmissionPost(verify:Verify,authorize:Authorize
   try{url=new URL(request.url);}catch{return reply(404,{error:'not_found'});}
   if(url.pathname!==`/api/content/dev/workspaces/${workspaceId}/generation-jobs`||url.search)
    return reply(404,{error:'not_found'});
+  // Fail closed for browser submissions without a verifiable same-origin source.
+  // An injected session verifier alone does not prevent cookie-backed CSRF.
+  const origin=request.headers.get('origin');
+  const fetchSite=request.headers.get('sec-fetch-site');
+  if(fetchSite&&fetchSite!=='same-origin'&&fetchSite!=='none')
+   return reply(403,{error:'forbidden_origin'});
+  if(!origin)return reply(403,{error:'forbidden_origin'});
+  try{if(new URL(origin).origin!==url.origin)return reply(403,{error:'forbidden_origin'});}
+  catch{return reply(403,{error:'forbidden_origin'});}
+
   if(!/^application\/json(?:\s*;|\s*$)/i.test(request.headers.get('content-type')??''))
    return reply(415,{error:'unsupported_media_type'});
   const size=Number(request.headers.get('content-length')??0);
