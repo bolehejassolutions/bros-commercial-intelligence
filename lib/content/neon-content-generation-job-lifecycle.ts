@@ -76,6 +76,9 @@ export async function finishContentJob(db:JobQuery,input:{tenantId:string;jobId:
  const result=await db.query(`UPDATE content_dev.generation_jobs
  SET status=$4,error_code=$5,completed_at=CASE WHEN $4='completed' THEN now() ELSE NULL END
  WHERE id=$1 AND tenant_id=$2 AND status='running' AND attempts=$3
+ AND EXISTS (SELECT 1 FROM content_dev.campaigns c
+ WHERE c.id=generation_jobs.campaign_id AND c.tenant_id=generation_jobs.tenant_id
+ AND c.owner_principal_id=generation_jobs.requested_by)
  RETURNING id,tenant_id,campaign_id,requested_by,idempotency_key,status,attempts,error_code`,
  [id(input.jobId),id(input.tenantId),input.attempt,input.outcome,input.outcome==='failed'?input.errorCode:null]);
  return single(result.rows);
