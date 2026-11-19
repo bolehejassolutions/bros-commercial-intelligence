@@ -101,6 +101,35 @@ function money(v: unknown): number | null {
       Math.round(n * 100) / 100 !== n) fail();
   return Math.round(n * 100);
 }
+/** Parse a single campaign-level action breakdown without adding overlapping labels. */
+export function readCampaignActionCounts(raw: unknown): ReadonlyMap<string, number> {
+  if (raw !== undefined && (!Array.isArray(raw) || raw.length > 200)) fail();
+  const actions = new Map<string, number>();
+  for (const action of Array.isArray(raw) ? raw : []) {
+    if (!action || typeof action.action_type !== "string" ||
+        !/^[a-z0-9_.]{1,100}$/.test(action.action_type)) fail();
+    const value = count(action.value) ?? fail();
+    const previous = actions.get(action.action_type);
+    if (previous !== undefined && previous !== value) fail();
+    actions.set(action.action_type, value);
+  }
+  return actions;
+}
+
+export function projectCampaignPurchases(actions: ReadonlyMap<string, number>) {
+  const generic = actions.get("purchase") ?? null;
+  const omni = actions.get("omni_purchase") ?? null;
+  const pixel = actions.get("offsite_conversion.fb_pixel_purchase") ?? null;
+  const observed = [generic, omni, pixel].filter(value => value !== null);
+  const mismatch = observed.some(value => value !== observed[0]);
+  return Object.freeze({
+    metaAttributedPurchases: mismatch ? null : generic,
+    omniPurchases: mismatch ? null : omni,
+    pixelPurchaseEvents: mismatch ? null : pixel,
+    actionAliasMismatch: mismatch,
+  });
+}
+
 export function normalizeMetaCampaignFunnel(
   scope: MetaFunnelScope, row: MetaCampaignInsight,
 ): MetaFunnelObservation {
@@ -112,8 +141,7 @@ export function normalizeMetaCampaignFunnel(
       scope.currency !== "MYR" || !validDate(scope.since) || !validDate(scope.until) ||
       scope.since > scope.until || !validUtc(scope.collectedAt) ||
       row.campaign_id !== scope.campaignId || row.date_start !== scope.since ||
-      row.date_stop !== scope.until ||
-      (row.actions !== undefined && (!Array.isArray(row.actions) || row.actions.length > 200))) fail();
+      row.date_stop !== scope.until) fail();
 
   // Meta account is Asia/Kuala_Lumpur (UTC+08:00, no DST). The UTC
   // collection date alone is incorrect near local midnight. Reject a report
@@ -123,25 +151,11 @@ export function normalizeMetaCampaignFunnel(
     .toISOString().slice(0, 10);
   if (collectedMytDate < scope.since || scope.until > collectedMytDate) fail();
 
-  const actions = new Map<string, number>();
-  for (const action of row.actions ?? []) {
-    if (!action || typeof action.action_type !== "string" ||
-        !/^[a-z0-9_.]{1,100}$/.test(action.action_type)) fail();
-    const value = count(action.value);
-    if (value === null) fail();
-    const previous = actions.get(action.action_type);
-    if (previous !== undefined && previous !== value) fail();
-    actions.set(action.action_type, value ?? fail());
-  }
-  const get = (name: string): number | null => actions.get(name) ?? null;
-  const generic = get("purchase"), omni = get("omni_purchase");
-  const pixel = get("offsite_conversion.fb_pixel_purchase");
-  // Compare every present purchase alias, including omni vs pixel when the
-  // generic purchase action is missing. These are overlapping labels, not sales.
-  const purchaseAliases = [generic, omni, pixel].filter((v): v is number => v !== null);
-  const mismatch = purchaseAliases.some(v => v !== purchaseAliases[0]);
+  const actions = readCampaignActionCounts(row.actions);
+  const { metaAttributedPurchases: attributed, pixelPurchaseEvents: pixelEvents,
+    actionAliasMismatch: mismatch } = projectCampaignPurchases(actions);
   const inline = count(row.inline_link_clicks);
-  const lpv = get("landing_page_view");
+  const lpv = actions.get("landing_page_view") ?? null;
   // Campaign/window identity is stable, but Meta may revise a report for the
   // same window. Never overwrite an earlier projected snapshot by sourceKey.
   // Use snapshotKey for immutable candidate snapshots; neither key attests
@@ -151,8 +165,6 @@ export function normalizeMetaCampaignFunnel(
   const spendMinor = money(row.spend);
   const impressions = count(row.impressions), reach = count(row.reach);
   const clicks = count(row.clicks);
-  const attributed = mismatch ? null : generic;
-  const pixelEvents = mismatch ? null : pixel;
   const snapshotFields = [spendMinor, impressions, reach, clicks, inline, lpv,
     attributed, pixelEvents, mismatch ? 1 : 0];
   // DEMAND_META_ACTION_SNAPSHOT_INTEGRITY_20261027: derived metrics can

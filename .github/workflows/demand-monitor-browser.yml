@@ -8,6 +8,7 @@ on:
       - 'app/api/internal/demand-meta/**'
       - 'lib/demand/meta-monitor-response.ts'
       - 'lib/demand/meta-insights-readonly.ts'
+      - 'lib/demand/meta-insights-funnel.ts'
       - 'lib/demand/meta-status-*.ts'
       - 'lib/demand/meta-operator-*.ts'
       - 'tests/browser/demand-monitor*'

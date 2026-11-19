@@ -37,12 +37,18 @@ export const handleDemandMetaOperatorStatus = createDemandOperatorStatusHandler(
     if (url.searchParams.get("level") !== (campaignReport ? "campaign" : "account")) {
       throw Error("Unexpected fixture report level");
     }
+    if (url.searchParams.get("fields")?.split(",").includes("actions") !== campaignReport) {
+      throw Error("Unexpected fixture purchase observation scope");
+    }
     const { since, until } = JSON.parse(url.searchParams.get("time_range") ?? "{}");
     if (campaignReport && since === "2025-03-04") return reply({ data: [] });
     const zero = campaignReport && since === "2025-03-05";
     return reply({ data: [{
       ...account,
-      ...(campaignReport ? { campaign_id: campaignId } : {}),
+      ...(campaignReport ? { campaign_id: campaignId, actions: [
+        { action_type: "purchase", value: zero ? "0" : "2" },
+        { action_type: "offsite_conversion.fb_pixel_purchase", value: since === "2025-03-07" ? "1" : zero ? "0" : "2" },
+      ] } : {}),
       account_currency: "MYR",
       date_start: since,
       date_stop: until,

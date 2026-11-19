@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join, relative, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -131,9 +131,32 @@ test('DEMAND browser displays and copies validated reports and withholds invalid
       `Collected: ${first.collectedAt}`,
       'Account Insights: Spend MYR 25.67 | Impressions 900 | Clicks 30',
       'Campaign Insights: Spend MYR 12.34 | Impressions 315 | Clicks 9',
+      'Meta-attributed purchases: 2',
+      'Omni purchases: Unknown',
+      'Pixel purchase events: 2',
+      'Settled HitPay orders: Unknown (requires merchant reconciliation)',
+      'Meta purchase labels can overlap. Attribution depends on the Meta reporting settings.',
+      'Operator follow-up: Reconcile the reported purchase signals against HitPay order and settlement records.',
     ].join('\n'));
 
+    const followUp = monitor.getByLabel('Next action for this report');
+    assert.equal(await followUp.inputValue(), 'reconcileOrders');
+    await followUp.selectOption('verifyTracking');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'), monitor.getByRole('link', { name: 'Download report and next action' }).click(),
+    ]);
+    assert.equal(download.suggestedFilename(), 'demand-20000000001-2025-03-03-2025-03-09.txt');
+    const saved = join(root, 'operator-report.txt');
+    await download.saveAs(saved);
+    const downloaded = await readFile(saved, 'utf8');
+    assert.equal(downloaded, await copiedReport());
+    assert.match(downloaded, /Operator follow-up: Check campaign event tracking and reporting coverage/);
+
+    await read('2025-03-07');
+    assert.equal(await followUp.inputValue(), 'reviewAliases');
+    assert.match(await copiedReport(), /Pixel purchase events: Withheld \(conflicting purchase labels\)/);
     const empty = await read('2025-03-04');
+    assert.equal(await followUp.inputValue(), 'verifyDelivery');
     assert.equal(empty.campaignInsights.state, 'NO_ROWS_NOT_ZERO');
     await monitor.getByText('Meta returned no rows. Spend, impressions and clicks are unknown.').waitFor();
     assert.equal(await monitor.getByText(/^RM\s*12\.34$/).count(), 0);
@@ -143,7 +166,9 @@ test('DEMAND browser displays and copies validated reports and withholds invalid
     const zero = await read('2025-03-05');
     assert.equal(zero.campaignInsights.spend, 0);
     await monitor.getByText(/^RM\s*0\.00$/).waitFor();
+    assert.equal(await followUp.inputValue(), 'verifyTracking');
     const zeroReport = await copiedReport();
+    assert.match(zeroReport, /Pixel purchase events: 0/);
     assert.match(zeroReport, /Campaign Insights: Spend MYR 0\.00 \| Impressions 0 \| Clicks 0/);
     await page.evaluate(() => {
       navigator.clipboard.writeText = async () => { throw new DOMException('Fixture denial', 'NotAllowedError'); };
@@ -165,6 +190,8 @@ test('DEMAND browser displays and copies validated reports and withholds invalid
     assert.equal(await monitor.getByRole('heading', { name: 'Campaign Insights', exact: true }).count(), 0);
     assert.equal(await copy.count(), 0);
     assert.equal(await manual.count(), 0);
+    assert.equal(await followUp.count(), 0);
+    assert.equal(await monitor.getByRole('link', { name: 'Download report and next action' }).count(), 0);
   } catch (error) {
     t.diagnostic(output);
     throw error;
