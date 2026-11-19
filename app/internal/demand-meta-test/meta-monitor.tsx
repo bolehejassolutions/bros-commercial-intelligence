@@ -39,10 +39,34 @@ function InsightMetrics({ insights }: { insights: DemandMonitorSnapshot["insight
   </dl>;
 }
 
+function formatReport(snapshot: DemandMonitorSnapshot) {
+  const { account, insights, campaignInsights, collectedAt } = snapshot;
+  const metrics = (report: DemandMonitorSnapshot["insights"]) =>
+    report.state === "NO_ROWS_NOT_ZERO"
+      ? "Spend unknown | Impressions unknown | Clicks unknown (Meta returned no rows)"
+      : `Spend ${account.currency} ${report.spend.toFixed(2)} | Impressions ${report.impressions} | Clicks ${report.clicks}`;
+
+  return [
+    "BROS DEMAND Meta Ads report",
+    "Source: Meta Graph API",
+    `Account: ${account.accountId}`,
+    `Campaign: ${campaignInsights.campaignId}`,
+    `Window: ${insights.since} to ${insights.until} inclusive (${account.timezone})`,
+    `Currency: ${account.currency}`,
+    `Collected: ${collectedAt}`,
+    `Account Insights: ${metrics(insights)}`,
+    `Campaign Insights: ${metrics(campaignInsights)}`,
+  ].join("\n");
+}
+
 export default function MetaMonitor({ getToken }: { getToken: () => Promise<string> }) {
   const [since, setSince] = useState(() => dateOffset(7));
   const [until, setUntil] = useState(() => dateOffset(1));
   const [snapshot, setSnapshot] = useState<DemandMonitorSnapshot | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<{
+    state: "pending" | "copied" | "manual";
+    report: string;
+  } | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -50,6 +74,7 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
     event.preventDefault();
     if (busy) return;
     setSnapshot(null);
+    setCopyFeedback(null);
     if (!since || !until || since > until || (Date.parse(until) - Date.parse(since)) / 86_400_000 >= 31) {
       setMessage(providerMessages.INVALID_REPORTING_WINDOW);
       return;
@@ -84,6 +109,19 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
     } finally {
       setBusy(false);
     }
+  }
+
+  async function copyReport(snapshot: DemandMonitorSnapshot) {
+    const pending = { state: "pending", report: formatReport(snapshot) } as const;
+    setCopyFeedback(pending);
+    let state: "copied" | "manual";
+    try {
+      await navigator.clipboard.writeText(pending.report);
+      state = "copied";
+    } catch {
+      state = "manual";
+    }
+    setCopyFeedback(current => current === pending ? { state, report: pending.report } : current);
   }
 
   return (
@@ -123,6 +161,16 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
           <InsightMetrics insights={snapshot.insights} />
           <p>Read started <time dateTime={snapshot.observedAt}>{snapshot.observedAt}</time> · Completed{" "}
             <time dateTime={snapshot.collectedAt}>{snapshot.collectedAt}</time></p>
+          <button type="button" disabled={copyFeedback?.state === "pending"} onClick={() => void copyReport(snapshot)}>
+            Copy report for comparison
+          </button>
+          <p role="status">{copyFeedback?.state === "copied" ? "Report copied." :
+            copyFeedback?.state === "manual" ? "Copy the report from the field below." : ""}</p>
+          {copyFeedback?.state === "manual" && (
+            <label>Meta report for manual copy
+              <textarea readOnly rows={9} value={copyFeedback.report} onFocus={event => event.currentTarget.select()} />
+            </label>
+          )}
         </>
       )}
     </section>
