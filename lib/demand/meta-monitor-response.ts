@@ -30,6 +30,16 @@ function isReport(value: unknown, window: ReportingWindow, accountId: string, ob
   return value.state === "PROVIDER_ROW" && spend(value.spend) && count(value.impressions) && count(value.clicks);
 }
 
+function validPurchases(report: Record<string, unknown>): boolean {
+  const result = report.purchaseResults;
+  if (report.state === "NO_ROWS_NOT_ZERO") return result === null;
+  if (!record(result) || typeof result.actionAliasMismatch !== "boolean") return false;
+  const values = [result.metaAttributedPurchases, result.omniPurchases, result.pixelPurchaseEvents];
+  const available = values.filter(value => value !== null);
+  return available.every(count) && (result.actionAliasMismatch
+    ? available.length === 0 : new Set(available).size <= 1);
+}
+
 /** Validate both scopes before rendering any figures. The server still owns operator authorization. */
 export function parseDemandMonitorResponse(value: unknown, window: ReportingWindow): DemandMonitorSnapshot | null {
   if (!record(value) || value.source !== source || value.executionAllowed !== false ||
@@ -58,7 +68,7 @@ export function parseDemandMonitorResponse(value: unknown, window: ReportingWind
   if (!campaignId || (objects.has("ad") && !objects.has("adset")) ||
       new Set(objects.values()).size !== objects.size ||
       !record(campaignInsights) || campaignInsights.campaignId !== campaignId ||
-      !isReport(campaignInsights, window, account.accountId, observedAt) ||
+      !isReport(campaignInsights, window, account.accountId, observedAt) || !validPurchases(campaignInsights) ||
       !isReport(insights, window, account.accountId, observedAt)) return null;
 
   return value as DemandMonitorSnapshot;

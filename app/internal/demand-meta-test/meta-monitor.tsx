@@ -39,10 +39,68 @@ function InsightMetrics({ insights }: { insights: DemandMonitorSnapshot["insight
   </dl>;
 }
 
+const followUps = {
+  verifyDelivery: "Check delivery and the reporting window in Ads Manager.",
+  reviewAliases: "Check purchase action definitions and the attribution window in Ads Manager.",
+  reconcileOrders: "Reconcile the reported purchase signals against HitPay order and settlement records.",
+  verifyTracking: "Check campaign event tracking and reporting coverage.",
+} as const;
+
+function suggestedFollowUp(report: DemandMonitorSnapshot["campaignInsights"]): keyof typeof followUps {
+  const results = report.purchaseResults;
+  if (!results) return "verifyDelivery";
+  if (results.actionAliasMismatch) return "reviewAliases";
+  if ([results.metaAttributedPurchases, results.omniPurchases, results.pixelPurchaseEvents]
+    .some(value => value !== null && value > 0)) return "reconcileOrders";
+  return "verifyTracking";
+}
+
+function purchaseReadout(report: DemandMonitorSnapshot["campaignInsights"]) {
+  const results = report.purchaseResults;
+  const display = (value: number | null | undefined) => {
+    if (results?.actionAliasMismatch) return "Withheld (conflicting purchase labels)";
+    return value == null ? "Unknown" : String(value);
+  };
+  return [
+    ["Meta-attributed purchases", display(results?.metaAttributedPurchases)],
+    ["Omni purchases", display(results?.omniPurchases)],
+    ["Pixel purchase events", display(results?.pixelPurchaseEvents)],
+    ["Settled HitPay orders", "Unknown (requires merchant reconciliation)"],
+  ];
+}
+
+function formatReport(snapshot: DemandMonitorSnapshot, nextAction: keyof typeof followUps) {
+  const { account, insights, campaignInsights, collectedAt } = snapshot;
+  const metrics = (report: DemandMonitorSnapshot["insights"]) =>
+    report.state === "NO_ROWS_NOT_ZERO"
+      ? "Spend unknown | Impressions unknown | Clicks unknown (Meta returned no rows)"
+      : `Spend ${account.currency} ${report.spend.toFixed(2)} | Impressions ${report.impressions} | Clicks ${report.clicks}`;
+
+  return [
+    "BROS DEMAND Meta Ads report",
+    "Source: Meta Graph API",
+    `Account: ${account.accountId}`,
+    `Campaign: ${campaignInsights.campaignId}`,
+    `Window: ${insights.since} to ${insights.until} inclusive (${account.timezone})`,
+    `Currency: ${account.currency}`,
+    `Collected: ${collectedAt}`,
+    `Account Insights: ${metrics(insights)}`,
+    `Campaign Insights: ${metrics(campaignInsights)}`,
+    ...purchaseReadout(campaignInsights).map(([label, value]) => `${label}: ${value}`),
+    "Meta purchase labels can overlap. Attribution depends on the Meta reporting settings.",
+    `Operator follow-up: ${followUps[nextAction]}`,
+  ].join("\n");
+}
+
 export default function MetaMonitor({ getToken }: { getToken: () => Promise<string> }) {
   const [since, setSince] = useState(() => dateOffset(7));
   const [until, setUntil] = useState(() => dateOffset(1));
   const [snapshot, setSnapshot] = useState<DemandMonitorSnapshot | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<{
+    state: "pending" | "copied" | "manual";
+    report: string;
+  } | null>(null);
+  const [nextAction, setNextAction] = useState<keyof typeof followUps>("verifyTracking");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -50,6 +108,7 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
     event.preventDefault();
     if (busy) return;
     setSnapshot(null);
+    setCopyFeedback(null);
     if (!since || !until || since > until || (Date.parse(until) - Date.parse(since)) / 86_400_000 >= 31) {
       setMessage(providerMessages.INVALID_REPORTING_WINDOW);
       return;
@@ -77,6 +136,7 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
         setMessage("The Meta report was incomplete or did not match the requested scope.");
         return;
       }
+      setNextAction(suggestedFollowUp(result.campaignInsights));
       setSnapshot(result);
       setMessage("Meta read completed.");
     } catch {
@@ -84,6 +144,19 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
     } finally {
       setBusy(false);
     }
+  }
+
+  async function copyReport(snapshot: DemandMonitorSnapshot) {
+    const pending = { state: "pending", report: formatReport(snapshot, nextAction) } as const;
+    setCopyFeedback(pending);
+    let state: "copied" | "manual";
+    try {
+      await navigator.clipboard.writeText(pending.report);
+      state = "copied";
+    } catch {
+      state = "manual";
+    }
+    setCopyFeedback(current => current === pending ? { state, report: pending.report } : current);
   }
 
   return (
@@ -118,11 +191,38 @@ export default function MetaMonitor({ getToken }: { getToken: () => Promise<stri
           <h3>Campaign Insights</h3>
           <p>Campaign {snapshot.campaignInsights.campaignId} · {snapshot.campaignInsights.since} to {snapshot.campaignInsights.until} · Meta Graph API</p>
           <InsightMetrics insights={snapshot.campaignInsights} />
+          <dl>{purchaseReadout(snapshot.campaignInsights).map(([label, value]) =>
+            <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+          <p>Meta purchase labels can overlap. Attribution depends on the Meta reporting settings.</p>
           <h3>Account Insights</h3>
           <p>{snapshot.insights.since} to {snapshot.insights.until} · Meta Graph API</p>
           <InsightMetrics insights={snapshot.insights} />
           <p>Read started <time dateTime={snapshot.observedAt}>{snapshot.observedAt}</time> · Completed{" "}
             <time dateTime={snapshot.collectedAt}>{snapshot.collectedAt}</time></p>
+          <label htmlFor="demand-follow-up">Next action for this report</label>
+          <select id="demand-follow-up" value={nextAction} onChange={event => {
+            const choice = event.target.value;
+            if (Object.hasOwn(followUps, choice)) {
+              setNextAction(choice as keyof typeof followUps);
+              setCopyFeedback(null);
+            }
+          }}>
+            {Object.entries(followUps).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+          <a download={`demand-${snapshot.campaignInsights.campaignId}-${snapshot.insights.since}-${snapshot.insights.until}.txt`}
+            href={"data:text/plain;charset=utf-8," + encodeURIComponent(formatReport(snapshot, nextAction))}>
+            Download report and next action
+          </a>
+          <button type="button" disabled={copyFeedback?.state === "pending"} onClick={() => void copyReport(snapshot)}>
+            Copy report for comparison
+          </button>
+          <p role="status">{copyFeedback?.state === "copied" ? "Report copied." :
+            copyFeedback?.state === "manual" ? "Copy the report from the field below." : ""}</p>
+          {copyFeedback?.state === "manual" && (
+            <label>Meta report for manual copy
+              <textarea readOnly rows={9} value={copyFeedback.report} onFocus={event => event.currentTarget.select()} />
+            </label>
+          )}
         </>
       )}
     </section>

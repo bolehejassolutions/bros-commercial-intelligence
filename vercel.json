@@ -4,7 +4,10 @@
       "work/demand-campaign-insights-20261113": false,
       "work/demand-monitor-response-validation-20261113": false,
       "work/bci-content-creative-reuse-155": false,
-      "work/demand-content-same-preview-20261113": false
+      "work/demand-content-same-preview-20261113": false,
+      "work/demand-monitor-browser-acceptance-20261113": false,
+      "work/demand-copy-report-20261113": false,
+      "integration/demand-monitor-followthrough-20261120": false
     }
   },
   "crons": [

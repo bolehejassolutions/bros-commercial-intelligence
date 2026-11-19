@@ -424,11 +424,16 @@ test("campaign performance uses the pinned campaign URL and an independent repor
   {...data,campaignInsights:{...data.campaignInsights,campaignId:"120251158023300697"}},
   {...data,insights:{...data.insights,since:"2026-11-02"}},
   {...data,status:{...data.status,rows:[{...data.status.rows[0],effectiveStatus:"UNKNOWN_STATUS"}]}},
+  {...data,campaignInsights:{...data.campaignInsights,purchaseResults:undefined}},
+  ...[{metaAttributedPurchases:0,omniPurchases:null,pixelPurchaseEvents:1,actionAliasMismatch:false},
+      {metaAttributedPurchases:2,omniPurchases:null,pixelPurchaseEvents:null,actionAliasMismatch:true},
+      {metaAttributedPurchases:2,omniPurchases:null,pixelPurchaseEvents:"2",actionAliasMismatch:false}]
+    .map(purchaseResults=>({...data,campaignInsights:{...data.campaignInsights,purchaseResults}})),
   {...data,verifiedPaidOrders:0},
  ]) assert.equal(parseDemandMonitorResponse(bad,window),null);
  const campaignZero={...data.campaignInsights,spend:0,impressions:0,clicks:0};
  assert.equal(parseDemandMonitorResponse({...data,campaignInsights:campaignZero},window)?.campaignInsights.spend,0);
- const campaignEmpty={...campaignZero,state:"NO_ROWS_NOT_ZERO",spend:null,impressions:null,clicks:null};
+ const campaignEmpty={...campaignZero,state:"NO_ROWS_NOT_ZERO",spend:null,impressions:null,clicks:null,purchaseResults:null};
  assert.equal(parseDemandMonitorResponse({...data,campaignInsights:campaignEmpty},window)?.campaignInsights.spend,null);
 });
 

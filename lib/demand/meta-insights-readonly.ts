@@ -1,4 +1,5 @@
 /** Read-only, bounded Meta Insights observation. Caller must verify tenant and account authorization. */
+import { projectCampaignPurchases, readCampaignActionCounts } from "./meta-insights-funnel.ts";
 import type { MetaStatusTransport } from "./meta-status-readonly.ts";
 
 export type InsightsTransport = MetaStatusTransport;
@@ -26,15 +27,16 @@ const spendMetric = (x:unknown):number => {
     BigInt(Math.round(spend*100))!==cents || serializedCents!==cents) deny();
  return spend;
 };
-export function readDemandMetaAccountInsights(req:InsightsRequest,token:string,transport:InsightsTransport) {
- return readInsights(req,token,transport,null);
+export async function readDemandMetaAccountInsights(req:InsightsRequest,token:string,transport:InsightsTransport) {
+ const { report } = await readInsights(req,token,transport,null);
+ return report;
 }
 
 /** The campaign ID comes from the authenticated server's configured scope. */
 export async function readDemandMetaCampaignInsights(req:InsightsRequest,campaignId:string,token:string,transport:InsightsTransport) {
  if(typeof campaignId!=="string" || !/^\d{5,30}$/.test(campaignId)) return deny();
- const report=await readInsights(req,token,transport,campaignId);
- return Object.freeze({...report,campaignId});
+ const { report, purchaseResults } = await readInsights(req,token,transport,campaignId);
+ return Object.freeze({...report,campaignId,purchaseResults});
 }
 
 async function readInsights(req:InsightsRequest,token:string,transport:InsightsTransport,campaignId:string|null) {
@@ -47,7 +49,7 @@ async function readInsights(req:InsightsRequest,token:string,transport:InsightsT
    !Number.isFinite(Date.parse(req.observedAt)) || new Date(req.observedAt).toISOString().slice(0,19)!==req.observedAt.slice(0,19) ||
    typeof token!=="string" || token.length<20 || token.length>4096 || /[^\x21-\x7e]/.test(token) || typeof transport!=="function") deny();
   const fields=["account_id","account_currency","date_start","date_stop","spend","impressions","clicks"];
-  if(campaignId!==null) fields.push("campaign_id");
+  if(campaignId!==null) fields.push("campaign_id", "actions");
   const params=new URLSearchParams({fields:fields.join(","),level:campaignId===null?"account":"campaign",
    time_range:JSON.stringify({since:req.since,until:req.until}),limit:"1"});
   const response=await transport(`https://graph.facebook.com/${req.apiVersion}/${campaignId??req.accountId}/insights?${params}`,{
@@ -59,15 +61,16 @@ async function readInsights(req:InsightsRequest,token:string,transport:InsightsT
    (Object.hasOwn(body,"paging") && (!obj(body.paging) || Object.hasOwn(body.paging,"next") || Object.hasOwn(body.paging,"previous") || Object.keys(body.paging).some(k=>k!=="cursors") || (Object.hasOwn(body.paging,"cursors") && (!obj(body.paging.cursors) || Object.keys(body.paging.cursors).some(k=>!["before","after"].includes(k)) || Object.values(body.paging.cursors).some(v=>typeof v!=="string")))))) deny();
   const collectedAt=new Date().toISOString(); // Local collection time, not a Meta event timestamp.
   const rows=body.data as unknown[];
-  if (rows.length===0) return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,collectedAt,
-   accountId:req.accountId,since:req.since,until:req.until,state:"NO_ROWS_NOT_ZERO" as const,spend:null,impressions:null,clicks:null,executionAllowed:false as const});
+  if (rows.length===0) return { purchaseResults: null, report: Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,collectedAt,
+   accountId:req.accountId,since:req.since,until:req.until,state:"NO_ROWS_NOT_ZERO" as const,spend:null,impressions:null,clicks:null,executionAllowed:false as const}) };
   const row=rows[0] as Record<string,unknown>;
   if (!obj(row) || row.account_id!==req.accountId.slice(4) || row.account_currency!=="MYR" ||
    row.date_start!==req.since || row.date_stop!==req.until ||
    (campaignId!==null && row.campaign_id!==campaignId)) deny();
   const spend=spendMetric(row.spend),impressions=metric(row.impressions),clicks=metric(row.clicks);
   if (!Number.isSafeInteger(impressions) || !Number.isSafeInteger(clicks) || !Number.isSafeInteger(Math.round(spend*100))) deny();
-  return Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,collectedAt,
-   accountId:req.accountId,since:req.since,until:req.until,state:"PROVIDER_ROW" as const,spend,impressions,clicks,executionAllowed:false as const});
+  const purchaseResults = campaignId === null ? null : projectCampaignPurchases(readCampaignActionCounts(row.actions));
+  return { purchaseResults, report: Object.freeze({source:"META_GRAPH_API_UNATTESTED" as const,observedAt:req.observedAt,collectedAt,
+   accountId:req.accountId,since:req.since,until:req.until,state:"PROVIDER_ROW" as const,spend,impressions,clicks,executionAllowed:false as const}) };
  } catch { return deny(); }
 }
