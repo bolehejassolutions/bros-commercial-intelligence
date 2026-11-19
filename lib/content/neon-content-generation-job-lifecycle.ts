@@ -37,6 +37,9 @@ export async function claimContentJob(db:JobQuery,input:{tenantId:string;jobId:s
  const result=await db.query(`UPDATE content_dev.generation_jobs
  SET status='running', attempts=attempts+1,claimed_at=now(),error_code=NULL
  WHERE id=$1 AND tenant_id=$2 AND status IN ('queued','failed') AND attempts<$3
+ AND EXISTS (SELECT 1 FROM content_dev.campaigns c
+ WHERE c.id=generation_jobs.campaign_id AND c.tenant_id=generation_jobs.tenant_id
+ AND c.owner_principal_id=generation_jobs.requested_by)
  RETURNING id,tenant_id,campaign_id,requested_by,idempotency_key,status,attempts,error_code`,
  [id(input.jobId),id(input.tenantId),max]);
  return single(result.rows);
@@ -58,6 +61,9 @@ export async function reclaimExpiredContentJob(db:JobQuery,input:{tenantId:strin
  claimed_at=CASE WHEN attempts >= $3 THEN NULL ELSE now() END,
  error_code=CASE WHEN attempts >= $3 THEN 'RETRY_EXHAUSTED' ELSE NULL END
  WHERE id=$1 AND tenant_id=$2 AND status='running'
+ AND EXISTS (SELECT 1 FROM content_dev.campaigns c
+ WHERE c.id=generation_jobs.campaign_id AND c.tenant_id=generation_jobs.tenant_id
+ AND c.owner_principal_id=generation_jobs.requested_by)
  AND claimed_at IS NOT NULL
  AND claimed_at < now() - ($4::integer * interval '1 second')
  RETURNING id,tenant_id,campaign_id,requested_by,idempotency_key,status,attempts,error_code`,
