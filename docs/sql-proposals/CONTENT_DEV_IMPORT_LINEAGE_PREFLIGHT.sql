@@ -8,7 +8,8 @@ WITH RECURSIVE
 source_auth AS (
  SELECT source_user_id,lower(nullif(payload->>'email','')) AS email,
   nullif(payload->>'email_confirmed_at','') IS NOT NULL
-   AND lower(source_pk)=source_user_id::text AS verified
+   AND lower(source_pk)=source_user_id::text
+   AND (payload->>'id' IS NULL OR lower(payload->>'id')=source_user_id::text) AS verified
  FROM content_import_dev.legacy_rows WHERE source_table='auth_user_identity'
 ),
 source_emails AS (
@@ -132,6 +133,7 @@ checks AS (
 ),
 classifications AS (
  SELECT 'identity' AS entity,state FROM identities
+ UNION ALL SELECT 'identity','missing_source_owner' FROM source_auth WHERE source_user_id IS NULL
  UNION ALL SELECT leaf_kind,CASE
   WHEN invalid_key THEN 'invalid_source_key' WHEN ambiguous_key THEN 'ambiguous_source_key'
   WHEN ambiguous_workspace THEN 'ambiguous_workspace' WHEN source_mismatch THEN 'source_parent_mismatch'

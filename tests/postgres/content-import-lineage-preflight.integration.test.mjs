@@ -56,6 +56,7 @@ test('read-only staging preflight separates verified lineage, ambiguous identiti
   await stage('scenes',scene,null,{content_item_id:item});
   await client.query(`INSERT INTO content_dev.scenes(tenant_id,content_item_id,scene_number,legacy_supabase_id)
    VALUES($1,$2,1,$3)`,[a.tenant,liveItem,scene]);
+  await stage('auth_user_identity',randomUUID(),null,{email:'unbound@fixture.invalid'});
   // Missing and contradictory evidence, plus an existing target linked to the wrong tenant.
   const futureCampaign=randomUUID(),foreignKey=randomUUID(),projectCampaign=randomUUID();
   await stage('campaigns',futureCampaign,a.source,{});
@@ -85,7 +86,7 @@ test('read-only staging preflight separates verified lineage, ambiguous identiti
   const first=await counts();
   assert.deepEqual(first,{
    'identity/verified':2,'identity/missing_identity_link':1,'identity/stale_identity_link':1,
-   'identity/ambiguous_membership':1,'identity/ambiguous_identity':2,
+   'identity/ambiguous_membership':1,'identity/ambiguous_identity':2,'identity/missing_source_owner':1,
    'business_dna/already_materialized':2,'business_dna/eligible':1,
    'campaigns/already_materialized':1,'campaigns/eligible':2,'campaigns/unverified_project':1,
    'campaigns/target_parent_or_owner_mismatch':1,'campaigns/ambiguous_workspace':1,
