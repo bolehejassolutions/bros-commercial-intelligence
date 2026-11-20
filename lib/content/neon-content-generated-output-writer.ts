@@ -11,6 +11,7 @@
  */
 import {createHash} from 'node:crypto';
 import {ContentReadDenied} from './neon-content-workspace-reader.ts';
+import {writeContentBundleChildren} from './neon-content-write-bundle-children.ts';
 import {compileContentPersistenceBundle} from './neon-content-persistence-bundle.ts';
 import {verifyContentGeneratedReplay} from './neon-content-replay-integrity.ts';
 import type {
@@ -207,31 +208,7 @@ export function createContentGeneratedOutputWriter(transaction:Transaction) {
      JSON.stringify(campaign.angles),JSON.stringify(campaign.captions),
      JSON.stringify(campaign.publish_plan)])).rows);
    const campaignId=rowId(created.id);
-   const refs=new Map<string,string>();
-   for(const item of bundle.items){
-    if(refs.has(item.ref))deny();
-    const createdItem=rowsOne((await query(
-     `INSERT INTO content_dev.content_items
-      (tenant_id,campaign_id,type,title,body,sort_order,version)
-      VALUES ($1::uuid,$2::uuid,$3,$4,$5::jsonb,$6,$7) RETURNING id`,
-     [tenantId,campaignId,item.type,item.title,JSON.stringify(item.body),
-      item.sort_order,item.version])).rows);
-    refs.set(item.ref,rowId(createdItem.id));
-   }
-   for(const scene of bundle.scenes){
-    const itemId=refs.get(scene.content_item_ref);
-    if(!itemId)deny();
-    const saved=rowsOne((await query(
-     `INSERT INTO content_dev.scenes
-       (tenant_id,content_item_id,scene_number,duration_seconds,
-        narration,dialogue,visual_prompt,motion_prompt,continuity_lock)
-       VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9::jsonb)
-       RETURNING id`,
-     [tenantId,itemId,scene.scene_number,scene.duration_seconds,
-      scene.narration,scene.dialogue,scene.visual_prompt,scene.motion_prompt,
-      JSON.stringify(scene.continuity_lock)])).rows);
-    rowId(saved.id);
-   }
+   await writeContentBundleChildren(query,tenantId,campaignId,bundle);
 
    const link=rowsOne((await query(
     `UPDATE content_dev.generated_output_requests
