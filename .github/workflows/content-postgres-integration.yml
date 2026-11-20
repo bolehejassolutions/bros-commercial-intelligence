@@ -10,6 +10,7 @@ on:
       - 'tests/postgres/**'
       - 'lib/content/neon-content-business-profile.ts'
       - 'docs/sql-proposals/CONTENT_DEV_GENERATED_OUTPUT_WRITER_V1_NOT_APPLIED.sql'
+      - 'docs/sql-proposals/CONTENT_DEV_IMPORT_LINEAGE_PREFLIGHT.sql'
       - 'lib/content/neon-content-generated-output-writer.ts'
       - 'lib/content/neon-content-replay-integrity.ts'
       - 'lib/content/neon-content-persistence-bundle.ts'
