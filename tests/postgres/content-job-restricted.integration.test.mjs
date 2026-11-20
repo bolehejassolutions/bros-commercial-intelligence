@@ -66,16 +66,21 @@ test('authenticated submission deduplicates concurrent requests and returns a bo
   const finalReplay = await (await post(campaignId,key)).json();
   assert.equal(finalReplay.data.id,first.id);
   assert.equal(finalReplay.data.status,'completed');
+  const next = await post(campaignId,randomUUID());
+  assert.equal(next.status,409);
+  assert.deepEqual(await next.json(),{error:'campaign_not_eligible'});
+  assert.deepEqual(await storedJob(first.id),{status:'completed',attempts:1,error_code:null,outputs:1});
 });
 
 test('revoking campaign ownership closes replay, claim and completion, preserving prior rows', async () => {
   const campaignId = await newCampaign();
   const key = randomUUID();
   const queued = await submit(principal,{workspaceId,campaignId,idempotencyKey:key});
-  const running = await submit(principal,{workspaceId,campaignId,idempotencyKey:randomUUID()});
+  const runningCampaign = await newCampaign();
+  const running = await submit(principal,{workspaceId,campaignId:runningCampaign,idempotencyKey:randomUUID()});
   const db = createRestrictedContentJobDb({pool:worker, purpose:'worker', tenantId});
   assert.equal((await claimContentJob(db,{tenantId,jobId:running.id})).attempts,1);
-  await admin.query('UPDATE content_dev.campaigns SET owner_principal_id=$2 WHERE id=$1',[campaignId,otherPrincipal.userId]);
+  await admin.query('UPDATE content_dev.campaigns SET owner_principal_id=$2 WHERE id IN ($1,$3)',[campaignId,otherPrincipal.userId,runningCampaign]);
   assert.equal((await post(campaignId,key)).status,404);
   assert.equal(await claimContentJob(db,{tenantId,jobId:queued.id}),null);
   assert.equal(await finishContentJob(db,{tenantId,jobId:running.id,attempt:1,outcome:'completed'}),null);
@@ -94,4 +99,27 @@ test('lease recovery fences an obsolete attempt and commits only one output', as
   assert.equal(recovered.state,'completed');
   assert.equal(await finishContentJob(db,{tenantId,jobId,attempt:1,outcome:'failed',errorCode:'STALE_ATTEMPT'}),null);
   assert.deepEqual(await storedJob(jobId),{status:'completed',attempts:2,error_code:null,outputs:1});
+});
+
+test('two fresh keys for one empty draft produce exactly one queued job', async () => {
+  const campaignId = await newCampaign();
+  const replies = await Promise.all([post(campaignId,randomUUID()),post(campaignId.toUpperCase(),randomUUID())]);
+  assert.deepEqual(replies.map(r => r.status).sort(),[202,409]);
+  const {rows} = await admin.query('SELECT status,attempts FROM content_dev.generation_jobs WHERE campaign_id=$1',[campaignId]);
+  assert.deepEqual(rows,[{status:'queued',attempts:0}]);
+});
+
+test('pre-existing campaign strategy or child-only creative prevents new submission', async () => {
+  const first = await newCampaign();
+  const second = await newCampaign();
+  await admin.query("UPDATE content_dev.campaigns SET strategy='{}'::jsonb WHERE id=$1",[first]);
+  await admin.query(`INSERT INTO content_dev.content_items(tenant_id,campaign_id,type,title)
+    VALUES ($1,$2,'other','Prior imported creative')`,[tenantId,second]);
+  for (const campaignId of [first,second]) {
+    const response = await post(campaignId,randomUUID());
+    assert.equal(response.status,409);
+    assert.deepEqual(await response.json(),{error:'campaign_not_eligible'});
+  }
+  const {rowCount} = await admin.query('SELECT id FROM content_dev.generation_jobs WHERE campaign_id IN ($1,$2)',[first,second]);
+  assert.equal(rowCount,0);
 });

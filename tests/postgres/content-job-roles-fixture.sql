@@ -8,6 +8,12 @@ GRANT SELECT ON bci_dev.tenant_memberships,content_dev.workspaces,content_dev.ca
  TO content_dev_job_writer_v2,content_dev_job_worker_v2;
 GRANT INSERT ON content_dev.generation_jobs TO content_dev_job_writer_v2;
 GRANT UPDATE(status,attempts,claimed_at,completed_at,error_code) ON content_dev.generation_jobs TO content_dev_job_worker_v2;
+-- A submitter only needs scoped child existence to protect an existing draft.
+GRANT SELECT(tenant_id,campaign_id) ON content_dev.content_items TO content_dev_job_writer_v2;
+CREATE POLICY ci_job_submit_existing_output ON content_dev.content_items FOR SELECT TO content_dev_job_writer_v2
+ USING (tenant_id=NULLIF(current_setting('content.tenant_id',true),'')::uuid AND EXISTS (
+  SELECT 1 FROM content_dev.campaigns c WHERE c.id=content_items.campaign_id AND c.tenant_id=content_items.tenant_id
+   AND c.owner_principal_id=NULLIF(current_setting('bci.principal_id',true),'')::uuid));
 GRANT SELECT,INSERT ON content_dev.content_items TO content_dev_job_worker_v2;
 
 CREATE POLICY ci_job_writer_member ON bci_dev.tenant_memberships FOR SELECT TO content_dev_job_writer_v2

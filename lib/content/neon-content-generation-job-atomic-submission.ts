@@ -18,10 +18,13 @@ export function createPooledContentJobSubmitter(pool: JobPool) {
    if (rows.length !== 1 || typeof rows[0].tenant_id !== 'string') throw new ContentReadDenied();
    const tenantId = rows[0].tenant_id;
    await query("SELECT set_config('content.tenant_id',$1,true)", [tenantId]);
-   const job = await enqueueContentJob(jobQuery(query), {tenantId, campaignId:input.campaignId,
-    principalId:principal.userId, idempotencyKey:input.idempotencyKey});
-   if (!job || job.tenant_id !== tenantId || job.requested_by !== principal.userId ||
-       job.campaign_id !== input.campaignId) throw new Error('CONTENT job receipt unavailable');
+   // A second fresh key must observe the first transaction's queued job, even
+   // when two tabs submit concurrently. The database releases this lock at commit.
+   await query("SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,0))", [input.campaignId]);
+   const job = await enqueueContentJob(jobQuery(query), {tenantId, campaignId:input.campaignId.toLowerCase(),
+    principalId:principal.userId.toLowerCase(), idempotencyKey:input.idempotencyKey, requireEligibleDraft:true});
+   if (!job || job.tenant_id !== tenantId || job.requested_by !== principal.userId.toLowerCase() ||
+       job.campaign_id !== input.campaignId.toLowerCase()) throw new Error('CONTENT job receipt unavailable');
    return {id:job.id, campaignId:job.campaign_id, status:job.status, attempts:job.attempts};
   });
 }

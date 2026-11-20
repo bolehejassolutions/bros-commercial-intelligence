@@ -4,7 +4,7 @@
  * tenant-restricted writer must be injected before activation.
  */
 import {ContentReadDenied} from './neon-content-workspace-reader.ts';
-import {ContentJobKeyConflict,enqueueContentJob} from './neon-content-generation-job-lifecycle.ts';
+import {ContentJobKeyConflict,ContentJobNotEligible,enqueueContentJob} from './neon-content-generation-job-lifecycle.ts';
 import type {JobQuery} from './neon-content-generation-job-lifecycle.ts';
 
 import type {JobSubmission} from './neon-content-generation-job-atomic-submission.ts';
@@ -67,6 +67,7 @@ export function createContentJobPost(verify:Verify,submit:(principal:Principal,i
    const receipt=await submit(principal,{workspaceId,campaignId:fields.campaignId,idempotencyKey:fields.idempotencyKey});
    return reply(202,{data:receipt});
   }catch(e){
+   if(e instanceof ContentJobNotEligible)return reply(409,{error:'campaign_not_eligible'});
    if(e instanceof ContentJobKeyConflict)return reply(409,{error:'idempotency_conflict'});
    if(e instanceof ContentReadDenied)return reply(404,{error:'not_found'});
    return reply(503,{error:'submission_unavailable'});
