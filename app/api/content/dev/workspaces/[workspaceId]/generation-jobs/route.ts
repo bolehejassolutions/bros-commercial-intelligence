@@ -1,6 +1,4 @@
-/** Opt-in, DEV Preview only, read-only job history.
- * The live reader has no generation_jobs policy: the gate remains closed.
- */
+/** Preview-only campaign job submission and history, independently gated by role and feature. */
 import {createContentSdkSessionVerifier} from '@/lib/content/neon-content-sdk-session.ts';
 import {getContentNeonAuth} from '@/lib/content/neon-content-sdk-auth-server.ts';
 import {isContentDevPreviewEnabled} from '@/lib/content/neon-content-auth-gate.ts';

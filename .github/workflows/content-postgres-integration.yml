@@ -16,6 +16,8 @@ on:
       - 'lib/content/neon-content-transaction.ts'
       - 'lib/content/neon-content-generation-contract.ts'
       - 'lib/content/neon-content-generation-orchestrator.ts'
+      - 'lib/content/neon-content-reviewed-job.ts'
+      - 'lib/content/neon-content-write-bundle-children.ts'
       - 'lib/content/neon-content-dev-fixture-job.ts'
       - 'lib/content/neon-content-job-submitter-server.ts'
       - 'lib/content/neon-content-generation-job-*.ts'
@@ -78,6 +80,9 @@ jobs:
           job_writer_pass="$(openssl rand -hex 32)"
           job_worker_pass="$(openssl rand -hex 32)"
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -v writer_password="$job_writer_pass" -v worker_password="$job_worker_pass" -f tests/postgres/content-job-roles-fixture.sql
+          plan_worker_pass="$(openssl rand -hex 32)"
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -v plan_worker_password="$plan_worker_pass" -f tests/postgres/content-job-plan-role-fixture.sql
+          export CONTENT_JOB_PLAN_DB_URL="postgresql://content_dev_job_plan_worker_v1:${plan_worker_pass}@127.0.0.1:5432/bros_intelligence_dev"
           export CONTENT_JOB_WRITER_DB_URL="postgresql://content_dev_job_writer_v2:${job_writer_pass}@127.0.0.1:5432/bros_intelligence_dev"
           export CONTENT_JOB_WORKER_DB_URL="postgresql://content_dev_job_worker_v2:${job_worker_pass}@127.0.0.1:5432/bros_intelligence_dev"
           export CONTENT_DRAFT_DB_URL="postgresql://content_dev_draft_writer_v2:${draft_pass}@127.0.0.1:5432/bros_intelligence_dev"
