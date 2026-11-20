@@ -11,6 +11,7 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 function id(value:string){if(!uuid.test(value))throw new Error('Invalid job identity');return value;}
 function key(value:string){if(typeof value!=='string'||value.length<12||value.length>128||!/^[A-Za-z0-9_-]+$/.test(value))throw new Error('Invalid idempotency key');return value;}
 function single(rows:JobRow[]){if(rows.length>1)throw new Error('Ambiguous job identity');return rows[0]??null;}
+export class ContentJobKeyConflict extends Error {}
 export async function enqueueContentJob(db:JobQuery,input:{tenantId:string;campaignId:string;principalId:string;idempotencyKey:string}){
  const {tenantId,campaignId,principalId}=input;
  // No implicit upsert: an existing key for a different campaign is a conflict.
@@ -28,7 +29,8 @@ export async function enqueueContentJob(db:JobQuery,input:{tenantId:string;campa
  AND EXISTS (SELECT 1 FROM content_dev.campaigns c WHERE c.id=j.campaign_id
  AND c.tenant_id=j.tenant_id AND c.owner_principal_id=$2)`,[tenantId,principalId,input.idempotencyKey]);
  const row=single(replay.rows);
- if(!row||row.campaign_id!==campaignId||row.requested_by!==principalId)throw new Error('Job not authorized or idempotency conflict');
+ if(!row||row.requested_by!==principalId)throw new Error('Job not authorized');
+ if(row.campaign_id!==campaignId)throw new ContentJobKeyConflict('Job idempotency conflict');
  return row;
 }
 export async function claimContentJob(db:JobQuery,input:{tenantId:string;jobId:string;maxAttempts?:number}){
