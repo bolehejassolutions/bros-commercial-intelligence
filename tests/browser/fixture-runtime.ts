@@ -3,6 +3,8 @@ import {Pool} from 'pg';
 import {createContentCampaignDraftWriter} from '../../lib/content/neon-content-campaign-draft-writer.ts';
 import {createContentTransaction} from '../../lib/content/neon-content-transaction.ts';
 import {createContentWorkspaceIndexReader} from '../../lib/content/neon-content-workspace-index.ts';
+import {createContentJobHistoryReader} from '../../lib/content/neon-content-generation-job-history-reader.ts';
+import {createPooledContentJobSubmitter} from '../../lib/content/neon-content-generation-job-atomic-submission.ts';
 import {createContentWorkspaceReader} from '../../lib/content/neon-content-workspace-reader.ts';
 
 type FixtureRole = 'content_dev_reader_v2' | 'content_dev_draft_writer_v2';
@@ -25,10 +27,7 @@ export function getContentNeonAuth() {
   };
 }
 
-export function createRestrictedContentAdapters(role: FixtureRole) {
-  const connectionString = role === 'content_dev_reader_v2'
-    ? process.env.CONTENT_READER_DB_URL
-    : process.env.CONTENT_DRAFT_DB_URL;
+function fixturePool(role: FixtureRole | 'content_dev_job_writer_v2', connectionString: string | undefined) {
   const url = new URL(connectionString ?? '');
   if (
     process.env.CONTENT_PG_INTEGRATION_CI !== 'disposable_only'
@@ -38,9 +37,20 @@ export function createRestrictedContentAdapters(role: FixtureRole) {
   ) {
     throw new Error('CONTENT browser tests require the disposable PostgreSQL fixture');
   }
-  const pool = new Pool({connectionString, max: 2, connectionTimeoutMillis: 5000});
+  return new Pool({connectionString, max: 2, connectionTimeoutMillis: 5000});
+}
+
+export function createContentJobSubmitter() {
+  const pool = fixturePool('content_dev_job_writer_v2', process.env.CONTENT_JOB_WRITER_DB_URL);
+  return {submit: createPooledContentJobSubmitter(pool), close: () => pool.end()};
+}
+
+export function createRestrictedContentAdapters(role: FixtureRole) {
+  const pool = fixturePool(role, role === 'content_dev_reader_v2'
+    ? process.env.CONTENT_READER_DB_URL : process.env.CONTENT_DRAFT_DB_URL);
   const transaction = createContentTransaction(pool);
   return {
+    listJobs: role === 'content_dev_reader_v2' ? createContentJobHistoryReader(transaction) : null,
     readWorkspace: role === 'content_dev_reader_v2' ? createContentWorkspaceReader(transaction) : null,
     listWorkspaces: role === 'content_dev_reader_v2' ? createContentWorkspaceIndexReader(transaction) : null,
     createDraft: role === 'content_dev_draft_writer_v2' ? createContentCampaignDraftWriter(transaction) : null,
