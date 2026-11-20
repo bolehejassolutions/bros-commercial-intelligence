@@ -64,7 +64,7 @@ export function createContentWorkspaceReader(transaction: Transaction) {
       const scope = [tenant,workspaceId,principal.userId];
       if (draftId !== undefined) {
         const drafts = (await query(`SELECT id,product_service,description,audience,problem,objective,
-          duration_days,platforms,status,strategy,angles,captions,publish_plan,created_at,updated_at
+          duration_days,platforms,status,strategy,angles,captions,publish_plan,created_at,updated_at,workspace_id
           FROM content_dev.campaigns
           WHERE tenant_id=$1::uuid AND workspace_id=$2::uuid AND owner_principal_id=$3::uuid
           AND id=$4::uuid AND status='draft' LIMIT 1`, [...scope,draftId])).rows;
@@ -100,7 +100,7 @@ export function createContentWorkspaceReader(transaction: Transaction) {
         WHERE cursor_row.tenant_id=$1::uuid AND cursor_row.workspace_id=$2::uuid
         AND cursor_row.owner_principal_id=$3::uuid AND cursor_row.id=$4::uuid)` : '';
       const page = (await query(`SELECT id,product_service,description,audience,problem,objective,
-        duration_days,platforms,status,strategy,angles,captions,publish_plan,created_at,updated_at
+        duration_days,platforms,status,strategy,angles,captions,publish_plan,created_at,updated_at,workspace_id
         FROM content_dev.campaigns WHERE tenant_id=$1::uuid AND workspace_id=$2::uuid
         AND owner_principal_id=$3::uuid ${cursorFilter} ORDER BY created_at DESC,id DESC LIMIT 101`,
         before ? [...scope,before] : scope)).rows;
