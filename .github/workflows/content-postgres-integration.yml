@@ -6,6 +6,8 @@ on:
       - '.github/workflows/content-postgres-integration.yml'
       - 'app/api/content/dev/**'
       - 'app/content/dev/**'
+      - 'scripts/content-dev-job.mjs'
+      - 'scripts/fixtures/content-dev-reviewed-plan.json'
       - 'tests/browser/**'
       - 'tests/postgres/**'
       - 'lib/content/neon-content-business-profile.ts'

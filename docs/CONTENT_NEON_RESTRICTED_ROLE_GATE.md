@@ -12,6 +12,18 @@ The local tests use synthetic identities and a deterministic planner transport. 
 
 Run the repository workflow against a fresh disposable database. It provisions local-only roles, runs the suites sequentially and launches the real Next app in Chromium. [PostgreSQL workflow](../.github/workflows/content-postgres-integration.yml) · [Browser acceptance](../tests/browser/content-dev.browser.test.mjs)
 
+## Run one job locally
+
+Use Node 24 and the [disposable PostgreSQL setup](../.github/workflows/content-postgres-integration.yml). In the worker shell set `CONTENT_PG_INTEGRATION_CI=disposable_only` and `CONTENT_JOB_PLAN_DB_URL` to the fixture’s loopback login for `content_dev_job_plan_worker_v1`. Submit an empty draft through the local CONTENT workspace. Use the fixture tenant UUID and the job UUID from the submission receipt.
+
+```sh
+npm run content:dev-job -- "$tenant_id" "$job_id"
+```
+
+The bundled synthetic plan targets Instagram on day one. To use a different plan and its review, append a JSON file following the [fixture format](../scripts/fixtures/content-dev-reviewed-plan.json). Its platforms and plan dates must fit the saved draft. The command reads the saved brief and runs the existing reviewed worker once, using the supplied fixture as its planner transport. Reopen the campaign via **Sejarah penjanaan → Muatkan hasil kempen**.
+
+On success the command prints a JSON receipt with `state=completed`. A completed replay or another unclaimable job returns `unavailable` and exits zero. An unsuccessful processing attempt exits one. Invalid arguments, fixture or target configuration exit two. Use campaign history to check the stored outcome.
+
 ## Hosted gate and rollback
 
 Neon DEV project `empty-tooth-43040036`, branch `br-broad-math-b3f4d2r4`, has FORCE RLS on seven CONTENT tables. Direct restricted reader and draft-writer logins returned zero unscoped data. At inspection, generation jobs had zero hosted policies and the submitter, fixture worker and reviewed-plan worker roles were absent. The existing reader lacked SELECT on generation jobs. The approved scope covers disposable roles. Connected role changes, operator enrollment and any production switch require separate authorization.

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
+import {promisify} from 'node:util';
 import {randomUUID} from 'node:crypto';
 import {cp, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
@@ -8,7 +9,6 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
 import pg from 'pg';
-import {processReviewedContentJob} from '../../lib/content/neon-content-reviewed-job.ts';
 import {createContentCampaignPlanner} from '../../lib/content/neon-content-generation-orchestrator.ts';
 import {createContentGeneratedOutputWriter} from '../../lib/content/neon-content-generated-output-writer.ts';
 import {compileContentPersistenceBundle} from '../../lib/content/neon-content-persistence-bundle.ts';
@@ -133,8 +133,7 @@ test('browser verifies authenticated campaign content, draft persistence and ten
 
   const admin = new pg.Pool({connectionString: adminUrl, connectionTimeoutMillis: 5000});
   const writer = new pg.Pool({connectionString: generatedUrl, connectionTimeoutMillis: 5000});
-  const worker = new pg.Pool({connectionString: workerUrl, max: 2, connectionTimeoutMillis: 5000});
-  t.after(() => Promise.all([admin.end(), writer.end(), worker.end()]));
+  t.after(() => Promise.all([admin.end(), writer.end()]));
   await admin.query(`INSERT INTO content_dev.workspaces
     (id, tenant_id, owner_principal_id, name, business_dna) VALUES ($1, $2, $3, $4, $5)`,
   [workspaceId, tenant, owner, workspaceName, businessDna]);
@@ -472,10 +471,24 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     assert.deepEqual(jobRows.rows, [{id: acceptedJob, status: 'queued'}]);
     assert.equal((await foreignContext.request.get(historyUrl)).status(), 404);
     assert.equal((await anonymousContext.request.get(historyUrl)).status(), 401);
-    const result = await processReviewedContentJob({
-      pool: worker, tenantId: tenant, jobId: acceptedJob, planCampaign: generateFixture,
-    });
-    assert.equal(result.state, 'completed');
+    const fixturePath = join(fixtureRoot, 'reviewed-plan.json');
+    await writeFile(fixturePath, JSON.stringify({plan, review}));
+    const commandArgs = ['--experimental-strip-types', join(repo, 'scripts/content-dev-job.mjs'), tenant, acceptedJob, fixturePath];
+    const env = {CONTENT_PG_INTEGRATION_CI: 'disposable_only', CONTENT_JOB_PLAN_DB_URL: workerUrl};
+    const runWorker = promisify(execFile);
+    await assert.rejects(runWorker(process.execPath, commandArgs, {env: {...env, CONTENT_PG_INTEGRATION_CI: ''}}),
+      err => err.code === 2 && err.stderr.includes('disposable database marker'));
+    for (const invalidUrl of [
+      'postgresql://content_dev_job_plan_worker_v1:fixture@unavailable.invalid:5432/bros_intelligence_dev',
+      'postgresql://postgres:fixture@127.0.0.1:5432/bros_intelligence_dev',
+    ]) {
+      await assert.rejects(runWorker(process.execPath, commandArgs, {env: {...env, CONTENT_JOB_PLAN_DB_URL: invalidUrl}}),
+        err => err.code === 2 && err.stderr.includes('loopback plan-worker URL'));
+    }
+    const firstRun = await runWorker(process.execPath, commandArgs, {env});
+    assert.deepEqual(JSON.parse(firstRun.stdout), {jobId: acceptedJob, state: 'completed'});
+    const secondRun = await runWorker(process.execPath, commandArgs, {env});
+    assert.deepEqual(JSON.parse(secondRun.stdout), {jobId: acceptedJob, state: 'unavailable'});
     const durable = await admin.query(`
       SELECT j.id, j.attempts, j.status, i.title, i.body->'provenance'->>'source' AS provenance
         FROM content_dev.generation_jobs j

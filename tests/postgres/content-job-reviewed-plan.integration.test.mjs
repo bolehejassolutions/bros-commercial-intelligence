@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import test, {after} from 'node:test';
+import {readFile} from 'node:fs/promises';
 import pg from 'pg';
 import {createContentCampaignPlanner} from '../../lib/content/neon-content-generation-orchestrator.ts';
 import {createPooledContentJobSubmitter} from '../../lib/content/neon-content-generation-job-atomic-submission.ts';
@@ -24,18 +25,8 @@ after(()=>Promise.all([admin.end(),submitPool.end(),planPool.end(),readPool.end(
 const submit=createPooledContentJobSubmitter(submitPool);
 const history=createContentJobHistoryReader(createContentTransaction(readPool));
 
-const plan={
- strategy:{positioning:'Servis basikal bandar',core_message:'Semak brek sebelum kayuh',offer_angle:'Bantu pemilik basikal',
-  platform_strategy:['Instagram']},
- angles:[{title:'Brek basikal',hook:'Brek berbunyi?',reason:'Semak keadaan pad'}],
- scripts:['Hadapan','Belakang'].map(title=>({title,hook:'Semak brek',body:'Lihat pad brek dengan teliti',cta:'Rujuk bengkel'})),
- visuals:[{title:'Pad brek',prompt:'Potret pad brek dengan cahaya semula jadi'}],
- scenes:[1,2].map(scene_number=>({scene_number,duration_seconds:scene_number+0.25,
-  narration:'Semak pad '+scene_number,dialogue:'',visual_prompt:'Basikal di bengkel',motion_prompt:'Gerakan perlahan'})),
- captions:[{platform:'instagram',caption:'Semak pad brek anda.'}],
- publish_plan:[{day:1,platform:'instagram',content_type:'video',objective:'Didik pemilik basikal'}],
-};
-const review={pass:true,score:91,issues:[],fixes:[]};
+const {plan,review}=JSON.parse(await readFile(
+ new URL('../../scripts/fixtures/content-dev-reviewed-plan.json',import.meta.url),'utf8'));
 const planner=createContentCampaignPlanner(async (_prompt,_schema,name)=>name==='bros_campaign'?plan:review);
 
 async function selectedDraft() {

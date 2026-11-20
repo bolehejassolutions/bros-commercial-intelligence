@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "content:dev-job": "node --experimental-strip-types scripts/content-dev-job.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
