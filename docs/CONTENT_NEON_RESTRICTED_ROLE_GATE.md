@@ -1,25 +1,27 @@
-# BROS CONTENT Neon DEV — restricted-role activation gate
+# BROS CONTENT DEV acceptance and release handoff
 
-Status: **DATABASE POLICY CONFIGURED; APPLICATION NOT ACTIVATED** (verified 2026-11-07).
+Updated November 20, 2026. The customer site still serves the Supabase v3.6.1 application. Its 341,592 bytes matched the audited original, SHA-256 `0ba614cef9eb847a6d26a8fd375255de532a38492a0237d2361e6a49f41c91cd`. [Customer site](https://broscontent.bolehejas.com/) · [Audited original](https://drive.google.com/file/d/1ckDAWQJFsuyA6XRcYOptQgrPDWQi5rhT/view?usp=drivesdk)
 
-## Verified live state
+## What works in disposable DEV
 
-- Neon DEV: project `empty-tooth-43040036`, branch `br-broad-math-b3f4d2r4`, database `bros_intelligence_dev`.
-- Both `content_dev_reader` and `content_dev_draft_writer` exist as LOGIN, NOINHERIT, non-superuser, non-RLS-bypass roles, with no database CREATE privilege.
-- Both roles are denied source-import schema access, credit-ledger SELECT and generation-job INSERT.
-- Ten CONTENT RLS policies and two membership RLS policies are present; owner and foreign-principal behavior was simulated on an isolated temporary branch using SET ROLE, **not tested using actual restricted logins**.
-- **Neither role has a password** (live `pg_authid` readback). Neon password reset for SQL-created roles failed; automated secret provisioning was blocked. Do not report connection readiness.
-- The reader/writer adapters bind verified principal to `bci.principal_id` transaction-locally before membership queries; the earlier missing-context gap is fixed.
-- HTTP boundaries and adapters exist as injected modules, but **no verified CONTENT session implementation or live API route is wired**.
-- The dedicated Vercel `bros-content` project is configured, but no application has been deployed and no domain has been cut over.
-- Recovery branch CI passed at commit `3ec7ebdad095e77b727b46ef3b1b128f9fbb93e9` (CONTENT recovery and Marketing Operator Dry-Run).
+The integration starts from `371b2db4444982ae3e10ed13949807ac5cc29f61`, which includes the ownership fixes from #191. The submission route and deterministic output contracts were reconciled with the parallel #188/#190 work. The existing branches retain their history. [Integration base](https://github.com/bolehejassolutions/bros-commercial-intelligence/commit/371b2db4444982ae3e10ed13949807ac5cc29f61) · [Parallel submission work](https://github.com/bolehejassolutions/bros-commercial-intelligence/pull/190)
 
-## Activation requirements
+On disposable PostgreSQL, Chromium saves an authenticated campaign from the workspace, retries a lost submission acknowledgement and gets a single job. A restricted worker reads that draft and Business DNA, accepts an injected planner and review, and commits the seven layers and completion together. An independent connection reads back the data. The owner can reopen the output, see job history after signing in again, preview captions and download a scoped JSON handoff. Image and publication verification flags remain false in the export.
 
-1. Provision distinct strong passwords for existing restricted roles using an approved secure administrative channel. Store each full connection URL as a sensitive secret only in the dedicated CONTENT application environment. Never print credentials or use BROS owner credentials for application traffic.
-2. Verify real TLS connections as each exact restricted login, including role posture, membership RLS, owner/foreign tenant isolation, revoked memberships, credit/job denial and idempotent draft transaction rollback.
-3. Implement a server-side **CONTENT** session verifier bound to a real identity provider and principal mapping. Do not substitute BCI operator Supabase sessions, email matching, request headers or request bodies as identity proof.
-4. Connect protected workspace read and draft-write routes to the verified session and restricted adapters; test authenticated end-to-end requests.
-5. Deploy to dedicated Vercel project, verify deployment and functional parity before requesting production DNS cutover.
+The local tests use synthetic identities and a deterministic planner transport. They cover duplicate requests, foreign tenants, revoked membership or ownership, stale leases, low-quality plans and rollback after a late child write. The checked-in visual fixture is separately verifiable. Both PNGs in `content-review-sources/sell-diagnosis-20261106` decoded at 1080 × 1350 and matched the manifest's file and RGB digests. No customer credits or external generation were used.
 
-Do not merge, cut over production, mint credits, run generation, activate billing, or expand BCI permissions merely because CI is green.
+Run the repository workflow against a fresh disposable database. It provisions local-only roles, runs the suites sequentially and launches the real Next app in Chromium. [PostgreSQL workflow](../.github/workflows/content-postgres-integration.yml) · [Browser acceptance](../tests/browser/content-dev.browser.test.mjs)
+
+## Hosted gate and rollback
+
+Neon DEV project `empty-tooth-43040036`, branch `br-broad-math-b3f4d2r4`, has FORCE RLS on seven CONTENT tables. Direct restricted reader and draft-writer logins returned zero unscoped data. At inspection, generation jobs had zero hosted policies and the job submitter and worker roles were absent. The approved scope covers disposable roles. Connected role changes, operator enrollment and any production switch require separate authorization.
+
+The November 7 import matched the source cohort for one campaign, nine items and seven scenes. Only one of four staged identities had a verified materialization. Current Supabase holds two campaigns, 16 items and 12 scenes. Refresh identity mapping and reconcile that delta before considering a cutover. [Materialization SQL](https://github.com/bolehejassolutions/bros-commercial-intelligence/commit/0469326195e8c7871cd68ef04fb2dd34ccd681b9)
+
+For rollback before integration, close the draft. For a later DEV rollback, disable the Preview job flags and restore the previous DEV deployment. Original Supabase continues serving customers. The reviewed worker has no hosted scheduler. Authenticated hosted acceptance, live credit behavior and commercial release remain open.
+
+## Related product handoff
+
+- SELL keeps manual fulfillment for RM100. HitPay order 1008 and its charge were paid, but the accessible provider records lacked a signed per-order product line. The draft verifies buyer claim and protected book access in DEV. The canonical offline ZIP passed its 19-entry manifest and opened offline. [SELL #25 and CI](https://github.com/bolehejassolutions/bros-sell-web-os/pull/25) · [Offline release register](https://drive.google.com/file/d/1EgIuRaLBxmh9vMtg_khSIB5yi3eJ85C8/view)
+- DEMAND can save a dated report with an operator's selected next action. Its approved pilot returned no rows for November 12–18. The historical control returned overlapping Meta purchase signals. Settled orders remain unknown. The protected alias serves the earlier #17 head. [DEMAND #192 and CI](https://github.com/bolehejassolutions/bros-commercial-intelligence/pull/192)
+- BCI #40's scoped read adapter passed 189 contract tests and a separate disposable signed-session/SQL readback. Hosted OAuth and positive tenant readback remain open. The November 19 evening publishing receipt was rechecked against Buffer. Facebook and Instagram were sent, and TikTok recorded a media-URL error. [BCI #40](https://github.com/bolehejassolutions/bros-commercial-intelligence/pull/40) · [Publishing receipt](https://docs.google.com/spreadsheets/d/1P7lP7quZ8sJIs98bpzd2DaHwEnkRg6hxwBKdCqPewyU/edit#gid=1588529959&range=A294:M294)

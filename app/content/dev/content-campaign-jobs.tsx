@@ -33,10 +33,12 @@ type Props = {
   workspaceId: string;
   campaignId: string;
   allowSubmission: boolean;
+  emptyDraft: boolean;
+  onReloadCampaign: () => void;
   onExpired: () => void;
 };
 
-export default function CampaignJobs({workspaceId, campaignId, allowSubmission, onExpired}: Props) {
+export default function CampaignJobs({workspaceId, campaignId, allowSubmission, emptyDraft, onReloadCampaign, onExpired}: Props) {
   const endpoint = '/api/content/dev/workspaces/' + encodeURIComponent(workspaceId) + '/generation-jobs';
   const [opened, setOpened] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -95,6 +97,13 @@ export default function CampaignJobs({workspaceId, campaignId, allowSubmission, 
         onExpired();
         return;
       }
+      if (reply.status === 409) {
+        clearContentBrowserDraftRetry(pending.current);
+        pending.current = null;
+        setMessage('Permintaan baharu tidak dapat diterima untuk draf ini. Semak sejarah atau muat semula kempen.');
+        refresh();
+        return;
+      }
       if (reply.status !== 202) throw new Error('Submission unavailable');
       const {data} = await reply.json();
       if (data?.campaignId !== campaignId || !uuid.test(data.id) || !Object.hasOwn(statusLabels, data.status))
@@ -125,8 +134,10 @@ export default function CampaignJobs({workspaceId, campaignId, allowSubmission, 
           {' · '}{statusLabels[job.status]}{' · Percubaan '}{job.attempts}
         </li>)}</ol>)}
       {history.state !== 'loading' && <button type="button" disabled={sending} onClick={refresh}>Muat semula sejarah</button>}
-      {allowSubmission && history.state === 'ready' && <button type="button"
-        disabled={sending || history.jobs.some(job => job.status === 'queued' || job.status === 'running')}
+      {emptyDraft && history.state === 'ready' && history.jobs.some(job => job.status === 'completed') &&
+        <button type="button" onClick={onReloadCampaign}>Muatkan hasil kempen</button>}
+      {allowSubmission && emptyDraft && history.state === 'ready' && <button type="button"
+        disabled={sending || history.jobs.some(job => job.status !== 'failed')}
         onClick={submit}>Hantar permintaan penjanaan</button>}
       {message && <p role="status">{message}</p>}
     </div>}

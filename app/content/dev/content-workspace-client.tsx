@@ -432,7 +432,9 @@ export default function ContentWorkspaceClient({jobHistoryEnabled,jobSubmissionE
         </dl>
        </details>
        {jobHistoryEnabled&&<CampaignJobs key={selected+'-'+c.id} workspaceId={selected} campaignId={c.id}
-        allowSubmission={jobSubmissionEnabled} onExpired={invalidateExpiredDraftSession}/>}
+        emptyDraft={c.status==='draft'&&scopedItems.length===0&&[c.strategy,c.angles,c.captions,c.publish_plan].every(value=>value==null)}
+        allowSubmission={jobSubmissionEnabled} onExpired={invalidateExpiredDraftSession}
+        onReloadCampaign={()=>setRefresh(value=>value+1)}/>}
        <CampaignLayers campaign={c} content={scopedItems}/>
        <ContentCreativeDraft businessDna={detailLoad.data.workspace.business_dna} campaign={c}/>
       </article>})}</div>}
