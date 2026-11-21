@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import test, {after} from 'node:test';
-import {readFile} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {runHostedContentJob} from '../../scripts/content-hosted-dev-job.mjs';
 import pg from 'pg';
 import {createContentCampaignPlanner} from '../../lib/content/neon-content-generation-orchestrator.ts';
 import {createPooledContentJobSubmitter} from '../../lib/content/neon-content-generation-job-atomic-submission.ts';
@@ -151,4 +154,65 @@ test('only the current attempt can attach reviewed output after a lease is recov
  assert.equal(await countItems(draft),4);
  const rows=await admin.query("SELECT DISTINCT body->'provenance'->>'attempt' AS attempt FROM content_dev.content_items WHERE campaign_id=$1",[draft.campaignId]);
  assert.deepEqual(rows.rows,[{attempt:'2'}]);
+});
+
+
+test('hosted DEV worker validates its target and reviewed packet, then commits once with the restricted login', async t => {
+ const draft=await selectedDraft();
+ const host='ep-fancy-queen-b30g0cjn.c-4.ap-southeast-1.aws.neon.tech';
+ const role='content_dev_job_plan_worker_v1';
+ const url='postgresql://'+role+':fixture@'+host+'/bros_intelligence_dev?sslmode=verify-full';
+ const env={CONTENT_HOSTED_DEV_WORKER_ENABLED:'true',CONTENT_HOSTED_DEV_PLAN_DATABASE_URL:url};
+ const dir=await mkdtemp(join(tmpdir(),'content-reviewed-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ const file=join(dir,'reviewed.json');
+ const args=[draft.tenantId,draft.jobId,file];
+ const packet={tenantId:draft.tenantId,jobId:draft.jobId,plan,review,businessDna:{brand:'Bengkel Basikal'},
+  brief:{product_service:'Servis basikal',audience:'Pemilik basikal',duration_days:7,platforms:['instagram'],
+   description:'',problem:'',objective:''}};
+ // Only the outbound connection is substituted. Posture checks, claim, plan verification,
+ // writes, readback and completion use actual restricted PostgreSQL connections.
+ let connections=0;
+ const connect=config=>{
+  connections++;
+  assert.deepEqual(config,{host,user:role,port:5432,database:'bros_intelligence_dev',password:'fixture',
+   ssl:{rejectUnauthorized:true,servername:host},max:1,connectionTimeoutMillis:5000});
+  return disposablePool('CONTENT_JOB_PLAN_DB_URL',role);
+ };
+ for (const overrides of [
+  {CONTENT_HOSTED_DEV_WORKER_ENABLED:''},{VERCEL_ENV:'production'},
+  {CONTENT_HOSTED_DEV_PLAN_DATABASE_URL:undefined,CONTENT_JOB_PLAN_DB_URL:url},
+  ...[url.replace(host,'127.0.0.1'),url.replace(host,'other.neon.tech'),url.replace(role,'postgres'),
+      url.replace('bros_intelligence_dev','production'),url.replace('verify-full','disable'),
+      url+'&options=extra'].map(value=>({CONTENT_HOSTED_DEV_PLAN_DATABASE_URL:value})),
+ ]) {
+  await assert.rejects(runHostedContentJob(args,{...env,...overrides},connect),/restricted TLS login/);
+ }
+ for (const changes of [{tenantId:randomUUID()},{jobId:randomUUID()},{review:{...review,score:1}}]) {
+  await writeFile(file,JSON.stringify({...packet,...changes}));
+  await assert.rejects(runHostedContentJob(args,env,connect),/accepted review/);
+ }
+ assert.equal(connections,0);
+ const checkArgs=['--check',draft.tenantId];
+ assert.deepEqual(await runHostedContentJob(checkArgs,env,connect),{state:'restricted_login_verified'});
+ await assert.rejects(runHostedContentJob(checkArgs,env,()=>disposablePool('CONTENT_READER_DB_URL','content_dev_reader_v2')),
+  /Restricted CONTENT role unavailable/);
+ const credits=async()=>(await admin.query('SELECT id FROM content_dev.credit_ledger ORDER BY id')).rows;
+ const before=await credits();
+ await writeFile(file,JSON.stringify({...packet,businessDna:{brand:'Outdated'}}));
+ assert.equal((await runHostedContentJob(args,env,connect)).state,'failed');
+ assert.equal(await countItems(draft),0);
+ await writeFile(file,JSON.stringify(packet));
+ assert.deepEqual(await runHostedContentJob(args,env,connect),{jobId:draft.jobId,state:'completed'});
+ assert.equal((await runHostedContentJob(args,env,connect)).state,'unavailable');
+ const jobs=await history(draft.principal,draft.workspaceId,draft.campaignId);
+ assert.deepEqual(jobs.map(({id,status,attempts})=>({id,status,attempts})),[{id:draft.jobId,status:'completed',attempts:2}]);
+ const {rows:[saved]}=await admin.query(`SELECT strategy,angles,captions,publish_plan,
+  (SELECT count(*)::int FROM content_dev.scenes s JOIN content_dev.content_items i ON i.id=s.content_item_id
+    WHERE i.campaign_id=c.id AND i.tenant_id=c.tenant_id) AS scenes FROM content_dev.campaigns c WHERE id=$1 AND tenant_id=$2`,
+  [draft.campaignId,draft.tenantId]);
+ assert.deepEqual(saved,{strategy:plan.strategy,angles:plan.angles,captions:{instagram:plan.captions[0].caption},
+  publish_plan:plan.publish_plan,scenes:plan.scenes.length});
+ assert.equal(await countItems(draft),plan.scripts.length+plan.visuals.length+1);
+ assert.deepEqual(await credits(),before);
 });

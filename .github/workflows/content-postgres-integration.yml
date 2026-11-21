@@ -7,6 +7,7 @@ on:
       - 'app/api/content/dev/**'
       - 'app/content/dev/**'
       - 'scripts/content-dev-job.mjs'
+      - 'scripts/content-hosted-dev-job.mjs'
       - 'scripts/fixtures/content-dev-reviewed-plan.json'
       - 'tests/browser/**'
       - 'tests/postgres/**'

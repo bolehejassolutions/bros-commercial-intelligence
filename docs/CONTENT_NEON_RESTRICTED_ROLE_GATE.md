@@ -24,6 +24,18 @@ The bundled synthetic plan targets Instagram on day one. To use a different plan
 
 On success the command prints a JSON receipt with `state=completed`. A completed replay or another unclaimable job returns `unavailable` and exits zero. An unsuccessful processing attempt exits one. Invalid arguments, fixture or target configuration exit two. Use campaign history to check the stored outcome.
 
+## Run one reviewed job on hosted DEV
+
+The operator command targets the direct compute of Neon DEV branch `br-broad-math-b3f4d2r4`. It uses an explicitly reviewed job packet and runs one existing job per invocation. Supply the direct worker URI through the operator's secret store as `CONTENT_HOSTED_DEV_PLAN_DATABASE_URL`, using the login `content_dev_job_plan_worker_v1`, database `bros_intelligence_dev`, and `sslmode=verify-full` or `sslmode=require`. The driver verifies the server certificate and hostname in both cases.
+
+```sh
+export CONTENT_HOSTED_DEV_WORKER_ENABLED=true
+npm run content:hosted-dev-job -- --check "$tenant_id"
+npm run content:hosted-dev-job -- "$tenant_id" "$job_id" /private/reviewed-job.json
+```
+
+The check validates the restricted login and transaction posture without claiming a job. Prepare the JSON packet from the selected DEV draft. Include `tenantId`, `jobId`, its seven brief fields in `brief`, the workspace's `businessDna`, and the reviewed `plan` and `review` objects in the [plan format](../scripts/fixtures/content-dev-reviewed-plan.json). Keep that tenant-specific file private. The worker compares the saved brief and DNA with the reviewed inputs and rechecks ownership, lease and data before committing. A changed brief or DNA requires a new review. The command prints a job receipt. A replay after completion returns `unavailable`; use authenticated campaign history to distinguish completed jobs from other unclaimable jobs. Clear the enable flag to disable operator execution.
+
 ## Hosted gate and rollback
 
 Neon DEV project `empty-tooth-43040036`, branch `br-broad-math-b3f4d2r4`, has FORCE RLS on seven CONTENT tables. Direct restricted reader and draft-writer logins returned zero unscoped data. At inspection, generation jobs had zero hosted policies and the submitter, fixture worker and reviewed-plan worker roles were absent. The existing reader lacked SELECT on generation jobs. The approved scope covers disposable roles. Connected role changes, operator enrollment and any production switch require separate authorization.
