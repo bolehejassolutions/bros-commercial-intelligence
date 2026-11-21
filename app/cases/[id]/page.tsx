@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requireBciOperator } from "@/lib/bci/operator-access";
 import {
   createEvidence, createSignal, createDiagnosis, createDecision,
-  createAction, createOutcome, createLearning
+  createAction, createOutcome, markImplementationCompleted, createLearning
 } from "@/app/actions";
 
 type Props = { params: Promise<{ id: string }> };
@@ -97,7 +97,15 @@ export default async function CaseWorkspace({ params }: Props) {
         </Stage>
 
         <Stage n="05" title="Action" note="Translate the decision into an executable step">
-          <div className="records">{(actions ?? []).map((a: any) => <Record key={a.id} title={a.title} body={a.description || "No description"} meta={a.status + (a.due_at ? " · Due " + new Date(a.due_at).toLocaleDateString() : "")} />)}</div>
+          <div className="records">{(actions ?? []).map((a: any) => <div key={a.id}>
+            <Record title={a.title} body={a.description || "No description"} meta={a.status + (a.due_at ? " · Due " + new Date(a.due_at).toLocaleDateString() : "")} />
+            {a.status !== "completed" && <form action={markImplementationCompleted} className="form">
+              <input type="hidden" name="case_id" value={id} />
+              <input type="hidden" name="action_id" value={a.id} />
+              <button type="submit" className="ghost">Mark implementation complete (self-reported)</button>
+            </form>}
+          </div>)}</div>
+          <p className="stage-note">Implementation completion is a separate operator action; it never verifies conversion, attribution or business results.</p>
           <form action={createAction} className="form">
             <input type="hidden" name="case_id" value={id} />
             <label>Decision<select name="decision_id" required><option value="">Select decision</option>{(decisions ?? []).map((d: any) => <option key={d.id} value={d.id}>{d.decision}</option>)}</select></label>
@@ -108,7 +116,7 @@ export default async function CaseWorkspace({ params }: Props) {
           </form>
         </Stage>
 
-        <Stage n="06" title="Outcome" note="What actually happened after the action">
+        <Stage n="06" title="Outcome" note="Record an observation; it does not complete the action or verify a business result">
           <div className="records">{(outcomes ?? []).map((o: any) => <Record key={o.id} title="Outcome" body={o.result} meta={new Date(o.observed_at).toLocaleString()} />)}</div>
           <form action={createOutcome} className="form">
             <input type="hidden" name="case_id" value={id} />
