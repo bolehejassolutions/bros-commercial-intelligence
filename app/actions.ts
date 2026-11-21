@@ -93,14 +93,46 @@ export async function createAction(formData: FormData) {
   revalidatePath("/cases/" + caseId);
 }
 
+// Outcomes are observations, not proof that implementation finished or that
+// a business result is independently verified.
 export async function createOutcome(formData: FormData) {
   const { supabase } = await db();
   const caseId = text(formData, "case_id");
   const actionId = text(formData, "action_id");
-  if (!caseId || !actionId || !text(formData, "result")) return;
-  await supabase.from("outcomes").insert({ action_id: actionId, result: text(formData, "result") });
-  await supabase.from("actions").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", actionId);
-  revalidatePath("/cases/" + caseId);
+  const result = text(formData, "result");
+  if (!caseId || !actionId || !result) return;
+
+  // Reject forged or stale form IDs from another case before writing.
+  const { data: action, error: actionError } = await supabase.from("actions")
+    .select("decision_id").eq("id", actionId).maybeSingle();
+  if (actionError || !action) return;
+  const { data: decision, error: decisionError } = await supabase.from("decisions")
+    .select("id").eq("id", action.decision_id).eq("case_id", caseId).maybeSingle();
+  if (decisionError || !decision) return;
+
+  const { error } = await supabase.from("outcomes").insert({ action_id: actionId, result });
+  if (!error) revalidatePath("/cases/" + caseId);
+}
+
+// This is an explicit, self-reported implementation state transition.
+// It must never be used to certify sales, attribution, evidence or ROI.
+export async function markImplementationCompleted(formData: FormData) {
+  const { supabase } = await db();
+  const caseId = text(formData, "case_id");
+  const actionId = text(formData, "action_id");
+  if (!caseId || !actionId) return;
+
+  const { data: action, error: actionError } = await supabase.from("actions")
+    .select("decision_id,status").eq("id", actionId).maybeSingle();
+  if (actionError || !action || action.status === "completed") return;
+  const { data: decision, error: decisionError } = await supabase.from("decisions")
+    .select("id").eq("id", action.decision_id).eq("case_id", caseId).maybeSingle();
+  if (decisionError || !decision) return;
+
+  const { error } = await supabase.from("actions")
+    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .eq("id", actionId).eq("decision_id", action.decision_id);
+  if (!error) revalidatePath("/cases/" + caseId);
 }
 
 export async function createLearning(formData: FormData) {
