@@ -4,9 +4,10 @@
  * tenant-restricted writer must be injected before activation.
  */
 import {ContentReadDenied} from './neon-content-workspace-reader.ts';
-import {enqueueContentJob} from './neon-content-generation-job-lifecycle.ts';
+import {ContentJobKeyConflict,ContentJobNotEligible,enqueueContentJob} from './neon-content-generation-job-lifecycle.ts';
 import type {JobQuery} from './neon-content-generation-job-lifecycle.ts';
 
+import type {JobSubmission} from './neon-content-generation-job-atomic-submission.ts';
 type Principal=Readonly<{userId:string;authenticated:true}>;
 type Verify=(request:Request)=>Promise<Principal|null>;
 type Authorize=(principal:Principal,workspaceId:string,campaignId:string)=>Promise<{tenantId:string}|null>;
@@ -19,6 +20,20 @@ function reply(status:number,body:object){return new Response(JSON.stringify(bod
 export function createContentJobSubmissionPost(verify:Verify,authorize:Authorize,writer:Writer){
  if(typeof verify!=='function'||typeof authorize!=='function'||typeof writer!=='function')
   throw new Error('Missing submission dependencies');
+ return createContentJobPost(verify,async (principal,input)=>{
+  const scope=await authorize(principal,input.workspaceId,input.campaignId);
+  if(!scope||!UUID.test(scope.tenantId))throw new ContentReadDenied();
+  const db=await writer(principal,scope.tenantId);
+  const job=await enqueueContentJob(db,{tenantId:scope.tenantId,campaignId:input.campaignId,
+    principalId:principal.userId,idempotencyKey:input.idempotencyKey});
+  if(!job||job.tenant_id!==scope.tenantId||job.campaign_id!==input.campaignId||
+      job.requested_by!==principal.userId)throw new Error('Invalid job receipt');
+  return {id:job.id,campaignId:job.campaign_id,status:job.status,attempts:job.attempts};
+ });
+}
+export function createContentJobPost(verify:Verify,submit:(principal:Principal,input:JobSubmission)=>Promise<{
+ id:string;campaignId:string;status:string;attempts:number
+}>){
  return async(request:Request,workspaceId:string):Promise<Response>=>{
   if(request.method!=='POST')return reply(405,{error:'method_not_allowed'});
   if(!UUID.test(workspaceId))return reply(404,{error:'not_found'});
@@ -30,12 +45,8 @@ export function createContentJobSubmissionPost(verify:Verify,authorize:Authorize
   // An injected session verifier alone does not prevent cookie-backed CSRF.
   const origin=request.headers.get('origin');
   const fetchSite=request.headers.get('sec-fetch-site');
-  if(fetchSite&&fetchSite!=='same-origin'&&fetchSite!=='none')
+  if((fetchSite&&fetchSite!=='same-origin')||origin!==url.origin)
    return reply(403,{error:'forbidden_origin'});
-  if(!origin)return reply(403,{error:'forbidden_origin'});
-  try{if(new URL(origin).origin!==url.origin)return reply(403,{error:'forbidden_origin'});}
-  catch{return reply(403,{error:'forbidden_origin'});}
-
   if(!/^application\/json(?:\s*;|\s*$)/i.test(request.headers.get('content-type')??''))
    return reply(415,{error:'unsupported_media_type'});
   const size=Number(request.headers.get('content-length')??0);
@@ -49,19 +60,15 @@ export function createContentJobSubmissionPost(verify:Verify,authorize:Authorize
   catch{return reply(400,{error:'invalid_body'});}
   if(!body||typeof body!=='object'||Array.isArray(body))return reply(400,{error:'invalid_body'});
   const fields=body as Record<string,unknown>;
-  if(Object.keys(fields).length!==2||!UUID.test(String(fields.campaignId??''))||
-     !KEY.test(String(fields.idempotencyKey??'')))
+  if(Object.keys(fields).length!==2||typeof fields.campaignId!=='string'||!UUID.test(fields.campaignId)||
+     typeof fields.idempotencyKey!=='string'||!KEY.test(fields.idempotencyKey))
    return reply(400,{error:'invalid_body'});
   try{
-   const scope=await authorize(Object.freeze({userId:principal.userId,authenticated:true}),workspaceId,fields.campaignId as string);
-   if(!scope||!UUID.test(scope.tenantId))return reply(404,{error:'not_found'});
-   const db=await writer(principal,scope.tenantId);
-   const job=await enqueueContentJob(db,{tenantId:scope.tenantId,campaignId:fields.campaignId as string,
-    principalId:principal.userId,idempotencyKey:fields.idempotencyKey as string});
-   if(!job||job.tenant_id!==scope.tenantId||job.campaign_id!==fields.campaignId||
-      job.requested_by!==principal.userId)return reply(503,{error:'submission_unavailable'});
-   return reply(202,{data:{id:job.id,campaignId:job.campaign_id,status:job.status,attempts:job.attempts}});
+   const receipt=await submit(principal,{workspaceId,campaignId:fields.campaignId,idempotencyKey:fields.idempotencyKey});
+   return reply(202,{data:receipt});
   }catch(e){
+   if(e instanceof ContentJobNotEligible)return reply(409,{error:'campaign_not_eligible'});
+   if(e instanceof ContentJobKeyConflict)return reply(409,{error:'idempotency_conflict'});
    if(e instanceof ContentReadDenied)return reply(404,{error:'not_found'});
    return reply(503,{error:'submission_unavailable'});
   }

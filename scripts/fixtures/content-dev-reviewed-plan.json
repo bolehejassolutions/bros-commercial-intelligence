@@ -1,0 +1,77 @@
+{
+  "plan": {
+    "strategy": {
+      "positioning": "Servis basikal bandar",
+      "core_message": "Semak brek sebelum kayuh",
+      "offer_angle": "Bantu pemilik basikal",
+      "platform_strategy": [
+        "Instagram"
+      ]
+    },
+    "angles": [
+      {
+        "title": "Brek basikal",
+        "hook": "Brek berbunyi?",
+        "reason": "Semak keadaan pad"
+      }
+    ],
+    "scripts": [
+      {
+        "title": "Hadapan",
+        "hook": "Semak brek",
+        "body": "Lihat pad brek dengan teliti",
+        "cta": "Rujuk bengkel"
+      },
+      {
+        "title": "Belakang",
+        "hook": "Semak brek",
+        "body": "Lihat pad brek dengan teliti",
+        "cta": "Rujuk bengkel"
+      }
+    ],
+    "visuals": [
+      {
+        "title": "Pad brek",
+        "prompt": "Potret pad brek dengan cahaya semula jadi"
+      }
+    ],
+    "scenes": [
+      {
+        "scene_number": 1,
+        "duration_seconds": 1.25,
+        "narration": "Semak pad 1",
+        "dialogue": "",
+        "visual_prompt": "Basikal di bengkel",
+        "motion_prompt": "Gerakan perlahan"
+      },
+      {
+        "scene_number": 2,
+        "duration_seconds": 2.25,
+        "narration": "Semak pad 2",
+        "dialogue": "",
+        "visual_prompt": "Basikal di bengkel",
+        "motion_prompt": "Gerakan perlahan"
+      }
+    ],
+    "captions": [
+      {
+        "platform": "instagram",
+        "caption": "Semak pad brek anda."
+      }
+    ],
+    "publish_plan": [
+      {
+        "day": 1,
+        "platform": "instagram",
+        "content_type": "video",
+        "objective": "Didik pemilik basikal"
+      }
+    ]
+  },
+  "review": {
+    "pass": true,
+    "score": 91,
+    "issues": [],
+    "fixes": []
+  }
+}

@@ -74,7 +74,21 @@ CREATE TABLE content_dev.scenes (
  UNIQUE(tenant_id,content_item_id,scene_number),
  FOREIGN KEY(tenant_id,content_item_id) REFERENCES content_dev.content_items(tenant_id,id)
 );
-CREATE TABLE content_dev.generation_jobs (id uuid PRIMARY KEY DEFAULT gen_random_uuid());
+CREATE TABLE content_dev.generation_jobs (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL,
+ campaign_id uuid NOT NULL,
+ requested_by uuid NOT NULL,
+ idempotency_key text NOT NULL CHECK(char_length(idempotency_key) BETWEEN 12 AND 180),
+ status text NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','completed','failed')),
+ attempts integer NOT NULL DEFAULT 0 CHECK(attempts BETWEEN 0 AND 10),
+ error_code text,
+ claimed_at timestamptz,
+ completed_at timestamptz,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(tenant_id,requested_by,idempotency_key),
+ FOREIGN KEY(tenant_id,campaign_id) REFERENCES content_dev.campaigns(tenant_id,id)
+);
 CREATE TABLE content_dev.credit_ledger (id uuid PRIMARY KEY DEFAULT gen_random_uuid());
 \echo Base fixture created
 

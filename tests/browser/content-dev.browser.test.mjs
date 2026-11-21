@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
+import {promisify} from 'node:util';
 import {randomUUID} from 'node:crypto';
-import {cp, mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {join, relative, sep} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -88,6 +89,7 @@ async function prepareFixtureApp(root) {
         paths: {
           '@/lib/content/neon-content-sdk-auth-server.ts': [fixtureSource],
           '@/lib/content/neon-content-restricted-adapters.ts': [fixtureSource],
+          '@/lib/content/neon-content-job-submitter-server.ts': [fixtureSource],
           '@/*': [repoSource + '/*'],
         },
       },
@@ -123,6 +125,8 @@ test('browser verifies authenticated campaign content, draft persistence and ten
   const readerUrl = databaseUrl('CONTENT_READER_DB_URL', 'content_dev_reader_v2');
   const draftUrl = databaseUrl('CONTENT_DRAFT_DB_URL', 'content_dev_draft_writer_v2');
   const generatedUrl = databaseUrl('CONTENT_TEST_DB_URL', 'content_dev_generated_writer_v1');
+  const jobWriterUrl = databaseUrl('CONTENT_JOB_WRITER_DB_URL', 'content_dev_job_writer_v2');
+  const workerUrl = databaseUrl('CONTENT_JOB_PLAN_DB_URL', 'content_dev_job_plan_worker_v1');
   const {chromium} = await import(process.env.CONTENT_BROWSER_PLAYWRIGHT_MODULE || 'playwright');
   const browser = await chromium.launch({executablePath: process.env.CONTENT_BROWSER_CHROMIUM});
   t.after(() => browser.close());
@@ -235,6 +239,9 @@ test('browser verifies authenticated campaign content, draft persistence and ten
       CONTENT_BROWSER_FOREIGN_SESSION: foreignSession,
       CONTENT_READER_DB_URL: readerUrl,
       CONTENT_DRAFT_DB_URL: draftUrl,
+      CONTENT_DEV_JOB_HISTORY_ENABLED: 'true',
+      CONTENT_DEV_JOB_SUBMISSION_ENABLED: 'true',
+      CONTENT_JOB_WRITER_DB_URL: jobWriterUrl,
     },
   });
   let nextOutput = '';
@@ -316,6 +323,15 @@ test('browser verifies authenticated campaign content, draft persistence and ten
       await campaign.getByText(content, {exact: false}).first().waitFor();
     }
 
+    const download = page.waitForEvent('download');
+    await campaign.getByRole('button', {name: 'Eksport teks dan metadata kempen ' + existingCampaign}).click();
+    const handoff = JSON.parse(await readFile(await (await download).path(), 'utf8'));
+    assert.equal(handoff.campaign.id, generatedReceipt.id);
+    assert.deepEqual(handoff.campaign.strategy, persisted.strategy);
+    assert.equal(handoff.content_items.length, expectedBundle.items.length);
+    assert.equal(handoff.scenes.length, plan.scenes.length);
+    assert.equal(handoff.media_verified, false);
+    assert.equal(handoff.publication_verified, false);
     await campaign.getByText('Visual: Sambungan babak ujian 101', {exact: true}).waitFor();
     await campaign.getByText('Sediakan arahan visual', {exact: true}).click();
     const presetSelect = campaign.getByRole('combobox', {name: 'Gaya visual', exact: true});
@@ -429,6 +445,81 @@ test('browser verifies authenticated campaign content, draft persistence and ten
       [workspaceId, deniedDraft.product_service],
     );
     assert.equal(deniedRows.rowCount, 0, 'rejected writes must not persist campaigns');
+    const savedDraft = page.getByRole('article').filter({has: page.getByRole('heading', {name: newDraft, exact: true})});
+    const creditsBeforeJob = await admin.query('SELECT id FROM content_dev.credit_ledger ORDER BY id');
+    const jobEndpoint = apiUrl + '/generation-jobs';
+    const historyUrl = jobEndpoint + '?campaign=' + initialReceipt.id;
+    await savedDraft.getByText('Sejarah penjanaan', {exact: true}).click();
+    await savedDraft.getByText('Belum ada permintaan penjanaan untuk kempen ini.').waitFor();
+    // Lose the first acknowledgement after commit and retry using the same mounted form.
+    const sendJob = savedDraft.getByRole('button', {name: 'Hantar permintaan penjanaan'});
+    let acceptedJob;
+    await page.route(jobEndpoint, async route => {
+      const reply = await route.fetch();
+      assert.equal(reply.status(), 202);
+      acceptedJob = (await reply.json()).data.id;
+      await route.abort('connectionreset');
+    }, {times: 1});
+    await sendJob.click();
+    await savedDraft.getByText('Permintaan belum dapat disahkan. Cuba semula.').waitFor();
+    await sendJob.click();
+    await savedDraft.getByText(/Dalam giliran · Percubaan 0/).waitFor();
+    assert.equal(await sendJob.isDisabled(), true);
+    const jobRows = await admin.query(
+      'SELECT id,status FROM content_dev.generation_jobs WHERE campaign_id=$1 AND requested_by=$2',
+      [initialReceipt.id, owner]);
+    assert.deepEqual(jobRows.rows, [{id: acceptedJob, status: 'queued'}]);
+    assert.equal((await foreignContext.request.get(historyUrl)).status(), 404);
+    assert.equal((await anonymousContext.request.get(historyUrl)).status(), 401);
+    const fixturePath = join(fixtureRoot, 'reviewed-plan.json');
+    await writeFile(fixturePath, JSON.stringify({plan, review}));
+    const commandArgs = ['--experimental-strip-types', join(repo, 'scripts/content-dev-job.mjs'), tenant, acceptedJob, fixturePath];
+    const env = {CONTENT_PG_INTEGRATION_CI: 'disposable_only', CONTENT_JOB_PLAN_DB_URL: workerUrl};
+    const runWorker = promisify(execFile);
+    await assert.rejects(runWorker(process.execPath, commandArgs, {env: {...env, CONTENT_PG_INTEGRATION_CI: ''}}),
+      err => err.code === 2 && err.stderr.includes('disposable database marker'));
+    for (const invalidUrl of [
+      'postgresql://content_dev_job_plan_worker_v1:fixture@unavailable.invalid:5432/bros_intelligence_dev',
+      'postgresql://postgres:fixture@127.0.0.1:5432/bros_intelligence_dev',
+    ]) {
+      await assert.rejects(runWorker(process.execPath, commandArgs, {env: {...env, CONTENT_JOB_PLAN_DB_URL: invalidUrl}}),
+        err => err.code === 2 && err.stderr.includes('loopback plan-worker URL'));
+    }
+    const firstRun = await runWorker(process.execPath, commandArgs, {env});
+    assert.deepEqual(JSON.parse(firstRun.stdout), {jobId: acceptedJob, state: 'completed'});
+    const secondRun = await runWorker(process.execPath, commandArgs, {env});
+    assert.deepEqual(JSON.parse(secondRun.stdout), {jobId: acceptedJob, state: 'unavailable'});
+    const durable = await admin.query(`
+      SELECT j.id, j.attempts, j.status, i.title, i.body->'provenance'->>'source' AS provenance
+        FROM content_dev.generation_jobs j
+        JOIN content_dev.content_items i ON i.campaign_id=j.campaign_id AND i.tenant_id=j.tenant_id
+          AND i.body->'provenance'->>'job_id'=j.id::text
+       WHERE j.id=$1 AND j.tenant_id=$2 AND j.requested_by=$3`, [acceptedJob, tenant, owner]);
+    assert.equal(durable.rowCount, expectedBundle.items.length);
+    for (const item of durable.rows) {
+      assert.equal(item.status, 'completed');
+      assert.equal(item.attempts, 1);
+      assert.equal(item.provenance, 'injected_content_planner');
+    }
+    const reviewed = await admin.query(`
+      SELECT c.strategy,c.angles,c.captions,c.publish_plan,
+        (SELECT count(*)::int FROM content_dev.scenes s JOIN content_dev.content_items i
+          ON s.content_item_id=i.id AND s.tenant_id=i.tenant_id
+          WHERE i.tenant_id=c.tenant_id AND i.campaign_id=c.id) AS scenes
+      FROM content_dev.campaigns c
+      WHERE c.id=$1 AND c.tenant_id=$2 AND c.owner_principal_id=$3`, [initialReceipt.id, tenant, owner]);
+    assert.deepEqual(reviewed.rows, [{strategy: persisted.strategy, angles: persisted.angles,
+      captions: persisted.captions, publish_plan: persisted.publish_plan, scenes: plan.scenes.length}]);
+    await savedDraft.getByRole('button', {name: 'Muat semula sejarah'}).click();
+    await savedDraft.getByText(/Selesai · Percubaan 1/).waitFor();
+
+    await savedDraft.getByRole('button', {name: 'Muatkan hasil kempen'}).click();
+    await savedDraft.getByText('Lihat kandungan kempen', {exact: true}).click();
+    await savedDraft.getByText(plan.scripts[0].title, {exact: true}).waitFor();
+    await savedDraft.getByText('Sejarah penjanaan', {exact: true}).click();
+    await savedDraft.getByText(/Selesai · Percubaan 1/).waitFor();
+    assert.equal(await sendJob.count(), 0, 'a campaign with saved content must not offer a new generation');
+
     // Exercise the actual mounted draft POST path with an expired session. The
     // form must disappear immediately without a reload or an unauthorized row.
     await fillDraft();
@@ -490,6 +581,23 @@ test('browser verifies authenticated campaign content, draft persistence and ten
     await nextPage.click();
     await page.getByRole('heading', {name: existingCampaign, exact: true}).waitFor();
     await page.getByRole('heading', {name: newDraft, exact: true}).waitFor();
+    await savedDraft.getByText('Sejarah penjanaan', {exact: true}).click();
+    await savedDraft.getByText(/Selesai · Percubaan 1/).waitFor();
+    await savedDraft.getByText('Lihat kandungan kempen', {exact: true}).click();
+    for (const [heading, content] of sections) {
+      await savedDraft.getByRole('heading', {name: heading, exact: true}).waitFor();
+      await savedDraft.getByText(content, {exact: false}).first().waitFor();
+    }
+    await savedDraft.getByText('Visual: Sambungan babak ujian 101', {exact: true}).waitFor();
+    const reopened = await ownerContext.request.get(historyUrl);
+    assert.equal(reopened.status(), 200);
+    const history = (await reopened.json()).data;
+    assert.equal(history.campaignId, initialReceipt.id);
+    const creditsAfterJob = await admin.query('SELECT id FROM content_dev.credit_ledger ORDER BY id');
+    assert.deepEqual(creditsAfterJob.rows, creditsBeforeJob.rows, 'reviewing a DEV fixture must not charge credits');
+    assert.deepEqual(history.jobs.map(job => job.id), [acceptedJob]);
+    assert.deepEqual(Object.keys(history.jobs[0]).sort(),
+      ['id','attempts','status','claimedAt','completedAt','createdAt','errorCode'].sort());
     const recoveredReceiptRead = await ownerContext.request.get(draftReadUrl);
     assert.equal(recoveredReceiptRead.status(), 200, 'reauthenticated owner can recover the same draft receipt');
     assert.deepEqual((await recoveredReceiptRead.json()).data.campaigns.map(row => row.id), [initialReceipt.id]);

@@ -19,18 +19,6 @@ const other='66666666-6666-4666-8666-666666666666';
 const campaign='88888888-8888-4888-8888-888888888888';
 const ownCampaign='99999999-9999-4999-8999-999999999999';
 test('durable queued → running → failed → retry → completed with strict identity',async()=>{
- await pool.query(`ALTER TABLE content_dev.generation_jobs
- ADD COLUMN tenant_id uuid NOT NULL DEFAULT '33333333-3333-4333-8333-333333333333',
- ADD COLUMN campaign_id uuid NOT NULL DEFAULT '99999999-9999-4999-8999-999999999999',
- ADD COLUMN requested_by uuid NOT NULL DEFAULT '8ae086ff-3f10-4863-b5e7-4b67e062024d',
- ADD COLUMN idempotency_key text NOT NULL DEFAULT '',
- ADD COLUMN status text NOT NULL DEFAULT 'queued',
- ADD COLUMN attempts integer NOT NULL DEFAULT 0,
- ADD COLUMN error_code text,
- ADD COLUMN claimed_at timestamptz,
- ADD COLUMN completed_at timestamptz,
- ADD COLUMN created_at timestamptz NOT NULL DEFAULT now()`);
- await pool.query('CREATE UNIQUE INDEX ci_generation_idempotency ON content_dev.generation_jobs(tenant_id,requested_by,idempotency_key)');
  await pool.query(`INSERT INTO content_dev.campaigns(id,tenant_id,workspace_id,owner_principal_id,product_service,audience,duration_days,status)
  VALUES ($1,$2,'22222222-2222-4222-8222-222222222222',$3,'Job fixture','Owner',7,'draft')`,
  [ownCampaign,tenant,owner]);
@@ -84,7 +72,7 @@ test('abandoned running lease is fenced and recovered without duplicate jobs',as
  await assert.rejects(reclaimExpiredContentJob(pool,{tenantId:tenant,jobId:queued.id,leaseSeconds:0}),/lease/);
 });
 
-// Same disposable database, after the schema fixture in the first test.
+// Same disposable database, after campaign creation in the first test.
 test('persisted job history is chronological and tenant-scoped',async()=>{
  const a=await enqueueContentJob(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:owner,idempotencyKey:'history-older-20261115'});
  const b=await enqueueContentJob(pool,{tenantId:tenant,campaignId:ownCampaign,principalId:owner,idempotencyKey:'history-newer-20261115'});

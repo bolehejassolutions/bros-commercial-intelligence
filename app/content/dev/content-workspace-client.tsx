@@ -2,7 +2,8 @@
 /** BROS CONTENT Neon recovery cockpit: real reads and draft writes only.
  * No generative, credit, billing, campaign launch or publishing controls.
  */
-import {useEffect,useRef,useState,type FormEvent} from 'react';
+import {useCallback,useEffect,useRef,useState,type FormEvent} from 'react';
+import CampaignJobs from './content-campaign-jobs';
 import ContentCreativeDraft from './content-creative-draft';
 import {createContentDetailReadGuard} from '@/lib/content/content-detail-read-guard';
 import {
@@ -152,7 +153,9 @@ function ItemBody({item}:{item:ContentItem}){
   Jumlah babak dalam rekod: {typeof obj.count==='number'?obj.count:'—'}</p>;
  return <pre style={{whiteSpace:'pre-wrap',fontSize:12,overflowWrap:'anywhere'}}>{readableBody(body)}</pre>;
 }
-export default function ContentWorkspaceClient(){
+export default function ContentWorkspaceClient({jobHistoryEnabled,jobSubmissionEnabled}:{
+ jobHistoryEnabled:boolean;jobSubmissionEnabled:boolean;
+}){
  const[workspaces,setWorkspaces]=useState<Workspace[]>([]);
  const[selected,setSelected]=useState('');
  const[detailLoad,setDetailLoad]=useState<WorkspaceLoadState<Details>>(initialWorkspaceLoad);
@@ -224,7 +227,7 @@ export default function ContentWorkspaceClient(){
   })();
   return()=>{active=false;};
  },[selected,refresh,before]);
- function invalidateExpiredDraftSession(){
+ const invalidateExpiredDraftSession=useCallback(()=>{
   // An authoritative 401 is not an uncertain network response: the rejected
   // attempt must not be replayed after another user authenticates in this tab.
   if(pendingDraftAttempt.current){
@@ -234,7 +237,7 @@ export default function ContentWorkspaceClient(){
   // Hide tenant-scoped controls immediately and recheck authoritative membership.
   setLoading(true);
   setIndexRefresh(value=>value+1);
- }
+ },[]);
  function downloadCampaignHandoff(campaign:Campaign){
   if(detailLoad.status!=='ready'||!isContentWorkspaceDetailCurrent(selected,detailLoad))return;
   try{
@@ -428,6 +431,10 @@ export default function ContentWorkspaceClient(){
          </div>)}
         </dl>
        </details>
+       {jobHistoryEnabled&&<CampaignJobs key={selected+'-'+c.id} workspaceId={selected} campaignId={c.id}
+        emptyDraft={c.status==='draft'&&scopedItems.length===0&&[c.strategy,c.angles,c.captions,c.publish_plan].every(value=>value==null)}
+        allowSubmission={jobSubmissionEnabled} onExpired={invalidateExpiredDraftSession}
+        onReloadCampaign={()=>setRefresh(value=>value+1)}/>}
        <CampaignLayers campaign={c} content={scopedItems}/>
        <ContentCreativeDraft businessDna={detailLoad.data.workspace.business_dna} campaign={c}/>
       </article>})}</div>}

@@ -11,14 +11,25 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 function id(value:string){if(!uuid.test(value))throw new Error('Invalid job identity');return value;}
 function key(value:string){if(typeof value!=='string'||value.length<12||value.length>128||!/^[A-Za-z0-9_-]+$/.test(value))throw new Error('Invalid idempotency key');return value;}
 function single(rows:JobRow[]){if(rows.length>1)throw new Error('Ambiguous job identity');return rows[0]??null;}
-export async function enqueueContentJob(db:JobQuery,input:{tenantId:string;campaignId:string;principalId:string;idempotencyKey:string}){
+export class ContentJobKeyConflict extends Error {}
+export class ContentJobNotEligible extends Error {}
+
+/** An existing campaign can receive a reviewed plan only before it has creative output. */
+export const eligibleContentJobDraftSql = `c.status='draft' AND c.strategy IS NULL AND c.angles IS NULL
+ AND c.captions IS NULL AND c.publish_plan IS NULL AND NOT EXISTS (
+  SELECT 1 FROM content_dev.content_items i WHERE i.tenant_id=c.tenant_id AND i.campaign_id=c.id)`;
+const canStartReviewedJobSql = `AND ${eligibleContentJobDraftSql} AND NOT EXISTS (
+ SELECT 1 FROM content_dev.generation_jobs j WHERE j.tenant_id=c.tenant_id AND j.campaign_id=c.id
+ AND j.status IN ('queued','running'))`;
+export async function enqueueContentJob(db:JobQuery,input:{tenantId:string;campaignId:string;principalId:string;idempotencyKey:string;requireEligibleDraft?:boolean}){
  const {tenantId,campaignId,principalId}=input;
  // No implicit upsert: an existing key for a different campaign is a conflict.
  const result=await db.query(`INSERT INTO content_dev.generation_jobs
  (tenant_id,campaign_id,requested_by,idempotency_key,status,attempts)
  SELECT $1,$2,$3,$4,'queued',0
  WHERE EXISTS (SELECT 1 FROM content_dev.campaigns c
- WHERE c.id=$2 AND c.tenant_id=$1 AND c.owner_principal_id=$3)
+ WHERE c.id=$2 AND c.tenant_id=$1 AND c.owner_principal_id=$3
+ ${input.requireEligibleDraft ? canStartReviewedJobSql : ''})
  ON CONFLICT (tenant_id,requested_by,idempotency_key) DO NOTHING
  RETURNING id,tenant_id,campaign_id,requested_by,idempotency_key,status,attempts,error_code`,
  [id(tenantId),id(campaignId),id(principalId),key(input.idempotencyKey)]);
@@ -28,7 +39,9 @@ export async function enqueueContentJob(db:JobQuery,input:{tenantId:string;campa
  AND EXISTS (SELECT 1 FROM content_dev.campaigns c WHERE c.id=j.campaign_id
  AND c.tenant_id=j.tenant_id AND c.owner_principal_id=$2)`,[tenantId,principalId,input.idempotencyKey]);
  const row=single(replay.rows);
- if(!row||row.campaign_id!==campaignId||row.requested_by!==principalId)throw new Error('Job not authorized or idempotency conflict');
+ if (!row && input.requireEligibleDraft) throw new ContentJobNotEligible('Campaign cannot accept a new job');
+ if(!row||row.requested_by!==principalId)throw new Error('Job not authorized');
+ if(row.campaign_id!==campaignId)throw new ContentJobKeyConflict('Job idempotency conflict');
  return row;
 }
 export async function claimContentJob(db:JobQuery,input:{tenantId:string;jobId:string;maxAttempts?:number}){
