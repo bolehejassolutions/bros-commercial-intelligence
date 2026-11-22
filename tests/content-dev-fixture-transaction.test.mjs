@@ -1,6 +1,19 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {executeContentDevFixtureAtomically} from '../lib/content/neon-content-dev-fixture-transaction.ts';
+import {registerHooks} from 'node:module';
+
+// The CI dry-run suite deliberately runs without npm install. Preserve the
+// production-only 'server-only' import in source and replace it ONLY in this
+// isolated test process, before importing the real TypeScript runtime module.
+registerHooks({
+ resolve(specifier,context,nextResolve){
+  if(specifier==='server-only')
+   return {url:'data:text/javascript,export%20%7B%7D',shortCircuit:true};
+  return nextResolve(specifier,context);
+ }
+});
+const {executeContentDevFixtureAtomically}=
+ await import('../lib/content/neon-content-dev-fixture-transaction.ts');
 
 const T='846fd30b-0085-4441-b0ad-9eaab84cc715';
 const P='416f2922-d8fb-4886-a18b-4a106940e845';
