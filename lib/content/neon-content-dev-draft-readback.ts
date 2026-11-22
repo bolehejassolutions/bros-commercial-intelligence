@@ -42,8 +42,9 @@ export async function persistDeterministicContentDraft(db:Db,job:Readonly<JobRow
   if(inserted.rows.length!==1)reject();
   found=await db.query(lookup,params);
  }
+ const itemId=found.rows[0]?.id;
  if(found.rows.length!==1||found.rows[0].type!==draft.type||found.rows[0].title!==draft.title||
-    typeof found.rows[0].id!=='string'||!UUID.test(found.rows[0].id))reject();
+    typeof itemId!=='string'||!UUID.test(itemId))reject();
  const actual=typeof found.rows[0].body==='string'?JSON.parse(found.rows[0].body):found.rows[0].body;
  if(!actual||typeof actual!=='object'||JSON.stringify(actual)!==JSON.stringify(body)){
   // PostgreSQL jsonb normalizes object key order; compare canonicalized structures.
@@ -52,5 +53,5 @@ export async function persistDeterministicContentDraft(db:Db,job:Readonly<JobRow
     ?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value);
   if(normalize(actual)!==normalize(body))reject();
  }
- return {jobId:job.id,campaignId:job.campaign_id,itemId:found.rows[0].id,verifiedReadback:true,source:'deterministic_dev_fixture'};
+ return {jobId:job.id,campaignId:job.campaign_id,itemId,verifiedReadback:true,source:'deterministic_dev_fixture'};
 }
