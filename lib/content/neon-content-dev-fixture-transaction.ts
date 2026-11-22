@@ -16,6 +16,7 @@ export async function executeContentDevFixtureAtomically(pool:Pool,input:Input){
  const client=await pool.connect();
  let begun=false;
  let discard=false;
+ let committing=false;
  try{
   await client.query('BEGIN');
   begun=true;
@@ -40,11 +41,15 @@ export async function executeContentDevFixtureAtomically(pool:Pool,input:Input){
      gate.forced!==true||Number(gate.tables)!==3||Number(gate.policy_tables)!==3)
     throw new Error('CONTENT DEV restricted RLS acceptance gate unavailable');
   const result=await executeContentDevFixtureInTransaction(client,input);
+  // A failed COMMIT has an uncertain outcome; never reuse this session.
+  committing=true;
   await client.query('COMMIT');
+  committing=false;
   begun=false;
   return result;
  }catch(_error){
+  if(committing)discard=true;
   if(begun){try{await client.query('ROLLBACK');}catch{discard=true;}}
   throw new Error('CONTENT DEV fixture transaction failed');
- }finally{client.release(discard?new Error('CONTENT DEV rollback failed; discard connection'):undefined);}
+ }finally{client.release(discard?new Error('CONTENT DEV transaction outcome uncertain; discard connection'):undefined);}
 }
