@@ -9,7 +9,7 @@ type Db={query:(sql:string,params?:readonly unknown[])=>Promise<{rows:Record<str
 type Draft={type:string;title:string;body:Record<string,unknown>};
 export type DraftReadback={jobId:string;campaignId:string;itemId:string;verifiedReadback:true;source:'deterministic_dev_fixture'};
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const reject=():never=>{throw new Error('CONTENT DEV draft readback unavailable');};
+function reject():never{throw new Error('CONTENT DEV draft readback unavailable');}
 
 /** The caller must BEGIN and set its authenticated RLS principal before invocation.
  * Commit only after this function returns. An existing item must match the
