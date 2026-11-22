@@ -7,7 +7,7 @@ import 'server-only';
 import {executeContentDevFixtureInTransaction} from './neon-content-dev-fixture-worker.ts';
 
 type QueryResult={rows:Record<string,unknown>[];rowCount?:number|null};
-type Client={query:(sql:string,params?:readonly unknown[])=>Promise<QueryResult>;release:()=>void};
+type Client={query:(sql:string,params?:readonly unknown[])=>Promise<QueryResult>;release:(error?:Error)=>void};
 type Pool={connect:()=>Promise<Client>};
 type Input=Parameters<typeof executeContentDevFixtureInTransaction>[1];
 
@@ -15,6 +15,7 @@ export async function executeContentDevFixtureAtomically(pool:Pool,input:Input){
  if(!pool||typeof pool.connect!=='function')throw new Error('Restricted CONTENT DEV pool required');
  const client=await pool.connect();
  let begun=false;
+ let discard=false;
  try{
   await client.query('BEGIN');
   begun=true;
@@ -43,7 +44,7 @@ export async function executeContentDevFixtureAtomically(pool:Pool,input:Input){
   begun=false;
   return result;
  }catch(_error){
-  if(begun){try{await client.query('ROLLBACK');}catch{/* connection is discarded by pool */}}
+  if(begun){try{await client.query('ROLLBACK');}catch{discard=true;}}
   throw new Error('CONTENT DEV fixture transaction failed');
- }finally{client.release();}
+ }finally{client.release(discard?new Error('CONTENT DEV rollback failed; discard connection'):undefined);}
 }
