@@ -34,11 +34,16 @@ export async function executeContentDevFixtureAtomically(pool:Pool,input:Input){
      JOIN pg_namespace n ON n.oid=c.relnamespace
      WHERE n.nspname='content_dev'
        AND c.relname IN ('generation_jobs','content_items','campaigns')
-       AND (p.polroles @> ARRAY[r.oid]::oid[] OR p.polroles @> ARRAY[0::oid])) AS policy_tables
+       AND (p.polroles @> ARRAY[r.oid]::oid[] OR p.polroles @> ARRAY[0::oid])) AS policy_tables,
+    has_table_privilege(current_user,'content_dev.generation_jobs','SELECT') AS job_select,
+    has_table_privilege(current_user,'content_dev.generation_jobs','UPDATE') AS job_update,
+    has_table_privilege(current_user,'content_dev.content_items','SELECT') AS item_select,
+    has_table_privilege(current_user,'content_dev.content_items','INSERT') AS item_insert,
+    has_table_privilege(current_user,'content_dev.campaigns','SELECT') AS campaign_select
     FROM pg_roles r WHERE r.rolname=current_user`);
   const gate=roles.rows[0];
   if(roles.rows.length!==1||gate.rolname!=='content_dev_job_plan_worker_v1'||gate.rolsuper!==false||gate.rolbypassrls!==false||
-     gate.forced!==true||Number(gate.tables)!==3||Number(gate.policy_tables)!==3)
+     gate.forced!==true||Number(gate.tables)!==3||Number(gate.policy_tables)!==3||!gate.job_select||!gate.job_update||!gate.item_select||!gate.item_insert||!gate.campaign_select)
     throw new Error('CONTENT DEV restricted RLS acceptance gate unavailable');
   const result=await executeContentDevFixtureInTransaction(client,input);
   // A failed COMMIT has an uncertain outcome; never reuse this session.
