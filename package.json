@@ -8,7 +8,8 @@
     "content:hosted-dev-job": "node --experimental-strip-types scripts/content-hosted-dev-job.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:content-fixture": "node --conditions=react-server --experimental-strip-types --test tests/content-dev-fixture-transaction.test.mjs"
   },
   "dependencies": {
     "@neondatabase/auth": "0.7.0-beta",
